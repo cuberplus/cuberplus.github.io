@@ -1,0 +1,14 @@
+{
+  "files": {
+    "main.css": "/static/css/main.ecc652e5.css",
+    "main.js": "/static/js/main.183844c2.js",
+    "static/media/CubeastAnalyzer.png": "/static/media/CubeastAnalyzer.d4a54340d78e8f5d5bed.png",
+    "index.html": "/index.html",
+    "main.ecc652e5.css.map": "/static/css/main.ecc652e5.css.map",
+    "main.183844c2.js.map": "/static/js/main.183844c2.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.ecc652e5.css",
+    "static/js/main.183844c2.js"
+  ]
+}
