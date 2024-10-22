@@ -13,7 +13,7 @@ function App() {
         </Navbar>
       </header>
       <Row style={{ margin: 10 }}>
-        <Col className='col-6'>
+        <Col className='col-lg-6'>
           <Card className='p-3'>
             <a href='/cubeastanalyzer' className='stretched-link'>
               <h3>
@@ -28,7 +28,7 @@ function App() {
           </Card>
         </Col>
 
-        <Col className='col-6'>
+        <Col className='col-lg-6'>
           <Card className='p-3'>
             <a href='/' className='stretched-link'>
               <h3>
