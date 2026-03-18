@@ -1,14 +1,14 @@
 {
   "files": {
     "main.css": "/static/css/main.ecc652e5.css",
-    "main.js": "/static/js/main.7e22aec2.js",
-    "static/media/CubeastAnalyzer.png": "/static/media/CubeastAnalyzer.d4a54340d78e8f5d5bed.png",
+    "main.js": "/static/js/main.a34e7452.js",
+    "static/media/SmartcubeAnalyzer.png": "/static/media/SmartcubeAnalyzer.d4a54340d78e8f5d5bed.png",
     "index.html": "/index.html",
     "main.ecc652e5.css.map": "/static/css/main.ecc652e5.css.map",
-    "main.7e22aec2.js.map": "/static/js/main.7e22aec2.js.map"
+    "main.a34e7452.js.map": "/static/js/main.a34e7452.js.map"
   },
   "entrypoints": [
     "static/css/main.ecc652e5.css",
-    "static/js/main.7e22aec2.js"
+    "static/js/main.a34e7452.js"
   ]
 }
