@@ -15,13 +15,13 @@ function App() {
       <Row style={{ margin: 10 }}>
         <Col className='col-lg-6'>
           <Card className='p-3'>
-            <a href='/cubeastanalyzer' className='stretched-link'>
+            <a href='/smartcubeanalyzer' className='stretched-link'>
               <h3>
-                Cubeast Analyzer
+                Smartcube Analyzer
               </h3>
             </a>
             <img
-              src={require("../Assets/CubeastAnalyzer.png")}
+              src={require("../Assets/SmartcubeAnalyzer.png")}
               style={{ border: '1px solid #000000' }}
             >
             </img>
