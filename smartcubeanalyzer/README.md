@@ -57,7 +57,8 @@ All sources are normalized so that metrics such as total time, recognition/execu
 
 ## Installation
 
-Use Node.js 20.19+ or 22.12+ and install the dependencies:
+Use Node.js 22.12+ and Git. Run all commands from the unified
+`cuberplus.github.io` repository root, not this `smartcubeanalyzer` directory:
 
 ```bash
 npm install
@@ -71,18 +72,26 @@ To start the development server, run:
 npm start
 ```
 
-This starts Vite at `http://127.0.0.1:3000/smartcubeanalyzer/`, where you can explore the dashboards and visualizations.
+This starts the unified Vite app at `http://127.0.0.1:5173/smartcubeanalyzer/`,
+where you can explore the dashboards and visualizations.
 
 `npm run build` type-checks and lints the application, then writes the production
-site to `build/`. `npm run preview` serves that build locally. The GitHub Pages
-base path remains `/smartcubeanalyzer/`; `npm run deploy` still publishes `build/`.
-
-The Vite config uses `.mjs` rather than package-level `"type": "module"` to
-preserve Babel-style default imports for the existing CommonJS dependencies.
+site to the root `build/`. `npm run preview` serves that build locally on port
+4173. All four tools share one app and root-scoped offline PWA;
+`npm run deploy` publishes the entire site to the root `gh-pages` branch.
+Deploy only with explicit approval.
 
 ## Importing solve data
 
 Once the app is running:
+
+Use **Display My Stats!** to read this browser's saved Timer solves directly,
+without exporting. Daily-best points replay the selected Timer solve; histogram
+bars open the contributing solves with View actions. Rolling averages,
+categories, records, algorithm cases, and streaks also support drill-downs.
+CSV solves without Timer replay data keep their source-site links.
+
+To import external solve data:
 
 1. Export your solves from Cubeast or Acubemy.  
 2. Import the exported files into SmartcubeAnalyzer. You can upload one or more CSV files (from Cubeast and/or Acubemy) to Smartcube Analyzer and display your combined stats!
@@ -95,6 +104,12 @@ To run the tests, use:
 ```bash
 npm test
 ```
+
+The root runner includes unit and performance tests for all tools.
+`npm run build` also enforces strict TypeScript and bans `any`, `unknown`,
+and unsafe dynamic operations in production code. After building and starting
+`npm run preview`, `npm run test:site` checks responsive layouts, chart modals,
+retained Timer state, and offline routes in Microsoft Edge.
 
 ## Contributing
 

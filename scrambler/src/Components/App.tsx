@@ -90,7 +90,6 @@ function App() {
     generate({ ...DEFAULT_SETTINGS });
     return () => { worker.current?.terminate(); worker.current = undefined; };
     // A worksheet is generated once on mount; edits are applied with Generate.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) =>

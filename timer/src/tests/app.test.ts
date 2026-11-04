@@ -8,6 +8,7 @@ import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
 import type { Solve } from '../engine';
 import { averageDetails, dailyStreak, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats, solveEndDate } from '../storage';
 import { loadCube, SOLVED, Cube, inverse, isMove, movesOf, locations, sameAxis, simplifyMoves } from '../puzzle';
+import { PageLocation } from '@cuberplus/navigation';
 
 const cube = await loadCube();
 const generate = jest.fn<() => Promise<string>>();
@@ -108,6 +109,25 @@ function historySolve(number: number, duration: number, count: number, session =
 function historyNumbers() {
   return Array.from(container.querySelectorAll('[aria-label="Solve history"] tbody tr')).map(row => Number(row.firstElementChild!.textContent));
 }
+
+test('new Timer replay links work on an already mounted connected Timer without reopening a dismissed replay on background renders', async () => {
+  const solves = [historySolve(1, 1000, 4), historySolve(2, 2000, 4)];
+  await act(async () => root.unmount());
+  recovered = solves;
+  root = createRoot(container);
+  const show = async (address: string) => act(async () => root.render(createElement(PageLocation.Provider, { value: address }, createElement(App))));
+  await show('/timer/?solve=1');
+  expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe('1');
+  await click('Close replay');
+  await show('/timer/?solve=1');
+  expect(container.querySelector('[aria-label="Solve replay"]')).toBeNull();
+  await click('Connect cube');
+  await show('/smartcubeanalyzer/');
+  await show('/timer/?solve=2');
+  expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe('2');
+  expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Disconnect')).toBe(true);
+  expect(generate).toHaveBeenCalledTimes(1);
+});
 
 test('reads backup files larger than 10 MB instead of rejecting them before import', async () => {
   const text = jest.fn<() => Promise<string>>().mockResolvedValue('backup contents');
@@ -449,7 +469,7 @@ test('average PB notifications retain their original window after later solves a
   await act(async () => container.querySelector<HTMLDialogElement>('.options-dialog')!.close());
   expect(container.querySelector('[aria-label="View current Ao5"]')).toBeNull();
   await click('View PB Ao5');
-  expect(container.querySelector('#average-title')?.textContent).toBe('Ao5: 14.00s');
+  expect(container.querySelector('.average-dialog h2')?.textContent).toBe('Ao5: 14.00s');
   const rows = container.querySelectorAll('[aria-label="Average solves"] tbody tr');
   expect(Array.from(rows, row => row.children[0].textContent)).toEqual(['2', '3', '4', '5', '6']);
   expect(Array.from(rows, row => row.children[1].textContent)).toEqual(['(18.00s)', '16.00s', '14.00s', '12.00s', '(0.60s)']);
@@ -526,7 +546,7 @@ test('average solve numbers match session history across DNFs, active solves and
   const rows = container.querySelectorAll('[aria-label="Average solves"] tbody tr');
   expect(Array.from(rows, row => row.children[0].textContent)).toEqual(expected);
   expect(rows[2].querySelector('.average-trimmed-worst')?.textContent).toBe('(DNF)');
-  expect(container.querySelector('#average-title')?.textContent).toBe('Ao5: 13.00s');
+  expect(container.querySelector('.average-dialog h2')?.textContent).toBe('Ao5: 13.00s');
   await click('View average solve 8');
   expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe('7');
 });
@@ -536,7 +556,7 @@ test('DNF current and best averages open details showing untrimmed DNFs without 
   for (const kind of ['current', 'best']) {
     expect(container.querySelector(`[aria-label="View ${kind} Ao5"]`)?.textContent).toBe('DNF');
     await click(`View ${kind} Ao5`);
-    expect(container.querySelector('#average-title')?.textContent).toBe('Ao5: DNF');
+    expect(container.querySelector('.average-dialog h2')?.textContent).toBe('Ao5: DNF');
     const rows = container.querySelectorAll('[aria-label="Average solves"] tbody tr');
     expect(Array.from(rows, row => row.children[0].textContent)).toEqual(['1', '2', '3', '4', '5']);
     expect(container.querySelector('.average-trimmed-worst')?.textContent).toBe('(DNF)');
@@ -1116,7 +1136,7 @@ test('Bluetooth setup and its help link live in Options, and submitting closes t
   const dialog = container.querySelector('dialog')!;
   const mac = container.querySelector('input[placeholder="AA:BB:CC:DD:EE:FF"]')!;
   expect(mac.closest('dialog')).toBe(dialog);
-  expect(container.querySelector('a[href="help/mac-address.html"]')?.closest('dialog')).toBe(dialog);
+  expect(container.querySelector('a[href="/timer/help/mac-address.html"]')?.closest('dialog')).toBe(dialog);
   await click('Options');
   await act(async () => mac.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
   expect(dialog.open).toBe(false);

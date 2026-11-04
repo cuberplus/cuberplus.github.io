@@ -155,7 +155,7 @@ describe('clickable cell styling', () => {
 
     test('the fastest-solves grid is the one wired up to open solves', () => {
         const panel = readFileSync(join(__dirname, '..', 'Components', 'ChartPanel.tsx'), 'utf8');
-        const grid = panel.split('\n').find(l => l.includes('onCellClick={this.openSolveSource}'));
+        const grid = panel.split('\n').find(l => l.includes('onCellClick={({ row }) => this.openSolveSource(row)}'));
         expect(grid).toContain('clickable-grid');
     });
 });

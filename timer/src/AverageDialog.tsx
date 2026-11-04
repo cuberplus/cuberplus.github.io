@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
+import { usePageDialog } from '@cuberplus/navigation';
 
 const columns = [
   { key: 'number', label: 'Solve' }, { key: 'time', label: 'Time' },
@@ -17,16 +18,18 @@ export interface AverageRow<T> {
   penalty?: boolean;
 }
 
-export function AverageDialog<T>({ rows, time, precision, view, close }: {
+export function AverageDialog<T>({ rows, time, precision, view, close, title }: {
   rows: AverageRow<T>[];
   time: number | 'DNF';
   precision: 2 | 3;
   view: (solve: T) => void;
   close: () => void;
+  title?: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const heading = useId();
   const [sort, setSort] = useState<{ column: Column; direction: 'ascending' | 'descending' }>({ column: 'number', direction: 'ascending' });
-  useEffect(() => { dialog.current?.showModal(); }, []);
+  usePageDialog(dialog);
   const dismiss = () => { dialog.current?.close(); close(); };
   const ordered = useMemo(() => [...rows].sort((a, b) => {
     const key = sort.column === 'view' ? 'number' : sort.column;
@@ -43,16 +46,16 @@ export function AverageDialog<T>({ rows, time, precision, view, close }: {
         {row.penalty && <span className="badge text-bg-warning ms-1">+2</span>}
       </td>
       <td>{row.turns}</td><td>{row.tps === null ? '--' : row.tps.toFixed(2)}</td>
-      <td><button className="btn btn-sm btn-outline-secondary" aria-label={`View average solve ${row.number}`} onClick={() => view(row.solve)}>View</button></td>
+      <td><button className="btn btn-sm btn-outline-secondary" aria-label={`View ${title ? '' : 'average '}solve ${row.number}`} onClick={() => view(row.solve)}>View</button></td>
     </tr>;
-  }), [ordered, precision, view]);
-  return <dialog ref={dialog} className="panel average-dialog" aria-labelledby="average-title" onCancel={event => { event.preventDefault(); dismiss(); }}>
+  }), [ordered, precision, view, title]);
+  return <dialog ref={dialog} className="panel average-dialog" aria-labelledby={heading} onCancel={event => { event.preventDefault(); dismiss(); }}>
     <div className="d-flex justify-content-between align-items-center gap-3 flex-wrap">
-      <h2 id="average-title">Ao{rows.length}: {format(time, precision)}</h2>
-      <button autoFocus className="btn btn-outline-secondary" onClick={dismiss}>Close average</button>
+      <h2 id={heading}>{title ?? `Ao${rows.length}: ${format(time, precision)}`}</h2>
+      <button autoFocus className="btn btn-outline-secondary" onClick={dismiss}>Close {title ? 'solves' : 'average'}</button>
     </div>
     <div className="table-responsive">
-      <table className="table table-sm align-middle" aria-label="Average solves">
+      <table className="table table-sm align-middle" aria-label={title ? 'Selected solves' : 'Average solves'}>
         <thead><tr>{columns.map(({ key, label }) => <th key={key} scope="col" aria-sort={sort.column === key ? sort.direction : undefined}>
           <button className="history-sort" onClick={() => setSort({ column: key, direction: sort.column === key && sort.direction === 'ascending' ? 'descending' : 'ascending' })}>{label}</button>
         </th>)}</tr></thead>

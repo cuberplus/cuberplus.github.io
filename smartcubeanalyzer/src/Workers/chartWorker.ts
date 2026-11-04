@@ -1,5 +1,5 @@
 import { calculateMovingAverage, calculateMovingPercentage, calculateMovingAverageChopped, makeLabels, reduceDataset } from '../Helpers/MathHelpers';
-import { buildRunningAverageData, buildRunningStdDevData, buildRunningTpsData, buildRunningInspectionData, buildRunningTurnsData, buildRunningRecognitionExecution, buildHistogramData, buildGoodBadData, buildRunningColorPercentages, buildStepPercentages, buildOllCategoryChart, buildPllCategoryChart, buildInspectionData, shouldShowInspectionCharts, buildTypicalCompare } from '../Helpers/ChartDataBuilders';
+import { buildRunningAverageData, buildRunningStdDevData, buildRunningTpsData, buildRunningInspectionData, buildRunningTurnsData, buildRunningRecognitionExecution, buildHistogramData, buildGoodBadData, buildRunningColorPercentages, buildStepPercentages, buildOllCategoryChart, buildPllCategoryChart, buildInspectionData, shouldShowInspectionCharts, buildTypicalCompare, fastestByDay, buildMovingLineChart } from '../Helpers/ChartDataBuilders';
 import { applyPaletteToChartData, SEGMENT_COLORS } from '../Helpers/ChartColors';
 import { analyzeStepMoves, computeCaseFailureStats, computeSolveEfficiency } from '../Helpers/MoveAnalysis';
 import { getAufMovesForSolve } from '../Helpers/CsvParser';
@@ -48,15 +48,7 @@ function buildStreakData(fastestSolveEachDay: { [key: string]: number }, targetT
 }
 
 export function buildAllStreakRows(solves: Solve[]): StreakRow[] {
-    const fastestSolveEachDay: { [key: string]: number } = {};
-    for (const solve of solves) {
-        const day = solve.date.toLocaleDateString('en-CA');
-        if (fastestSolveEachDay[day]) {
-            fastestSolveEachDay[day] = Math.min(fastestSolveEachDay[day], solve.time);
-        } else {
-            fastestSolveEachDay[day] = solve.time;
-        }
-    }
+    const fastestSolveEachDay = Object.fromEntries([...fastestByDay(solves)].map(([day, solve]) => [day, solve.time]));
     const targets = [5, 10, 15, 20, 30, 10000] as const;
     const labels: { [k: number]: string } = { 5: 'Sub-5', 10: 'Sub-10', 15: 'Sub-15', 20: 'Sub-20', 30: 'Sub-30', 10000: 'Overall' };
     return targets.map(t => {
@@ -113,27 +105,16 @@ export function buildStepAverages(solves: Solve[], steps: StepName[], windowSize
     if (solves.length === 0 || steps.length === 0) {
         return { labels: [], datasets: [] };
     }
-    const datasets = steps.map((stepName) => {
-        let average = calculateMovingAverage(solves.map(x => getStep(x, stepName)?.time ?? 0), windowSize);
-        average = reduceDataset(average, pointsPerGraph);
-        return { label: `${stepName} Average of ${windowSize}`, data: average };
-    });
-    const labels = makeLabels(Math.max(0, solves.length - windowSize + 1), pointsPerGraph, windowSize);
-    return { labels, datasets };
+    return buildMovingLineChart(solves, windowSize, pointsPerGraph, steps.map(step => ({
+        extract: solve => getStep(solve, step)?.time ?? 0, calcFn: calculateMovingAverage, label: `${step} Average of ${windowSize}`,
+    })));
 }
 
 export function buildDailyRecordData(solves: Solve[]) {
-    const fastestSolveEachDay: { [key: string]: number } = {};
-    for (const solve of solves) {
-        const day = solve.date.toLocaleDateString('en-CA');
-        fastestSolveEachDay[day] = fastestSolveEachDay[day]
-            ? Math.min(fastestSolveEachDay[day], solve.time)
-            : solve.time;
-    }
-    const labels = Object.keys(fastestSolveEachDay).sort();
+    const days = fastestByDay(solves), labels = [...days.keys()].sort();
     return {
         labels,
-        datasets: [{ label: 'Fastest Solve Each Day', data: labels.map(d => fastestSolveEachDay[d]) }],
+        datasets: [{ label: 'Fastest Solve Each Day', data: labels.map(day => days.get(day)!.time) }],
     };
 }
 

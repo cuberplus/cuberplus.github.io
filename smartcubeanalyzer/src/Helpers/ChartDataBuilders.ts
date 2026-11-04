@@ -20,7 +20,16 @@ import { SEGMENT_COLORS } from './ChartColors';
 
 type MovingCalcFn = (values: number[], windowSize: number) => number[];
 
-function buildMovingLineChart(
+export function fastestByDay(solves: Solve[]): Map<string, Solve> {
+    const days = new Map<string, Solve>();
+    for (const solve of solves) {
+        const day = solve.date.toLocaleDateString('en-CA'), best = days.get(day);
+        if (!best || solve.time < best.time) days.set(day, solve);
+    }
+    return days;
+}
+
+export function buildMovingLineChart(
     solves: Solve[],
     windowSize: number,
     pointsPerGraph: number,
@@ -180,21 +189,11 @@ export function buildRunningColorPercentages(
         ? [...colorDefs, { color: CrossColor.Unknown, label: 'Unknown', borderColor: 'Purple', backgroundColor: 'Purple' }]
         : colorDefs;
 
-    const datasets = colors.map((c) => {
-            let movingPercent = calculateMovingPercentage(
-                solves.map((x) => x.crossColor),
-                windowSize,
-                (crossColor: CrossColor) => crossColor === c.color
-            );
-            movingPercent = reduceDataset(movingPercent, pointsPerGraph);
-            return {
-                label: `Percentage of solves with ${c.label} cross over last ${windowSize}`,
-                data: movingPercent,
-                borderColor: c.borderColor,
-                backgroundColor: c.backgroundColor,
-            };
-        }
-    );
+    const datasets = colors.map(c => ({
+        label: `Percentage of solves with ${c.label} cross over last ${windowSize}`,
+        data: reduceDataset(calculateMovingPercentage(solves, windowSize, solve => solve.crossColor === c.color), pointsPerGraph),
+        borderColor: c.borderColor, backgroundColor: c.backgroundColor,
+    }));
     const labels = makeLabels(Math.max(0, solves.length - windowSize + 1), pointsPerGraph, windowSize);
     return { labels, datasets };
 }
@@ -204,18 +203,8 @@ export function buildStepPercentages(
     steps: StepName[],
     windowSize: number
 ): LabelledChart<'doughnut'> {
-    const totals: Partial<Record<StepName, number>> = {};
-    for (const step of steps) totals[step] = 0;
-    const recentSolves = solves.slice(-windowSize);
-    const n = recentSolves.length || 1;
-    for (const solve of recentSolves) {
-        for (const step of steps) {
-            const stepData = getStep(solve, step);
-            if (stepData) totals[step]! += stepData.time;
-        }
-    }
-    const labels = Object.keys(totals) as string[];
-    const values = labels.map((k) => (totals[k as StepName] ?? 0) / n);
+    const labels = [...new Set(steps)], recent = solves.slice(-windowSize);
+    const values = labels.map(step => recent.reduce((sum, solve) => sum + (getStep(solve, step)?.time ?? 0), 0) / (recent.length || 1));
     return {
         labels,
         datasets: [
@@ -264,20 +253,13 @@ export function buildInspectionData(
     solves: Array<Solve & { inspectionTime: number }>,
     windowSize: number
 ): LabelledChart<'bar'> {
-    const recentSolves = solves.slice(-windowSize).sort((a, b) => a.inspectionTime - b.inspectionTime);
-    const chunkedArr = splitIntoChunks(recentSolves, Const.InspectionGraphChunks);
-    const labels: string[] = [];
-    const values: number[] = [];
-    for (let i = 0; i < Const.InspectionGraphChunks; i++) {
-        labels.push('~' + calculateAverage(chunkedArr[i].map((x) => x.inspectionTime)).toFixed(2));
-        values.push(calculateAverage(chunkedArr[i].map((x) => x.time)));
-    }
+    const chunks = splitIntoChunks(solves.slice(-windowSize).sort((a, b) => a.inspectionTime - b.inspectionTime), Const.InspectionGraphChunks);
     return {
-        labels,
+        labels: chunks.map(chunk => '~' + calculateAverage(chunk.map(solve => solve.inspectionTime)).toFixed(2)),
         datasets: [
             {
                 label: `Solve time by inspection time (of recent ${windowSize})`,
-                data: values,
+                data: chunks.map(chunk => calculateAverage(chunk.map(solve => solve.time))),
             },
         ],
     };
@@ -291,50 +273,15 @@ export function shouldShowInspectionCharts(solves: Solve[]): boolean {
 
 export function buildTypicalCompare(solves: Solve[], windowSize: number): LabelledChart<'bar'> {
     const labels = ['Cross', 'F2L', 'OLL', 'PLL'];
-    const zeroes = [0, 0, 0, 0];
-    if (solves.length === 0) {
-        return {
-            labels,
-            datasets: [
-                { label: `Your average by step over last ${windowSize}`, data: zeroes },
-                { label: `Typical cuber's average by step, using your average time`, data: zeroes },
-            ],
-        };
-    }
-    const average = calculateAverage(solves.map((x) => x.time).slice(-windowSize));
-    if (!Number.isFinite(average)) {
-        return {
-            labels,
-            datasets: [
-                { label: `Your average by step over last ${windowSize}`, data: zeroes },
-                { label: `Typical cuber's average by step, using your average time`, data: zeroes },
-            ],
-        };
-    }
-    if (!solves[0].steps || solves[0].steps.length < 7) {
-        return {
-            labels,
-            datasets: [
-                { label: `Your average by step over last ${windowSize}`, data: zeroes },
-                { label: `Typical cuber's average by step, using your average time`, data: zeroes },
-            ],
-        };
-    }
-    const crossAverage = calculateAverage(solves.map((x) => getStep(x, StepName.Cross)?.time ?? 0).slice(-windowSize));
-    const f2l1 = calculateAverage(solves.map((x) => getStep(x, StepName.F2L_1)?.time ?? 0).slice(-windowSize));
-    const f2l2 = calculateAverage(solves.map((x) => getStep(x, StepName.F2L_2)?.time ?? 0).slice(-windowSize));
-    const f2l3 = calculateAverage(solves.map((x) => getStep(x, StepName.F2L_3)?.time ?? 0).slice(-windowSize));
-    const f2l4 = calculateAverage(solves.map((x) => getStep(x, StepName.F2L_4)?.time ?? 0).slice(-windowSize));
-    const ollAverage = calculateAverage(solves.map((x) => getStep(x, StepName.OLL)?.time ?? 0).slice(-windowSize));
-    const pllAverage = calculateAverage(solves.map((x) => getStep(x, StepName.PLL)?.time ?? 0).slice(-windowSize));
-    const f2lAverage = f2l1 + f2l2 + f2l3 + f2l4;
-    const yourAverages = [crossAverage, f2lAverage, ollAverage, pllAverage];
-    const typicalAverages = getTypicalAverages(average);
+    const recent = solves.slice(-windowSize), average = calculateAverage(recent.map(solve => solve.time));
+    const usable = Number.isFinite(average) && (solves[0]?.steps?.length ?? 0) >= 7;
+    const groups = [[StepName.Cross], [StepName.F2L_1, StepName.F2L_2, StepName.F2L_3, StepName.F2L_4], [StepName.OLL], [StepName.PLL]];
+    const yourAverages = groups.map(group => usable ? group.reduce((sum, step) => sum + calculateAverage(recent.map(solve => getStep(solve, step)?.time ?? 0)), 0) : 0);
     return {
         labels,
         datasets: [
             { label: `Your average by step over last ${windowSize}`, data: yourAverages },
-            { label: `Typical cuber's average by step, using your average time`, data: typicalAverages },
+            { label: `Typical cuber's average by step, using your average time`, data: usable ? getTypicalAverages(average) : [0, 0, 0, 0] },
         ],
     };
 }

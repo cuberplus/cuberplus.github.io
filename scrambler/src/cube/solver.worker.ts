@@ -3,7 +3,7 @@ import { generateWorksheet, GenerationEvent } from './generation';
 import { Settings, Solver, validateSettings } from './solver';
 
 declare const self: DedicatedWorkerGlobalScope;
-// eslint-disable-next-line no-restricted-globals
+
 const scope = self;
 let solver: Solver | undefined;
 scope.onmessage = async (event: MessageEvent<Settings>) => {

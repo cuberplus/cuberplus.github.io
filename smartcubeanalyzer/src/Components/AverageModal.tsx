@@ -3,8 +3,8 @@ import '../../../timer/src/AverageDialog.css';
 import { calculateAverage } from '../Helpers/MathHelpers';
 import { Solve } from '../Helpers/Types';
 
-export function AverageModal({ solves, numbers, percentage, close, view }: {
-    solves: Solve[]; numbers: number[]; percentage: number; close: () => void; view: (solve: Solve) => void;
+export function AverageModal({ solves, numbers, percentage, title, close, view }: {
+    solves: Solve[]; numbers: number[]; percentage: number; title?: string; close: () => void; view: (solve: Solve) => void;
 }) {
     const trim = Math.min(Math.floor((solves.length - 1) / 2), Math.ceil(solves.length * percentage / 100));
     const ranked = solves.map((solve, index) => ({ solve, index })).sort((a, b) => (a.solve.dnf ? Infinity : a.solve.time) - (b.solve.dnf ? Infinity : b.solve.time) || a.index - b.index);
@@ -14,5 +14,5 @@ export function AverageModal({ solves, numbers, percentage, close, view }: {
         turns: solve.turns, tps: Number.isFinite(solve.tps) ? solve.tps : null,
         trimmed: rank < trim ? 'best' : rank >= solves.length - trim ? 'worst' : null,
     }));
-    return <AverageDialog rows={rows} time={Number.isFinite(average) ? average : 'DNF'} precision={3} close={close} view={view} />;
+    return <AverageDialog rows={rows} time={Number.isFinite(average) ? average : 'DNF'} precision={3} close={close} view={view} title={title} />;
 }

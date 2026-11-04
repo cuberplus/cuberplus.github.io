@@ -1,7 +1,6 @@
-import { createRequire } from 'node:module';
+import { chromium, expect } from '@playwright/test';
 import { join } from 'node:path';
 
-const { chromium, expect } = createRequire(new URL('../timer/package.json', import.meta.url))('@playwright/test');
 const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : undefined });
 const base = 'http://127.0.0.1:4173';
 

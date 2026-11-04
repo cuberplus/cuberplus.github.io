@@ -193,7 +193,7 @@ export interface FilterPanelState {
     chopPercentage: number
 }
 
-export interface FileInputProps { }
+export type FileInputProps = Record<string, never>;
 
 export interface FileInputState {
     csvFileNames?: string,
@@ -222,7 +222,7 @@ export interface ChartPanelProps {
     chopPercentage?: number
 }
 
-export interface ChartPanelState { chartData: ChartDataBundle | null; isComputing: boolean; replayId?: string; average?: { solves: Solve[]; numbers: number[]; percentage: number }; }
+export interface ChartPanelState { chartData: ChartDataBundle | null; isComputing: boolean; replayId?: string; average?: { solves: Solve[]; numbers: number[]; percentage: number; title?: string }; }
 
 /** A record chart plots one point per personal best, so its x axis is a date rather than a category. */
 export type DatedPoint = { x: Date; y: number; endIndex?: number };
@@ -275,7 +275,7 @@ export interface AlgoPracticeRow {
 
 export interface HelpPanelProps { showHelpPanel: boolean, onCloseHandler: () => void }
 
-export interface HelpPanelState { }
+export type HelpPanelState = Record<string, never>;
 
 export interface FastestSolve {
     time: string,

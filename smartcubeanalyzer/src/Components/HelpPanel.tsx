@@ -5,12 +5,15 @@ import cubeastCsv from "../Assets/CubeastCsv.png";
 import cubeastDownload from "../Assets/CubeastDownload.png";
 import acubemyCsv from "../Assets/AcubemyCsv.png";
 import analyzerSteps from "../Assets/AnalyzerSteps.png";
+import { PageVisible } from '@cuberplus/navigation';
 
 export class HelpPanel extends React.Component<HelpPanelProps, HelpPanelState> {
+    static contextType = PageVisible;
     render() {
         return (
             <Modal
-                show={this.props.showHelpPanel}
+                show={this.props.showHelpPanel && this.context !== false}
+                container={document.querySelector<HTMLElement>('.site-page--smartcubeanalyzer') ?? document.body}
                 onHide={() => { this.props.onCloseHandler() }}
                 size="xl"
             >

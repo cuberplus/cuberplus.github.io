@@ -4,7 +4,7 @@ import { CrossColor, MethodName, Solve, Step, StepName } from "./Types";
 import { calculateMovingAverageChopped } from "./MathHelpers";
 
 export function GetEmptyStep() {
-    let step: Step = {
+    const step: Step = {
         time: 0,
         executionTime: 0,
         recognitionTime: 0,
@@ -21,7 +21,7 @@ export function GetEmptyStep() {
 }
 
 export function GetEmptySolve() {
-    let solve: Solve = {
+    const solve: Solve = {
         id: "",
         source: 'cubeast',
         rawSourceId: "",
@@ -49,7 +49,7 @@ export function GetEmptySolve() {
 }
 
 export function CalculateMostUsedMethod(solves: Solve[]): MethodName {
-    let counts: { [id in MethodName]: number } = {
+    const counts: { [id in MethodName]: number } = {
         [MethodName.CFOP]: 0,
         [MethodName.CFOP_2OLL]: 0,
         [MethodName.CFOP_4LL]: 0,
@@ -78,17 +78,17 @@ export function CalculateWindowSize(solveCount: number): number {
         return 5;
     }
 
-    let reducedWindowSize = Math.ceil(solveCount / 4);
+    const reducedWindowSize = Math.ceil(solveCount / 4);
     return Math.max(5, Math.min(reducedWindowSize, Const.DefaultWindowSize));
 }
 
 export function CalculateAllSessionOptions(solves: Solve[]): Option[] {
-    let options: Option[] = [];
-    let sessions = new Set<string>();
+    const options: Option[] = [];
+    const sessions = new Set<string>();
     solves.forEach(x => {
         sessions.add(x.session);
     });
-    let uniqueSessions = Array.from(sessions.values());
+    const uniqueSessions = Array.from(sessions.values());
     uniqueSessions.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     uniqueSessions.forEach(x => {
         options.push({ label: x, value: x })

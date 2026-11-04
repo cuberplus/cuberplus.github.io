@@ -19,7 +19,7 @@ export async function generateWorksheet(settings: Settings, solver: Pick<Solver,
   emit: (event: GenerationEvent) => void, options: GenerateOptions = {}): Promise<void> {
   validateSettings(settings);
   const start = performance.now(), seen = new Set<string>(), emitted = new Set<string>();
-  const counts: number[] = Array(settings.maximum - settings.minimum + 1).fill(0);
+  const counts = Array<number>(settings.maximum - settings.minimum + 1).fill(0);
   const searchSettings = { ...settings, maximum: 20 };
   const maxAttempts = options.maxAttempts ?? Math.max(200, settings.count * 100);
   const maxElapsedMs = options.maxElapsedMs ?? 180000;

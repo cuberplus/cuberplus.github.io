@@ -2,15 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { Replay } from './Replay';
 import { readSolves } from './storage';
 import { loadCube } from './puzzle';
-import './analyzer-replay.css';
+import type { Cube } from './puzzle';
+import type { Solve } from './engine';
+import { usePageDialog } from '@cuberplus/navigation';
 
-export default function AnalyzerReplay({ id, close }) {
-  const dialog = useRef(null);
-  const [data, setData] = useState(null);
+export default function AnalyzerReplay({ id, close }: { id: string; close: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [data, setData] = useState<{ solve: Solve; cube: Cube } | null>(null);
   const [error, setError] = useState('');
+  usePageDialog(dialog);
   useEffect(() => {
     let cancelled = false;
-    dialog.current?.showModal();
     Promise.all([readSolves(), loadCube()]).then(([solves, cube]) => {
       const solve = solves.find(solve => solve.id === id && solve.status !== 'active');
       if (!solve) throw new Error('This solve is no longer saved in Timer.');

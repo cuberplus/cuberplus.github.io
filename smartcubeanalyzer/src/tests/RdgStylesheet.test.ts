@@ -16,8 +16,8 @@ import { join } from 'path';
 
 const ROOT = join(__dirname, '..', '..');
 const VENDORED = join(ROOT, 'public', 'react-data-grid.css');
-const PACKAGED = join(ROOT, 'node_modules', 'react-data-grid', 'lib', 'styles.css');
-const INDEX_HTML = join(ROOT, 'index.html');
+const PACKAGED = join(ROOT, '..', 'node_modules', 'react-data-grid', 'lib', 'styles.css');
+const INDEX_HTML = join(ROOT, '..', 'index.html');
 const CHART_PANEL = join(ROOT, 'src', 'Components', 'ChartPanel.tsx');
 
 describe('the vendored react-data-grid stylesheet', () => {
@@ -30,13 +30,13 @@ describe('the vendored react-data-grid stylesheet', () => {
 
     test('is linked from index.html so the build copies it verbatim', () => {
         const html = readFileSync(INDEX_HTML, 'utf8');
-        expect(html).toContain('%BASE_URL%react-data-grid.css');
+        expect(html).toContain('/smartcubeanalyzer/react-data-grid.css');
     });
 
     test('keeps public asset URLs from being rebased twice in development', () => {
         const html = readFileSync(INDEX_HTML, 'utf8');
-        const tags = html.match(/<(?:link|script)\b[^>]*(?:href|src)="%BASE_URL%[^"]+"[^>]*>/g) ?? [];
-        expect(tags).toHaveLength(5);
+        const tags = html.match(/<(?:link|script)\b[^>]*(?:href|src)="\/smartcubeanalyzer\/[^"]+"[^>]*>/g) ?? [];
+        expect(tags).toHaveLength(2);
         for (const tag of tags) expect(tag).toContain('vite-ignore');
     });
 

@@ -4,6 +4,8 @@ import { Cube, movesOf } from './puzzle';
 import { CubeView } from './CubeView';
 import { formatTime, turns } from './storage';
 import { analyzeCFOP, CFOP_STEPS } from './cfop';
+import { usePageDialog } from '@cuberplus/navigation';
+import './Replay.css';
 
 export function Replay({ cube, solve, close, precision = 2 }: { cube: Cube; solve: Solve; close: () => void; precision?: 2 | 3 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -12,7 +14,7 @@ export function Replay({ cube, solve, close, precision = 2 }: { cube: Cube; solv
   const [speed, setSpeed] = useState(1);
   const moves = useMemo(() => solve.moves.map(turn => turn.move), [solve]);
   const { cross, ends, cases } = useMemo(() => analyzeCFOP(solve, cube), [solve, cube]);
-  useEffect(() => { dialog.current?.showModal(); }, []);
+  const visible = usePageDialog(dialog);
   const dismiss = () => { dialog.current?.close(); close(); };
   const steps = useMemo(() => {
     return CFOP_STEPS.map((name, step) => {
@@ -34,11 +36,11 @@ export function Replay({ cube, solve, close, precision = 2 }: { cube: Cube; solv
     });
   }, [ends, cases, solve]);
   useEffect(() => {
-    if (!playing || position >= solve.moves.length) { setPlaying(false); return; }
+    if (!visible || !playing || position >= solve.moves.length) { setPlaying(false); return; }
     const before = position ? solve.moves[position - 1].elapsed : 0, delay = Math.max(20, (solve.moves[position].elapsed - before) / speed);
     const timeout = setTimeout(() => setPosition(p => p + 1), delay);
     return () => clearTimeout(timeout);
-  }, [playing, position, speed, solve]);
+  }, [playing, position, speed, solve, visible]);
   const alg = solve.moves.slice(0, position).map(move => move.move).join(' '), facelets = cube.facelets(cube.parse(solve.startFacelets).applyAlg(alg));
   return <dialog ref={dialog} className="panel replay-dialog" aria-labelledby="replay-title" onCancel={event => { event.preventDefault(); dismiss(); }}>
     <div className="d-flex justify-content-between"><h2 id="replay-title">Solve replay</h2><button autoFocus className="btn btn-outline-secondary" onClick={dismiss}>Close replay</button></div>

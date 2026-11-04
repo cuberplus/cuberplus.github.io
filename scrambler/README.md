@@ -11,32 +11,41 @@ length of 2 HTM.
 
 ## Run
 
+Run all commands from the unified `cuberplus.github.io` repository root,
+not this `scrambler` directory. Use Node.js 22.12+ and Git.
+
 ```sh
 npm ci
 npm start
 ```
 
 ```sh
-npm run test:ci
-npm run test:performance
+npm test
 npm run build
 ```
 
+Development runs at `http://127.0.0.1:5173/scrambler/`.
+The root test runner includes Scrambler's unit and performance suites.
+After building, start `npm run preview` in another terminal and run
+`npm run test:site` for cross-tool browser and offline checks in Microsoft Edge.
+
 ## Deploy
+
+Only deploy with explicit approval, from the repository root:
 
 ```sh
 npm run deploy
 ```
 
-This builds the website with the `/scrambler` asset prefix and publishes `build`
-to the `gh-pages` branch. GitHub Pages serves that branch from its root at
-`https://cuberplus.com/scrambler/`, inheriting the custom domain from the
-`cuberplus.github.io` site. Do not add a project-level `CNAME`, which would
-override that inherited domain.
+This builds all four tools into the root `build` directory and publishes the
+entire site to the root `gh-pages` branch, including its shared custom domain.
+Scrambler remains at `https://cuberplus.com/scrambler/`; no separate project
+Pages deployment is needed.
 
-The `build` directory can also be served by any static host at `/scrambler/`.
+Serve `build` from a static host's root to expose all four tool routes.
 Serve over HTTP(S), not `file://`, so the browser can load the bundled worker.
-A deployed site needs no application server.
+A deployed site needs no application server. The whole site is installable
+and works offline after its first successful load.
 
 ## Print
 

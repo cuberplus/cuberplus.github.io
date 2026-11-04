@@ -31,7 +31,7 @@ const moveFactsCache = new Map<string, Map<string, MoveFacts>>();
 function moveFacts(moves: string, auf: Set<string>): MoveFacts {
     const face = String(auf.values().next().value);
     let cache = moveFactsCache.get(face);
-    if (!cache) moveFactsCache.set(face, cache = new Map());
+    if (!cache) moveFactsCache.set(face, cache = new Map<string, MoveFacts>());
     let facts = cache.get(moves);
     if (!facts) {
         const tokens = tokenizeMoves(moves);

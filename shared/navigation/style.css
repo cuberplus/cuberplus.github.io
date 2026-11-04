@@ -3,7 +3,7 @@
 .cuberplus-page { display: flex; flex-direction: column; min-height: 100vh; }
 .cuberplus-footer { flex-shrink: 0; margin-top: auto; padding: 24px; color: var(--cp-muted); text-align: center; font: 400 13px/20px var(--cp-font); }
 
-.cuberplus-header {
+.cuberplus-page .cuberplus-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -31,12 +31,12 @@
 .cuberplus-header-controls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-left: auto; }
 .cuberplus-header > .local-badge { margin-left: auto; }
 @media (max-width: 720px) {
-  .cuberplus-header { min-height: 72px; padding: 16px 12px; }
+  .cuberplus-page .cuberplus-header { min-height: 72px; padding: 16px 12px; }
   .cuberplus-navigation { gap: 12px; }
   .cuberplus-links { gap: 0; }
   .cuberplus-links a { width: 36px; }
 }
 @media print {
   .cuberplus-page { display: block; min-height: 0; }
-  .cuberplus-header, .cuberplus-footer { display: none; }
+  .cuberplus-page .cuberplus-header, .cuberplus-footer { display: none; }
 }

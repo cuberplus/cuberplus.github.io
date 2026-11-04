@@ -4,7 +4,7 @@ export class BluetoothCube {
   connection: SmartCubeConnection | null = null;
   private unsubscribe: (() => void) | null = null;
   async connect(mac: string, event: (event: SmartCubeEvent) => void, connected: (connection: SmartCubeConnection) => void, status: (status: string) => void): Promise<void> {
-    const started = performance.now(), log = (message: string, details: object | string = '') => console.info(`[Timer Bluetooth +${Math.round(performance.now() - started)}ms] ${message}`, details);
+    const started = performance.now(), log = (message: string, details: string | SmartCubeEvent | (Partial<Pick<SmartCubeConnection, 'deviceName' | 'deviceMAC' | 'protocol' | 'capabilities'>> & { deviceId?: string; fallback?: boolean; enteredMAC?: string | null }) = '') => console.info(`[Timer Bluetooth +${Math.round(performance.now() - started)}ms] ${message}`, details);
     const connection = await connectSmartCube({
       onStatus: message => { log('Connection stage', message); status(message); },
       macAddressProvider: async (device, fallback) => {

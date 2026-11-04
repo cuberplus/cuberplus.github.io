@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { ActiveElement } from 'chart.js';
 import { ChartPanel } from '../Components/ChartPanel';
 import { AverageModal } from '../Components/AverageModal';
-import { ChartPanelProps, MethodName, Solve, StepName } from '../Helpers/Types';
+import { ChartPanelProps, CrossColor, MethodName, Solve, StepName } from '../Helpers/Types';
 import { Const } from '../Helpers/Constants';
 import { splitIntoChunks } from '../Helpers/MathHelpers';
 import { computeAllChartData } from '../Workers/chartWorker';
@@ -122,14 +122,55 @@ describe('Analyzer inline drill-down', () => {
         expect(instance.state.average!.solves.every(solve => solve.steps.find(step => step.name === StepName.OLL)?.case === data.labels![0])).toBe(true);
     });
 
-    test('empty chart clicks, singles, histogram bars and synthetic reference averages do not open misleading averages', () => {
+    test('empty chart clicks and synthetic reference averages do not open misleading averages', () => {
         const instance = panel();
         instance.openAverage('runningAverage');
-        instance.openAverage('recordHistory', point(0, 0));
-        instance.openAverage('histogram', point(0));
-        instance.openAverage('dailyRecord', point(0));
         instance.openAverage('typicalCompare', point(0, 1));
         expect(instance.state.average).toBeUndefined();
+    });
+
+    test('a histogram bin selects the exact recent valid window and preserves original identities through sorting and View', () => {
+        const solves = makeSolves(9).map((solve, i) => ({ ...solve, source: 'timer' as const, time: [12.1, 15, 12, 12.999, 13, 12.5, 11.999, 12.8, 12.3][i], dnf: i === 8 }));
+        const instance = panel({ solves, windowSize: 5 });
+        const data = instance.state.chartData!.histogram, index = data.labels!.indexOf(12);
+        instance.openAverage('histogram', point(index));
+        expect(instance.state.average!.numbers).toEqual([4, 6, 8]);
+        expect(instance.state.average!.solves).toEqual([solves[3], solves[5], solves[7]]);
+        expect(instance.state.average!.percentage).toBe(0);
+        expect(instance.state.average!.solves.length).toBe(data.datasets[0].data[index]);
+        render(<AverageModal {...instance.state.average!} close={() => undefined} view={solve => instance.openSolveSource(solve)} />);
+        expect(screen.getByRole('heading', { name: '12s to <13s (3 solves)' })).not.toBeNull();
+        expect(screen.queryAllByTitle(/^Excluded /)).toHaveLength(0);
+        fireEvent.click(screen.getByRole('button', { name: 'Time', exact: true }));
+        expect(within(screen.getByRole('table')).getAllByRole('rowheader').map(cell => cell.textContent)).toEqual(['6', '8', '4']);
+        fireEvent.click(screen.getByRole('button', { name: 'View solve 8' }));
+        expect(instance.state.replayId).toBe(solves[7].id);
+    });
+
+    test('daily bests and single records replay the exact solve despite tied times, duplicate dates and DNFs', () => {
+        const solves = makeSolves(6).map((solve, i) => ({ ...solve, source: 'timer' as const, date: new Date(2026, 0, i < 4 ? 1 : 2, 12), time: [2, 1, 1, 0, 0, 4][i], dnf: i === 3 }));
+        const instance = panel({ solves });
+        const open = jest.spyOn(window, 'open').mockReturnValue(null);
+        instance.openAverage('dailyRecord', point(0));
+        expect(instance.state.replayId).toBe(solves[1].id);
+        instance.openAverage('dailyRecord', point(1));
+        expect(instance.state.replayId).toBe(solves[4].id);
+        instance.openAverage('recordHistory', point(1, 0));
+        expect(instance.state.replayId).toBe(solves[1].id);
+        expect(open).not.toHaveBeenCalled();
+        expect(instance.state.average).toBeUndefined();
+    });
+
+    test('percentage points list only their contributing category in the sampled window', () => {
+        const solves = makeSolves(12).map((solve, i) => ({ ...solve, time: i + 1, crossColor: i % 2 ? CrossColor.White : CrossColor.Blue }));
+        const instance = panel({ solves, goodTime: 10, badTime: 11 });
+        const data = instance.state.chartData!.runningColorPercentages, index = data.labels!.length - 1;
+        instance.openAverage('runningColorPercentages', point(index));
+        expect(instance.state.average!.numbers).toEqual([8, 10, 12]);
+        instance.openAverage('goodBad', point(index));
+        expect(instance.state.average!.numbers).toEqual([8, 9]);
+        instance.openAverage('goodBad', point(index, 1));
+        expect(instance.state.average!.numbers).toEqual([12]);
     });
 });
 

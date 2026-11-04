@@ -1,4 +1,5 @@
 .homepage {
+  --cp-accent: #a9bfd5;
   --ink: var(--cp-text);
   --muted: var(--cp-muted);
   --line: var(--cp-border);

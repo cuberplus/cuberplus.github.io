@@ -1,4 +1,5 @@
 import { Const } from "./Constants";
+export { movingAverages as calculateMovingAverageChopped } from '../../../shared/averages';
 
 export function sumArray(data: number[]): number {
     return data.reduce((acc, curr) => acc + curr, 0);
@@ -9,8 +10,8 @@ export function calculateAverage(data: number[]): number {
 }
 
 export function calculateStandardDeviation(data: number[]): number {
-    let samples = data.slice(-Const.StdDevWindow);
-    let mean = calculateAverage(samples)
+    const samples = data.slice(-Const.StdDevWindow);
+    const mean = calculateAverage(samples)
 
     let variance = 0;
     for (let i = 0; i < samples.length; i++) {
@@ -27,7 +28,7 @@ export function calculate90thPercentile(data: number[], window: number): number 
         recentSolves = data.slice(-window);
     }
 
-    let sortedSolves = recentSolves.sort((a, b) => {
+    const sortedSolves = recentSolves.sort((a, b) => {
         return a - b;
     })
 
@@ -38,7 +39,7 @@ export function calculate90thPercentile(data: number[], window: number): number 
 }
 
 export function calculateMovingAverage(data: number[], window: number): number[] {
-    let result: number[] = [];
+    const result: number[] = [];
     if (data.length < window) {
         return result;
     }
@@ -55,73 +56,12 @@ export function calculateMovingAverage(data: number[], window: number): number[]
     return result;
 };
 
-function sortedPosition(arr: number[], val: number): number {
-    let lo = 0, hi = arr.length;
-    while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (arr[mid] < val) lo = mid + 1;
-        else hi = mid;
-    }
-    return lo;
-}
-
-export function calculateMovingAverageChopped(data: number[], window: number, chop = Math.ceil(window / 20)): number[] {
-    if (chop < 0) throw new Error("Bad chop");
-    if (chop * 2 >= window) throw new Error("Bad chop");
-
-    const result: number[] = [];
-    if (data.length < window) return result;
-
-    const sorted = data.slice(0, window).sort((a, b) => a - b);
-    let sum = 0, dnfs = 0;
-    // Infinity represents a DNF; never add it to the sum, so later windows recover.
-    const adjust = (value: number, direction: number) => {
-        if (value === Infinity) dnfs += direction;
-        else sum += direction * value;
-    };
-    sorted.slice(chop, window - chop).forEach(value => adjust(value, 1));
-    const average = () => dnfs ? Infinity : sum / (window - chop * 2);
-    result.push(average());
-    for (let i = window; i < data.length; i++) {
-        const outgoing = sortedPosition(sorted, data[i - window]);
-        adjust(sorted[outgoing < chop ? chop : outgoing >= window - chop ? window - chop - 1 : outgoing], -1);
-        sorted.splice(outgoing, 1);
-        const incoming = sortedPosition(sorted, data[i]);
-        adjust(incoming < chop ? sorted[chop - 1] : incoming >= window - chop ? sorted[window - chop - 1] : data[i], 1);
-        sorted.splice(incoming, 0, data[i]);
-        result.push(average());
-    }
-
-    return result;
-}
-
 export function calculateMovingPercentage<T>(data: T[], window: number, criteria: (item: T) => boolean): number[] {
-    let result: number[] = [];
-    if (data.length < window) {
-        return result;
-    }
-
-    let good = 0;
-    for (let i = 0; i < window; ++i) {
-        if (criteria(data[i])) {
-            good++;
-        }
-    }
-    result.push(good / window * 100);
-    for (let i = window; i < data.length; ++i) {
-        if (criteria(data[i - window])) {
-            good--;
-        }
-        if (criteria(data[i])) {
-            good++;
-        }
-        result.push(good / window * 100);
-    }
-    return result;
+    return data.length < window ? [] : calculateMovingAverage(data.map(item => Number(criteria(item))), window).map(value => value * 100);
 }
 
 export function calculateMovingStdDev(data: number[], window: number) {
-    let result: number[] = [];
+    const result: number[] = [];
     if (Number.isNaN(window) || data.length < window) {
         return result;
     }
@@ -131,10 +71,10 @@ export function calculateMovingStdDev(data: number[], window: number) {
     let variance = 0;
 
     for (let i = 0; i < data.length; i++) {
-        let oldMean = mean;
-        let goingAway = i < window ? 0 : data[i - window];
+        const oldMean = mean;
+        const goingAway = i < window ? 0 : data[i - window];
         mean = oldMean + (data[i] - goingAway) / window;
-        let newMean = mean;
+        const newMean = mean;
         variance += (data[i] - goingAway) * ((data[i] - newMean) + (goingAway - oldMean)) / (window - 1)
         if (i >= (window - 1)) {
             // Floating point accumulation can push variance marginally below zero
@@ -164,7 +104,7 @@ export function makeLabels(length: number, pointsPerGraph: number, start = 1): s
 }
 
 export function splitIntoChunks<T>(values: T[], chunks: number): T[][] {
-    let size: number = Math.ceil(values.length / chunks);
+    const size: number = Math.ceil(values.length / chunks);
     return Array.from({ length: chunks }, (v, i) =>
         values.slice(i * size, i * size + size)
     );

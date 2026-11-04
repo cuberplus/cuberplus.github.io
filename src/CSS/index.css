@@ -7,5 +7,8 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #f6f7f2;
+  background: var(--cp-bg);
+  color: var(--cp-text);
 }
+[hidden] { display: none !important; }
+.cuberplus-install { border: 1px solid var(--cp-border); border-radius: 6px; background: var(--cp-panel); color: var(--cp-muted); padding: 6px 9px; font-size: 12px; }

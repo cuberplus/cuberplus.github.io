@@ -1,9 +1,9 @@
-import { createRequire } from 'node:module';
+import { chromium, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 
-const { chromium, expect } = createRequire(new URL('../timer/package.json', import.meta.url))('@playwright/test');
-const { APP_VERSION } = createRequire(import.meta.url)('../shared/navigation');
+const APP_VERSION = readFileSync(new URL('../shared/navigation/index.tsx', import.meta.url), 'utf8').match(/APP_VERSION = '([^']+)'/)[1];
 const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : undefined });
-const base = 'http://127.0.0.1:4173';
+const base = process.env.SITE_URL ?? 'http://127.0.0.1:4173';
 const routes = ['/', '/timer/', '/smartcubeanalyzer/', '/scrambler/'];
 const links = [['Home', '/'], ['Timer', '/timer/'], ['Smartcube Analyzer', '/smartcubeanalyzer/'], ['Scrambler', '/scrambler/']];
 const errors = [];
@@ -29,7 +29,7 @@ try {
         expect(box.x + box.width).toBeLessThanOrEqual(width);
       }
       await expect(nav.locator('[aria-current="page"]')).toHaveAttribute('href', route);
-      const geometry = await page.locator('.cuberplus-navigation').evaluate(element => {
+      const geometry = await page.locator('.cuberplus-navigation:visible').evaluate(element => {
         const brand = element.querySelector('.cuberplus-brand');
         const style = getComputedStyle(brand);
         const rect = node => {
@@ -42,9 +42,9 @@ try {
       expect(geometry).toEqual(reference);
       expect(geometry.brand[0]).toBe(width <= 720 ? 12 : 24);
       expect(geometry.brand[1]).toBe(width <= 720 ? 16 : 20);
-      await expect(page.locator('.cuberplus-brand')).toHaveCSS('font-size', '28px');
+      await expect(page.locator('.cuberplus-brand:visible')).toHaveCSS('font-size', '28px');
       await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(16, 20, 30)');
-      await expect(page.locator('.cuberplus-header')).toHaveCSS('background-color', 'rgb(16, 20, 30)');
+      await expect(page.locator('.cuberplus-header:visible')).toHaveCSS('background-color', 'rgb(16, 20, 30)');
       await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#10141e');
       const controls = page.locator('.cuberplus-header-controls, .cuberplus-header > .local-badge');
       if (await controls.count()) {
@@ -109,7 +109,7 @@ try {
   const filters = page.getByRole('button', { name: 'Open filters', exact: true });
   await expect(filters).toBeVisible({ timeout: 60000 });
   await expect(page.locator('canvas').first()).toBeVisible();
-  await expect(page.locator('.cuberplus-brand')).toHaveCSS('font-size', '28px');
+  await expect(page.locator('.cuberplus-brand:visible')).toHaveCSS('font-size', '28px');
   expect(await filters.evaluate(element => element.closest('.cuberplus-header-controls') !== null)).toBe(true);
   await filters.click();
   await expect(page.locator('.offcanvas.show')).toBeVisible();

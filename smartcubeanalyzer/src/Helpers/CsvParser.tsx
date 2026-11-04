@@ -331,7 +331,7 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
     const formedArr: Solve[] = [];
     const stepCount = GetEmptySolve().steps.length;
     // Reused across rows; the parser is single threaded, so one set of scratch buffers is enough.
-    const scratch: RowScratch = { moves: new Array(stepCount).fill(null), cumulativeSec: new Array(stepCount).fill(-1), penaltyMs: 0 };
+    const scratch: RowScratch = { moves: new Array<MoveTiming[] | null>(stepCount).fill(null), cumulativeSec: new Array<number>(stepCount).fill(-1), penaltyMs: 0 };
     const times = [0, 0, 0, 0];
     const total = stringVal.length;
 

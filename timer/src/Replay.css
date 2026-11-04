@@ -7,6 +7,7 @@ body:has(.replay-dialog[open]) { overflow: hidden; }
 .replay-dialog .move.done { color: var(--cp-accent); }
 .replay-dialog .move.current { background: #65d3b0; color: #10141e; }
 .replay-dialog .move.partial { background: #f5b942; color: #10141e; }
+.move.correction { background: #dc3545; color: #fff; }
 .replay-dialog .replay-speed { max-width: 90px; }
 .replay-dialog .replay-step-name { display: table; margin: 0 0 .35rem; padding: .2rem .6rem; border-left: 3px solid #9fc8ff; border-radius: 4px; background: var(--cp-bg); color: var(--cp-accent); font: 700 .75rem var(--cp-font); letter-spacing: .06em; text-transform: uppercase; }
 @media (max-width: 575px) { .replay-dialog { padding: 1rem; } }

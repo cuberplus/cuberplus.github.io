@@ -14,6 +14,7 @@ import { Const } from "../Helpers/Constants";
 import { CalculateAllSessionOptions, CalculateBenchmarkTimes, CalculateWindowSize } from "../Helpers/CubeHelpers";
 import { APP_VERSION } from "../Helpers/Version";
 import ReactSwitch from "react-switch";
+import { PageVisible } from '@cuberplus/navigation';
 
 /** react-bootstrap's FormControl accepts input, select and textarea events, so borrow its own handler type. */
 type FormControlChangeHandler = NonNullable<React.ComponentProps<typeof FormControl>['onChange']>;
@@ -81,6 +82,7 @@ function defaultSelections(method: MethodName, sessions: Option[], bench: { good
 }
 
 export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelState> {
+    static contextType = PageVisible;
     state: FilterPanelState = {
         allSolves: [],
         filteredSolves: [],
@@ -285,11 +287,11 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
     }
 
     chosenStepsChanged(selectedList: Option<StepName>[]) {
-        let selectedSteps: StepName[] = selectedList.map(x => x.value);
-        let allSteps = Const.MethodSteps[this.state.filters.method];
+        const selectedSteps: StepName[] = selectedList.map(x => x.value);
+        const allSteps = Const.MethodSteps[this.state.filters.method];
 
         // Sort the steps to match the order in the method
-        let sortOrder = Object.fromEntries(allSteps.map((k, i) => [k, i + 1]));
+        const sortOrder = Object.fromEntries(allSteps.map((k, i) => [k, i + 1]));
         selectedSteps.sort((a, b) =>
             (sortOrder[a] || Number.MAX_VALUE) - (sortOrder[b] || Number.MAX_VALUE)
         );
@@ -515,6 +517,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
     }
 
     render() {
+        const container = document.querySelector<HTMLElement>('.site-page--smartcubeanalyzer') ?? document.body;
         let filters: JSX.Element = (<></>);
         if (this.state.allSolves.length > 0) {
             filters = (
@@ -653,7 +656,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                             selected={this.state.filters.startDate}
                             onChange={this.setStartDate.bind(this)}
                             dateFormat={datePickerFormat()}
-                            popperContainer={({ children }) => createPortal(children, document.body)}
+                            popperContainer={({ children }) => createPortal(children, container)}
                             popperProps={{ strategy: "fixed" }}
                         />,
                         "Pick Start Date",
@@ -665,7 +668,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                             selected={this.state.filters.endDate}
                             onChange={this.setEndDate.bind(this)}
                             dateFormat={datePickerFormat()}
-                            popperContainer={({ children }) => createPortal(children, document.body)}
+                            popperContainer={({ children }) => createPortal(children, container)}
                             popperProps={{ strategy: "fixed" }}
                         />,
                         "Pick End Date",
@@ -719,7 +722,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         return (
             <main className="body">
                 <section className="dashboard">
-                    <Offcanvas show={this.state.showFilters} onHide={this.hideFilters.bind(this)}>
+                    <Offcanvas container={container} show={this.state.showFilters && this.context !== false} onHide={this.hideFilters.bind(this)}>
                         <Offcanvas.Header closeButton>
                             <Offcanvas.Title className="me-3">Choose solves to show!</Offcanvas.Title>
                             <Button variant="outline-secondary" size="sm" onClick={this.resetFilters.bind(this)}>

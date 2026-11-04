@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import Navigation, { Footer } from '@cuberplus/navigation';
+import { useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import Navigation, { Footer, PageLocation, usePageDialog } from '@cuberplus/navigation';
 import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
 import { BluetoothCube } from './bluetooth';
 import { TimerEngine, solveTime, type Solve } from './engine';
@@ -10,6 +10,7 @@ import { CubeView } from './CubeView';
 import { Replay } from './Replay';
 import { SolveTimeline } from './SolveTimeline';
 import { useScreenWakeLock } from './useScreenWakeLock';
+import { useInstall } from '../../src/pwa';
 
 const errorText = (error: Error): string => error.message || 'The operation failed.';
 const historyColumns = [
@@ -19,7 +20,6 @@ const historyColumns = [
   { key: 'tps', label: 'TPS' },
 ] as const;
 type HistoryColumn = typeof historyColumns[number]['key'];
-type InstallPrompt = Event & { prompt(): Promise<{ outcome: 'accepted' | 'dismissed' }> };
 type HiddenVisuals = { timer: boolean; cube: boolean; progressBar: boolean };
 
 function SolvePenalty({ solve }: { solve: Solve | null | undefined }) {
@@ -29,8 +29,9 @@ function SolvePenalty({ solve }: { solve: Solve | null | undefined }) {
 }
 
 export default function App() {
+  const address = useContext(PageLocation);
   useScreenWakeLock();
-  const [, render] = useReducer(n => n + 1, 0);
+  const [, render] = useReducer((n: number) => n + 1, 0);
   const [cube, setCube] = useState<Cube | null>(null);
   const [history, setHistory] = useState<Solve[]>([]);
   const [celebrations, setCelebrations] = useState<{ id: string; name: string; time: number; solve: Solve; average: ReturnType<typeof averageDetails> }[]>([]);
@@ -57,14 +58,13 @@ export default function App() {
   });
   const [session, setSession] = useState('Default');
   const [replay, setReplay] = useState<Solve | null>(null);
-  const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
-  const [installed, setInstalled] = useState(() => window.matchMedia?.('(display-mode: standalone)').matches ?? false);
-  const [installError, setInstallError] = useState('');
+  const { installPrompt, installed, installError, installApp } = useInstall();
   const engine = useRef<TimerEngine | null>(null);
   const historyRef = useRef<Solve[]>([]);
   const recordChecks = useRef(new Map<string, { solve: Solve; previous: Solve[]; timeout: ReturnType<typeof setTimeout> }>());
   const dailyRecords = useRef<{ date: string; records: string[] } | null>(null);
   const optionsDialog = useRef<HTMLDialogElement>(null);
+  usePageDialog(optionsDialog, false);
   const bluetooth = useRef(new BluetoothCube());
   const writes = useRef(Promise.resolve());
   const pending = useRef(0);
@@ -80,28 +80,6 @@ export default function App() {
   overTurnPenaltyRef.current = overTurnPenalty;
   const showEveryLongPbRef = useRef(showEveryLongPb);
   showEveryLongPbRef.current = showEveryLongPb;
-
-  useEffect(() => {
-    if (installed) return;
-    const offerInstall = (event: Event) => {
-      if (!('prompt' in event) || typeof event.prompt !== 'function') return;
-      event.preventDefault(); setInstallPrompt(event as InstallPrompt); setInstallError('');
-    };
-    const didInstall = () => { setInstallPrompt(null); setInstalled(true); };
-    window.addEventListener('beforeinstallprompt', offerInstall);
-    window.addEventListener('appinstalled', didInstall);
-    return () => {
-      window.removeEventListener('beforeinstallprompt', offerInstall);
-      window.removeEventListener('appinstalled', didInstall);
-    };
-  }, [installed]);
-
-  async function installApp() {
-    if (!installPrompt) return;
-    const offer = installPrompt; setInstallPrompt(null); setInstallError('');
-    try { await offer.prompt(); }
-    catch { setInstallError('Installation could not start. Try the Install app option in your browser menu.'); }
-  }
 
   function updateHistory(items: Solve[]) { historyRef.current = items; setHistory(items); }
 
@@ -183,8 +161,6 @@ export default function App() {
       engine.current = new TimerEngine(model, record, render);
       engine.current.overTurnPenaltyEnabled = overTurnPenaltyRef.current;
       updateHistory(recovered.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
-      const replayId = new URLSearchParams(window.location.search).get('solve');
-      if (replayId) setReplay(recovered.find(solve => solve.id === replayId) ?? null);
       setCube(model); console.info('[Timer Bluetooth] Puzzle loaded; connection controls ready');
     }).catch((failure: Error) => { console.error('[Timer Bluetooth] Puzzle initialization failed', failure); setError(errorText(failure)); });
     const interval = setInterval(render, 30);
@@ -192,6 +168,14 @@ export default function App() {
     const checks = recordChecks.current;
     return () => { mounted.current = false; clearInterval(interval); checks.forEach(check => clearTimeout(check.timeout)); checks.clear(); void adapter.disconnect(); };
   }, []);
+
+  useEffect(() => {
+    if (!cube) return;
+    const url = new URL(address || location.href, location.origin);
+    if (!/^\/timer(?:\/(?:index\.html)?)?$/.test(url.pathname)) return;
+    const id = url.searchParams.get('solve');
+    if (id) setReplay(historyRef.current.find(solve => solve.id === id) ?? null);
+  }, [cube, address]);
 
   async function prepareScramble(recover = false, existingScramble = '') {
     const timer = engine.current;
@@ -391,12 +375,12 @@ export default function App() {
       </details>
       {!installed && <div className="mt-4">
         <button className="btn btn-outline-secondary" disabled={!installPrompt} aria-describedby="install-help" onClick={() => void installApp()}>Install app</button>
-        <p id="install-help" className="small text-secondary mt-2 mb-0">{installPrompt ? 'Add CuberPlus Timer to your home screen or apps.' : 'Installation becomes available when your browser offers it. You can also check your browser menu for Install app.'}</p>
+        <p id="install-help" className="small text-secondary mt-2 mb-0">{installPrompt ? 'Add CuberPlus to your home screen or apps.' : 'Installation becomes available when your browser offers it. You can also check your browser menu for Install app.'}</p>
         {installError && <p role="alert" className="text-warning mt-2 mb-0">{installError}</p>}
       </div>}
       {!connected && <div className="mt-4">
         <form onSubmit={event => { event.preventDefault(); if (canConnect) { optionsDialog.current?.close(); connect(); } }}><label className="d-block">Bluetooth MAC (only if needed)<input className="form-control mt-2" placeholder="AA:BB:CC:DD:EE:FF" value={mac} disabled={connecting} onChange={event => setMac(event.target.value)} /></label></form>
-        <a className="d-inline-block mt-2" href="help/mac-address.html" target="_blank" rel="noopener noreferrer">Find my cube's MAC address</a>
+        <a className="d-inline-block mt-2" href="/timer/help/mac-address.html" target="_blank" rel="noopener noreferrer">Find my cube's MAC address</a>
       </div>}
       {(error.startsWith('Time precision changed') || error.startsWith('Visual preference changed') || error.startsWith('Penalty preference changed') || error.startsWith('PB notification preference changed')) && <p role="alert" className="text-warning mt-3 mb-0">{error}</p>}
       <form method="dialog" className="text-end mt-4"><button className="btn btn-primary">Done</button></form>

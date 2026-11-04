@@ -1,6 +1,7 @@
 import { getDnfReason, solveTime, type Solve } from './engine';
 import { Cube, isMove, movesOf } from './puzzle';
 import { analyzeCFOP, CFOP_STEPS, cfopFrame, cfopTiming, elapsedAt } from './cfop';
+import { movingAverages } from '../../shared/averages';
 
 const database = (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
   const request = indexedDB.open('smart-cube-timer', 2);
@@ -11,8 +12,8 @@ const database = (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
       requestCursor.onsuccess = () => {
         const cursor = requestCursor.result;
         if (!cursor) return;
-        const solve = cursor.value as Solve & { orientations?: object };
-        if ('orientations' in solve) { delete solve.orientations; cursor.update(solve); }
+        const solve = cursor.value as Solve;
+        if ('orientations' in solve) { Reflect.deleteProperty(solve, 'orientations'); cursor.update(solve); }
         cursor.continue();
       };
     }
@@ -96,8 +97,8 @@ export function validateBackup(json: string, cube: Cube): Solve[] {
           (i === 0 ? move.elapsed !== 0 : move.elapsed < solve.moves[i - 1].elapsed)) throw new Error('Invalid move timeline.');
     });
     if (solve.status === 'complete' && (!solve.moves.length || !cube.isSolved(pattern.applyAlg(solve.moves.map(move => move.move).join(' '))))) throw new Error('Completed solve does not end solved.');
-    const restored: Solve & { orientations?: object } = solve.status === 'active' ? { ...solve, status: 'incomplete', reason: 'Interrupted attempt recovered from backup.', dnfReason: 'solve interrupted' } : { ...solve };
-    delete restored.orientations;
+    const restored: Solve = solve.status === 'active' ? { ...solve, status: 'incomplete', reason: 'Interrupted attempt recovered from backup.', dnfReason: 'solve interrupted' } : { ...solve };
+    Reflect.deleteProperty(restored, 'orientations');
     if (restored.penalty === 2000) restored.penaltyReason ??= 'over-turn';
     if (restored.status === 'incomplete') restored.dnfReason = getDnfReason(restored);
     return restored;
@@ -118,29 +119,10 @@ const averageValue = (solve: Solve): number => solve.status === 'complete' ? sol
 const averageResult = (time: number | null): number | 'DNF' | null => time === Infinity ? 'DNF' : time;
 function rollingAverages(values: number[], count: number): { current: number | null; best: number | null; bestStart: number } {
   if (values.length < count || count < 3) return { current: null, best: null, bestStart: 0 };
-  const trim = Math.ceil(count / 20), kept = count - trim * 2, sorted = values.slice(0, count).sort((a, b) => a - b);
-  let sum = 0, dnfs = 0;
-  // Keep DNFs out of the sum so a later valid window can recover from them.
-  const adjust = (value: number, direction: number) => { if (value === Infinity) dnfs += direction; else sum += direction * value; };
-  sorted.slice(trim, -trim).forEach(value => adjust(value, 1));
-  const time = () => dnfs ? Infinity : sum / kept;
-  const current = time(); let best = current, bestStart = 0;
-  const position = (value: number) => {
-    let low = 0, high = sorted.length;
-    while (low < high) { const mid = (low + high) >>> 1; if (sorted[mid] < value) low = mid + 1; else high = mid; }
-    return low;
-  };
-  for (let i = count; i < values.length; i++) {
-    // Account for values crossing the trimmed boundaries as the window slides.
-    const outgoing = position(values[i - count]);
-    adjust(outgoing < trim ? sorted[trim] : outgoing >= count - trim ? sorted[count - trim - 1] : sorted[outgoing], -1);
-    sorted.splice(outgoing, 1);
-    const incoming = position(values[i]);
-    adjust(incoming < trim ? sorted[trim - 1] : incoming >= count - trim ? sorted[count - trim - 1] : values[i], 1);
-    sorted.splice(incoming, 0, values[i]);
-    if (improves(time(), best)) { best = time(); bestStart = i - count + 1; }
-  }
-  return { current, best, bestStart };
+  const averages = movingAverages(values, count);
+  let bestStart = 0;
+  averages.forEach((time, index) => { if (improves(time, averages[bestStart])) bestStart = index; });
+  return { current: averages[0], best: averages[bestStart], bestStart };
 }
 export const average = (solves: Solve[], count: number): number | 'DNF' | null => averageResult(rollingAverages(solves.filter(s => s.status !== 'active').slice(0, count).map(averageValue), count).current);
 export function numberedSolves(solves: Solve[]): { solve: Solve; number: number }[] {
