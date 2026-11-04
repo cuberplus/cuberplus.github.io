@@ -1,0 +1,103 @@
+:root {
+  --cp-font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --cp-bg: #10141e;
+  --cp-panel: #181f2d;
+  --cp-subtle: #222c3d;
+  --cp-text: #e8edf5;
+  --cp-muted: #8793a7;
+  --cp-border: #2a3547;
+  --cp-accent: #65d3b0;
+  --cp-primary: #2d8070;
+  --cp-primary-border: #3d9c88;
+  --cp-primary-hover: #246d5e;
+  --cp-danger-bg: #3b202b;
+  --cp-danger: #ff7b86;
+  color-scheme: dark;
+}
+:root[data-bs-theme="light"] {
+  --cp-bg: #f3f6fa;
+  --cp-panel: #fff;
+  --cp-subtle: #e5edf3;
+  --cp-text: #182332;
+  --cp-muted: #58677b;
+  --cp-border: #cbd5e1;
+  --cp-accent: #246d5e;
+  --cp-danger-bg: #fce8ec;
+  --cp-danger: #b4233b;
+  color-scheme: light;
+}
+:root, [data-bs-theme] {
+  --bs-font-sans-serif: var(--cp-font);
+  --bs-body-bg: var(--cp-bg);
+  --bs-body-color: var(--cp-text);
+  --bs-emphasis-color: var(--cp-text);
+  --bs-secondary-color: var(--cp-muted);
+  --bs-secondary-bg: var(--cp-subtle);
+  --bs-tertiary-bg: var(--cp-panel);
+  --bs-border-color: var(--cp-border);
+  --bs-link-color: var(--cp-accent);
+  --bs-link-hover-color: var(--cp-accent);
+  --bs-primary-rgb: 101, 211, 176;
+}
+body { margin: 0; background: var(--cp-bg); color: var(--cp-text); font-family: var(--cp-font); -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font-family: inherit; }
+a { color: var(--cp-accent); }
+a:hover { color: var(--cp-accent); }
+:focus-visible { outline-color: var(--cp-accent); }
+.btn-primary, .btn-success {
+  --bs-btn-color: #fff;
+  --bs-btn-bg: var(--cp-primary);
+  --bs-btn-border-color: var(--cp-primary-border);
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: var(--cp-primary-hover);
+  --bs-btn-hover-border-color: var(--cp-primary-border);
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: var(--cp-primary-hover);
+  --bs-btn-active-border-color: var(--cp-primary-border);
+  --bs-btn-disabled-color: #fff;
+  --bs-btn-disabled-bg: var(--cp-primary);
+  --bs-btn-disabled-border-color: var(--cp-primary-border);
+  --bs-btn-focus-shadow-rgb: 101, 211, 176;
+  background: var(--cp-primary);
+  border-color: var(--cp-primary-border);
+}
+.btn-primary:hover, .btn-success:hover { background: var(--cp-primary-hover); border-color: var(--cp-primary-border); }
+.btn-outline-primary, .btn-outline-secondary {
+  --bs-btn-color: var(--cp-accent);
+  --bs-btn-border-color: var(--cp-primary-border);
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: var(--cp-primary-hover);
+  --bs-btn-hover-border-color: var(--cp-primary-border);
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: var(--cp-primary);
+  --bs-btn-active-border-color: var(--cp-primary-border);
+  --bs-btn-disabled-color: var(--cp-muted);
+  --bs-btn-disabled-border-color: var(--cp-border);
+}
+.btn-outline-secondary { --bs-btn-color: var(--cp-muted); --bs-btn-border-color: var(--cp-border); }
+.form-control, .form-select { background-color: var(--cp-bg); border-color: var(--cp-border); color: var(--cp-text); }
+.form-control:focus, .form-select:focus { background-color: var(--cp-bg); border-color: var(--cp-accent); color: var(--cp-text); box-shadow: 0 0 0 0.2rem #65d3b033; }
+.form-control::file-selector-button { background: var(--cp-subtle); color: var(--cp-text); }
+.form-check-input:checked { background-color: var(--cp-primary); border-color: var(--cp-primary-border); }
+.table { --bs-table-bg: transparent; --bs-table-color: var(--cp-text); --bs-table-border-color: var(--cp-border); }
+.card, .modal-content, .offcanvas, .dropdown-menu, .accordion-item {
+  background-color: var(--cp-panel);
+  color: var(--cp-text);
+  border-color: var(--cp-border);
+}
+.card { border: 1px solid var(--cp-border); border-radius: 16px; box-shadow: none; }
+.dropdown-menu { --bs-dropdown-link-color: var(--cp-text); --bs-dropdown-link-hover-color: var(--cp-text); --bs-dropdown-link-hover-bg: var(--cp-subtle); --bs-dropdown-link-active-bg: var(--cp-primary); }
+.accordion-button { color: var(--cp-text); background: var(--cp-panel); }
+.accordion-button:not(.collapsed) { color: var(--cp-accent); background: var(--cp-subtle); }
+@media print {
+  :root, :root[data-bs-theme] {
+    --cp-bg: #fff;
+    --cp-panel: #fff;
+    --cp-subtle: #fff;
+    --cp-text: #000;
+    --cp-muted: #333;
+    --cp-border: #aaa;
+    --cp-accent: #15271e;
+    color-scheme: light;
+  }
+}

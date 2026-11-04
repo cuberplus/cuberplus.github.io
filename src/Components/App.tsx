@@ -1,9 +1,23 @@
 import React from 'react';
+import Navigation, { Footer } from '@cuberplus/navigation';
 import '../CSS/App.css';
+import '@cuberplus/navigation/style.css';
+import timerScreenshot from '../Assets/Timer.png';
 import analyzerScreenshot from '../Assets/SmartcubeAnalyzer.png';
 import scramblerScreenshot from '../Assets/Scrambler.png';
 
 const tools = [
+  {
+    id: 'timer',
+    name: 'Timer',
+    category: 'Capture every turn',
+    href: '/timer/',
+    image: timerScreenshot,
+    alt: 'Timer showing a simulated solve in progress, a live 3D cube, and session statistics.',
+    description: 'Connect your smart cube to time every solve automatically. Follow live scrambles, track your personal bests, and replay every turn.',
+    features: ['Automatic smart-cube timing', 'Move-by-move replays'],
+    action: 'Open timer',
+  },
   {
     id: 'analyzer',
     name: 'Smartcube Analyzer',
@@ -30,15 +44,15 @@ const tools = [
 
 function App() {
   return (
-    <div className="homepage">
+    <div className="homepage cuberplus-page">
       <a className="skip-link" href="#tools">Skip to tools</a>
-      <header className="site-header page-width">
-        <h1 className="site-title"><a className="wordmark" href="/" aria-label="CuberPlus home">CuberPlus</a></h1>
+      <header className="site-header cuberplus-header">
+        <Navigation current="home" />
       </header>
       <main className="page-width">
         <section className="tools" id="tools" aria-label="Cubing tools" tabIndex={-1}>
           {tools.map(tool => <article key={tool.id}>
-            <a className="tool-card" href={`https://cuberplus.com${tool.href}`} aria-labelledby={`${tool.id}-title`} aria-describedby={`${tool.id}-description`}>
+            <a className="tool-card" href={tool.href} aria-labelledby={`${tool.id}-title`} aria-describedby={`${tool.id}-description`}>
               <div className="tool-preview">
                 <div className="preview-bar" aria-hidden="true">
                   <span className="window-dots"><i /><i /><i /></span>
@@ -74,10 +88,7 @@ function App() {
           </article>
         </section>
       </main>
-      <footer className="site-footer page-width">
-        <span>CuberPlus</span>
-        <p>More insight. More intentional practice.</p>
-      </footer>
+      <Footer />
     </div>
   );
 }

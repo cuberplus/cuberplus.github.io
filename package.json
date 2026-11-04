@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@cuberplus/navigation": "file:shared/navigation",
     "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
     "@babel/plugin-transform-private-property-in-object": "^7.24.7",
     "@datastructures-js/deque": "github:datastructures-js/deque",
@@ -46,8 +47,12 @@
     "predeploy": "npm run build",
     "deploy": "gh-pages -d build",
     "start": "react-scripts start",
-    "build": "react-scripts build",
+    "build": "node scripts/build.mjs",
+    "build:home": "react-scripts build",
+    "install:apps": "node scripts/build.mjs --install",
+    "preview": "node timer/node_modules/vite/bin/vite.js preview --outDir build --host 127.0.0.1 --port 4173 --strictPort",
     "test": "react-scripts test",
+    "test:site": "node scripts/check-site.mjs",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {

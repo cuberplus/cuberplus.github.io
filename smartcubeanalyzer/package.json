@@ -1,0 +1,99 @@
+{
+  "name": "smartcubeanalyzer",
+  "version": "0.1.0",
+  "homepage": "https://cuberplus.com/smartcubeanalyzer",
+  "private": true,
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "dependencies": {
+    "@cuberplus/navigation": "file:../shared/navigation",
+    "bootstrap": "^5.3.8",
+    "chart.js": "^4.5.1",
+    "chartjs-adapter-moment": "^1.0.1",
+    "moment": "^2.31.0",
+    "react": "^18.2.0",
+    "react-bootstrap": "^2.10.10",
+    "react-chartjs-2": "^5.3.1",
+    "react-data-grid": "7.0.0-beta.46",
+    "react-datepicker": "^4.18.0",
+    "react-dom": "^18.2.0",
+    "react-ga4": "^2.1.0",
+    "react-multi-select-component": "^4.3.4",
+    "react-select": "^5.10.2",
+    "react-switch": "^7.1.0"
+  },
+  "scripts": {
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d build",
+    "start": "vite",
+    "build": "npm run typecheck && npm run lint && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ignore-pattern \"**/tests/**\" --ignore-pattern \"**/__mocks__/**\"",
+    "test": "jest"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ],
+    "rules": {
+      "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/ban-types": [
+        "error",
+        {
+          "types": {
+            "object": "Describe the actual shape, or use Record<K, V>.",
+            "{}": "Describe the actual shape, or use Record<K, V>.",
+            "Object": "Describe the actual shape, or use Record<K, V>.",
+            "Function": "Declare the parameter and return types explicitly."
+          },
+          "extendDefaults": true
+        }
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          "selector": "TSUnknownKeyword",
+          "message": "'unknown' is not a strong type. Declare the actual shape, or use a generic if it varies by caller."
+        }
+      ]
+    }
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
+    "@testing-library/react": "^13.4.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.12.0",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@types/react-datepicker": "^4.15.1",
+    "@vitejs/plugin-react": "^6.1.2",
+    "eslint": "^8.57.1",
+    "eslint-config-react-app": "^7.0.1",
+    "gh-pages": "^6.3.0",
+    "jest": "^29.0.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "ts-jest": "^29.4.15",
+    "typescript": "^4.9.5",
+    "vite": "^8.3.4"
+  },
+  "comment_overrides": "Keep Vite's optional Babel tooling compatible with the Babel 7 lint/test stack, and patch jsdom's legacy proxy-agent dependency.",
+  "overrides": {
+    "@babel/plugin-transform-runtime": "^7.29.0",
+    "@tootallnate/once": "^2.0.1"
+  }
+}

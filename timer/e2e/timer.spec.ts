@@ -1,0 +1,1049 @@
+import { test, expect, type Locator, type Page } from '@playwright/test';
+import type { TwistyPlayer } from 'cubing/twisty';
+import { TimerEngine, type Solve } from '../src/engine';
+import { inverse, loadCube, SOLVED } from '../src/puzzle';
+import { backupJSON, validateBackup } from '../src/storage';
+
+async function expectAnimatedTurn(button: Locator, visualizer: string) {
+  const animated = await button.evaluate(async (element, selector) => {
+    const player = document.querySelector<TwistyPlayer>(selector)!;
+    let partial = false;
+    const observe = (info: { currentMoves: { fraction: number }[] }) => {
+      partial ||= info.currentMoves.some(move => move.fraction > 0 && move.fraction < 1);
+    };
+    player.experimentalModel.currentMoveInfo.addFreshListener(observe);
+    (element as HTMLButtonElement).click();
+    await new Promise(resolve => setTimeout(resolve, 300));
+    player.experimentalModel.currentMoveInfo.removeFreshListener(observe);
+    return partial;
+  }, visualizer);
+  expect(animated).toBe(true);
+}
+
+function storedSolves(page: Page): Promise<Solve[]> {
+  return page.evaluate(() => new Promise<Solve[]>((resolve, reject) => {
+    const opening = indexedDB.open('smart-cube-timer');
+    opening.onerror = () => reject(opening.error);
+    opening.onsuccess = () => {
+      const db = opening.result;
+      const request = db.transaction('solves').objectStore('solves').getAll();
+      request.onsuccess = () => { db.close(); resolve(request.result as Solve[]); };
+      request.onerror = () => { db.close(); reject(request.error); };
+    };
+  }));
+}
+
+async function averageSeed(): Promise<Solve> {
+  const cube = await loadCube(), timer = new TimerEngine(cube, () => {}, () => {});
+  timer.connect('Test cube'); timer.synchronize(SOLVED); timer.prepare('R U2');
+  ['R', 'U2', 'U2', "R'"].forEach((move, i) => timer.turn({ move, hostTime: i * 100, localTimestamp: i * 100, cubeTimestamp: null }));
+  return timer.result!;
+}
+
+test('daily streak fire and PB notifications animate, stack without overlap and dismiss independently', async ({ page }) => {
+  const seed = await averageSeed();
+  const solves = Array.from({ length: 11 }, (_, i) => ({
+    ...seed, id: `pb-seed-${i}`, duration: 41000 - i * 1000, createdAt: new Date(Date.UTC(2020, 0, 1, 0, 0, i)).toISOString(),
+  }));
+  await page.goto('');
+  const simulator = page.getByText('Try simulated cube', { exact: true });
+  await expect(simulator).toBeEnabled();
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'pb-seeds.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'timer-v1', solves })),
+  });
+  await expect(page.getByRole('table', { name: 'Solve history' }).locator('tbody tr')).toHaveCount(11);
+  await simulator.evaluate(button => (button as HTMLButtonElement).click());
+  const guided = page.getByRole('button', { name: 'Perform guided move', exact: true });
+  await expect(guided).toBeEnabled({ timeout: 45000 });
+  for (let i = 0; i < 60; i++) {
+    if (await page.getByRole('button', { name: 'Simulate solve', exact: true }).isEnabled()) break;
+    await guided.click();
+  }
+  await page.getByRole('button', { name: 'Simulate solve', exact: true }).click();
+  const notices = page.getByRole('status', { name: 'Personal best', exact: true });
+  await expect(notices).toHaveCount(3);
+  const streak = page.getByRole('status', { name: 'Daily streak', exact: true }), flame = streak.locator('.streak-flame');
+  await expect(streak).toContainText('Congratulations!');
+  await expect(streak).toContainText('Daily Streak: 1');
+  await expect(streak).toContainText('Best Streak: 1');
+  await expect(flame).toHaveCSS('animation-duration', '0.9s');
+  await expect(flame).toHaveCSS('animation-iteration-count', 'infinite');
+  const transform = await flame.evaluate(element => getComputedStyle(element).transform);
+  await expect.poll(() => flame.evaluate(element => getComputedStyle(element).transform)).not.toBe(transform);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(flame).toHaveCSS('animation-name', 'none');
+  await expect(streak.locator('.streak-embers')).toHaveCSS('animation-name', 'none');
+  await expect(notices.first().locator('.pb-disco-ball')).toHaveCSS('animation-name', 'none');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const allNotices = page.getByLabel('Solve notifications', { exact: true }).locator('.pb-celebration');
+  await expect(allNotices).toHaveCount(4);
+  for (const width of [1280, 375]) {
+    await page.setViewportSize({ width, height: 900 });
+    const boxes = await allNotices.evaluateAll(elements => elements.map(element => {
+      const { top, bottom, left, right } = element.getBoundingClientRect();
+      return { top, bottom, left, right };
+    }));
+    expect(boxes.every(box => box.left >= 0 && box.right <= width && box.top >= 0 && box.bottom <= 900)).toBe(true);
+    expect(boxes.every((box, i) => boxes.slice(i + 1).every(other => box.bottom < other.top))).toBe(true);
+  }
+  await streak.getByRole('button', { name: 'Dismiss daily streak', exact: true }).click();
+  await expect(streak).toHaveCount(0);
+  await expect(notices).toHaveCount(3);
+  await page.getByRole('button', { name: 'View PB Single', exact: true }).click({ position: { x: 4, y: 4 } });
+  const replay = page.getByRole('dialog', { name: 'Solve replay', exact: true });
+  await expect(replay).toBeVisible();
+  const latest = (await storedSolves(page)).find(solve => !solve.id.startsWith('pb-seed-'))!;
+  await expect(replay.getByLabel('Solve ID', { exact: true })).toContainText(latest.id);
+  await page.keyboard.press('Escape');
+  await expect(replay).toHaveCount(0);
+  await notices.first().getByRole('button', { name: 'Dismiss personal best', exact: true }).click();
+  await expect(notices).toHaveCount(2);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button', { name: 'View PB Ao12', exact: true }).click();
+  const average = page.locator('.average-dialog');
+  await expect(average).toBeVisible();
+  await expect(average.getByRole('heading')).toHaveText(/^Ao12:/);
+  await expect(average.getByRole('columnheader')).toHaveText(['Solve', 'Time', 'View']);
+  await expect(average.locator('tbody tr')).toHaveCount(12);
+  const best = average.locator('s.average-trimmed-best'), worst = average.locator('s.average-trimmed-worst');
+  await expect(best).toHaveCount(1);
+  await expect(worst).toHaveCount(1);
+  await expect(best).toHaveText(/^\(\d+\.\d{2}s\)$/);
+  await expect(worst).toHaveText(/^\(\d+\.\d{2}s\)$/);
+  await expect(best).toHaveCSS('color', 'rgb(101, 211, 176)');
+  await expect(worst).toHaveCSS('color', 'rgb(255, 123, 134)');
+  await expect(best).toHaveCSS('text-decoration-line', 'line-through');
+  await expect(worst).toHaveCSS('text-decoration-line', 'line-through');
+  await expect(average.locator('tbody tr').last().locator('s')).toHaveClass('average-trimmed-best');
+  await average.getByRole('button', { name: 'View average solve 12', exact: true }).click();
+  await expect(replay).toBeVisible();
+  await expect(replay.getByLabel('Solve ID', { exact: true })).toContainText(latest.id);
+  await page.keyboard.press('Escape');
+  await expect(replay).toHaveCount(0);
+  await expect(average).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(average).toHaveCount(0);
+  const ao5 = page.getByRole('button', { name: 'View PB Ao5', exact: true });
+  await ao5.focus();
+  await page.keyboard.press('Enter');
+  await expect(average.getByRole('heading')).toHaveText(/^Ao5:/);
+  await average.getByRole('button', { name: 'Close average', exact: true }).click();
+});
+
+test('ten off-track moves repeatedly find real solver routes to solved and keep the original partial scramble', async ({ page }) => {
+  await page.goto('');
+  const simulator = page.getByText('Try simulated cube', { exact: true });
+  await expect(simulator).toBeEnabled();
+  await simulator.evaluate(button => (button as HTMLButtonElement).click());
+  const guided = page.getByRole('button', { name: 'Perform guided move', exact: true });
+  await expect(guided).toBeEnabled({ timeout: 45000 });
+  const original = await page.locator('.scramble .move').allTextContents();
+  const scrambleFont = await page.locator('.scramble .move').first().evaluate(element => getComputedStyle(element).font);
+  for (let i = 0; i < Math.floor(original.length / 2); i++) await guided.click();
+  const completedScramble = await page.locator('.scramble .done').allTextContents();
+  const pending = await page.locator('.scramble .current').innerText();
+  const wrong = 'RL'.includes(pending[0]) ? 'F' : 'R';
+  for (let i = 0; i < 9; i++) await page.getByRole('button', { name: i % 2 ? 'U' : wrong, exact: true }).click();
+  await expect(page.getByRole('group', { name: 'Correction moves', exact: true }).locator('.move')).toHaveCount(9);
+  await expect(page.locator('.scramble .move:not(.correction)')).toHaveText(completedScramble);
+  await expect(page.locator('.scramble .move:not(.done):not(.correction)')).toHaveCount(0);
+  await page.getByRole('button', { name: 'U', exact: true }).click();
+  await expect(guided).toBeEnabled({ timeout: 45000 });
+  const setup = page.getByRole('group', { name: 'Path to solved', exact: true });
+  await expect(setup).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Correction moves', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('group', { name: 'Original scramble', exact: true })).toHaveCount(0);
+  await expect(page.locator('.scramble .done')).toHaveCount(0);
+  await guided.click();
+  const firstRoute = await setup.locator('.move').allTextContents();
+  const completedReturn = await setup.locator('.done').allTextContents();
+  expect(completedReturn.length).toBeGreaterThan(0);
+  const next = await setup.locator('.current').innerText();
+  const wrongAgain = 'RL'.includes(next[0]) ? 'F' : 'R';
+  await page.getByRole('button', { name: wrongAgain, exact: true }).click();
+  await expect(setup).toBeVisible();
+  await expect(setup.locator('.move')).toHaveText(completedReturn);
+  await expect(setup.locator('.move:not(.done)')).toHaveCount(0);
+  await expect(setup.locator('.current')).toHaveCount(0);
+  await expect(page.locator('.scramble .current.correction')).toHaveCount(1);
+  await expect(page.getByRole('group', { name: 'Original scramble', exact: true })).toHaveCount(0);
+  expect(await setup.evaluate(element => !!(element.compareDocumentPosition(document.querySelector('[aria-label="Correction moves"]')!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  await expect(setup.locator('.done').first()).toHaveCSS('color', 'rgb(101, 211, 176)');
+  expect(await page.locator('.scramble .correction').first().evaluate(element => getComputedStyle(element).font)).toBe(scrambleFont);
+  expect(await setup.locator('.move').first().evaluate(element => getComputedStyle(element).font)).toBe(scrambleFont);
+  await guided.click();
+  await expect(setup.locator('.move')).toHaveText(firstRoute);
+  await expect(setup.locator('.current')).toHaveText(next);
+  await expect(page.getByRole('group', { name: 'Original scramble', exact: true })).toHaveCount(0);
+  for (let i = 0; i < 9; i++) {
+    await page.getByRole('button', { name: i % 2 ? 'U' : wrongAgain, exact: true }).click();
+    await expect(setup).toBeVisible();
+    await expect(setup.locator('.move')).toHaveText(completedReturn);
+    await expect(setup.locator('.move:not(.done)')).toHaveCount(0);
+  }
+  await page.getByRole('button', { name: 'U', exact: true }).click();
+  await expect(guided).toBeEnabled({ timeout: 45000 });
+  await expect(setup).toBeVisible();
+  expect(await setup.locator('.move').allTextContents()).not.toEqual(firstRoute);
+  await expect(page.getByRole('group', { name: 'Correction moves', exact: true })).toHaveCount(0);
+  const solve = page.getByRole('button', { name: 'Simulate solve', exact: true });
+  for (let i = 0; i < 100 && !await solve.isEnabled(); i++) await guided.click();
+  await expect(solve).toBeEnabled();
+  await expect(setup).toHaveCount(0);
+  await expect(page.getByRole('group', { name: 'Original scramble', exact: true }).locator('.done')).toHaveText(original);
+  expect(await storedSolves(page)).toEqual([]);
+  await solve.click();
+  await expect(page.getByRole('table', { name: 'Solve history' }).locator('tbody tr')).toHaveCount(1);
+  const [recorded] = await storedSolves(page);
+  expect(recorded.status).toBe('complete');
+  expect(recorded.scramble).toBe(original.join(' '));
+});
+
+test('current and best Ao1000 details show all contributing solves and fifty exclusions per end', async ({ page }) => {
+  const seed = await averageSeed();
+  const solves = Array.from({ length: 1002 }, (_, i) => ({
+    ...seed, id: `average-seed-${i}`, duration: 10000 + i * 10, createdAt: new Date(Date.UTC(2020, 0, 1) + i * 1000).toISOString(),
+  }));
+  await page.goto('');
+  await expect(page.getByText('Try simulated cube', { exact: true })).toBeEnabled();
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'averages.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'timer-v1', solves })),
+  });
+  for (const kind of ['current', 'best']) {
+    const button = page.getByRole('button', { name: `View ${kind} Ao1000`, exact: true });
+    await expect(button).toBeVisible();
+    const time = await button.innerText();
+    await button.click();
+    const average = page.locator('.average-dialog');
+    await expect(average.getByRole('heading')).toHaveText(`Ao1000: ${time}s`);
+    await expect(average.locator('tbody tr')).toHaveCount(1000);
+    await expect(average.locator('.average-trimmed-best')).toHaveCount(50);
+    await expect(average.locator('.average-trimmed-worst')).toHaveCount(50);
+    await expect(average.locator('tbody tr:not(:has(s))')).toHaveCount(900);
+    await expect(average.locator('tbody tr').first().getByRole('rowheader')).toHaveText(kind === 'current' ? '3' : '1');
+    await expect(average.locator('tbody tr').last().getByRole('rowheader')).toHaveText(kind === 'current' ? '1002' : '1000');
+    await average.getByRole('button', { name: `View average solve ${kind === 'current' ? 1002 : 1000}`, exact: true }).click();
+    const replay = page.getByRole('dialog', { name: 'Solve replay', exact: true });
+    await expect(replay.getByLabel('Solve ID', { exact: true })).toContainText(kind === 'current' ? 'average-seed-1001' : 'average-seed-999');
+    await replay.getByRole('button', { name: 'Close replay', exact: true }).click();
+    await expect(average).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(average).toHaveCount(0);
+    await expect(button).toBeFocused();
+  }
+});
+
+for (const dnfs of [5, 6]) test(`Ao100 with ${dnfs} DNFs includes every attempt and trims only five DNFs`, async ({ page }) => {
+  const seed = await averageSeed();
+  const solves = Array.from({ length: 100 }, (_, i) => ({
+    ...seed, id: `dnf-average-${i}`, duration: 10000, status: i < dnfs ? 'incomplete' as const : 'complete' as const,
+    createdAt: new Date(Date.UTC(2020, 0, 1) + i * 1000).toISOString(),
+  }));
+  await page.goto('');
+  await expect(page.getByText('Try simulated cube', { exact: true })).toBeEnabled();
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'dnf-averages.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'timer-v1', solves })),
+  });
+  for (const kind of ['current', 'best']) {
+    const button = page.getByRole('button', { name: `View ${kind} Ao100`, exact: true });
+    await expect(button).toHaveText(dnfs === 5 ? '10.00' : 'DNF');
+    await button.click();
+    const average = page.locator('.average-dialog');
+    await expect(average.getByRole('heading')).toHaveText(dnfs === 5 ? 'Ao100: 10.00s' : 'Ao100: DNF');
+    await expect(average.locator('tbody th')).toHaveText(Array.from({ length: 100 }, (_, i) => String(i + 1)));
+    await expect(average.locator('.average-trimmed-worst')).toHaveText(Array(5).fill('(DNF)'));
+    await expect(average.locator('tbody tr:not(:has(s)) td:nth-child(2)').filter({ hasText: /^DNF$/ })).toHaveCount(dnfs - 5);
+    await average.getByRole('button', { name: 'Close average', exact: true }).click();
+  }
+});
+
+test('production manifest launches the timer and serves installable app icons', async ({ page }) => {
+  await page.goto('');
+  const manifestURL = await page.locator('link[rel="manifest"]').evaluate(link => (link as HTMLLinkElement).href);
+  expect(new URL(manifestURL).pathname).toBe('/timer/manifest.webmanifest');
+  const response = await page.request.get(manifestURL);
+  expect(response.ok()).toBe(true);
+  const manifest = await response.json() as {
+    id: string; name: string; start_url: string; scope: string; display: string;
+    icons: { src: string; sizes: string; type: string }[];
+  };
+  expect(manifest.name).toBe('CuberPlus - Timer');
+  expect(manifest.display).toBe('standalone');
+  for (const path of [manifest.id, manifest.start_url, manifest.scope]) expect(new URL(path, manifestURL).pathname).toBe('/timer/');
+  for (const size of [192, 512]) {
+    const icon = manifest.icons.find(icon => icon.sizes === `${size}x${size}`)!;
+    expect(icon.type).toBe('image/png');
+    const dimensions = await page.evaluate(async url => {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      return [image.naturalWidth, image.naturalHeight];
+    }, new URL(icon.src, manifestURL).href);
+    expect(dimensions).toEqual([size, size]);
+  }
+  const session = await page.context().newCDPSession(page);
+  const { errors } = await session.send('Page.getAppManifest');
+  expect(errors).toEqual([]);
+  await session.detach();
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('button', { name: 'Install app', exact: true })).toBeVisible();
+});
+
+for (const stalled of ['connect', 'discover']) test(`Bluetooth ${stalled} stall reports a bounded GATT error and allows retry`, async ({ page }) => {
+  await page.addInitScript(operation => {
+    const device = Object.assign(new EventTarget(), { name: 'WCU_MY33_1234', id: 'test-cube' });
+    const gatt = {
+      connect: async (): Promise<object> => {
+        if (operation === 'connect') return new Promise(() => {});
+        return gatt;
+      },
+      getPrimaryServices: async () => new Promise(() => {}),
+      disconnect: () => { document.documentElement.dataset.gattDisconnected = 'true'; },
+    };
+    Object.assign(device, { gatt });
+    Object.defineProperty(navigator, 'bluetooth', { configurable: true, value: { requestDevice: async () => device } });
+  }, stalled);
+  await page.goto('');
+  await page.getByRole('button', { name: 'Connect cube', exact: true }).click();
+  const stage = stalled === 'connect' ? 'Opening Bluetooth GATT connection' : 'Discovering Bluetooth services';
+  await expect(page.getByRole('status')).toHaveText(stage);
+  await expect(page.getByRole('alert')).toContainText(`${stage} timed out after 15 seconds`, { timeout: 20000 });
+  await expect(page.getByRole('button', { name: 'Connect cube', exact: true })).toBeEnabled();
+  await expect(page.locator('html')).toHaveAttribute('data-gatt-disconnected', 'true');
+});
+
+for (const action of ['Enter', 'click']) test(`Bluetooth ${action} opens the picker, shows progress, and permits retry after cancellation`, async ({ page }) => {
+  const logs: string[] = [];
+  page.on('console', message => { if (message.text().includes('[Timer Bluetooth')) logs.push(message.text()); });
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('timer-last-cube-mac')) localStorage.setItem('timer-last-cube-mac', '11:22:33:44:55:66');
+    Object.defineProperty(navigator, 'bluetooth', { configurable: true, value: {
+      requestDevice: async () => {
+        const root = document.documentElement;
+        root.dataset.pickerRequests = String(Number(root.dataset.pickerRequests ?? 0) + 1);
+        await new Promise<void>(resolve => document.addEventListener('cancel-test-picker', () => resolve(), { once: true }));
+        throw new DOMException('Test chooser canceled.', 'NotFoundError');
+      },
+    } });
+  });
+  await page.goto('');
+  const connect = page.getByRole('button', { name: 'Connect cube', exact: true });
+  const mac = page.getByPlaceholder('AA:BB:CC:DD:EE:FF');
+  await expect(connect).toBeEnabled();
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await expect(mac).toHaveValue('11:22:33:44:55:66');
+  await mac.fill('AA:BB:CC:DD:EE:FF');
+  if (action === 'Enter') await mac.press('Enter');
+  else {
+    await page.getByRole('dialog', { name: 'Options', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
+    await connect.click();
+  }
+  await expect(page.locator('html')).toHaveAttribute('data-picker-requests', '1');
+  await expect(page.getByRole('button', { name: 'Connecting...', exact: true })).toBeDisabled();
+  await expect(mac).toBeDisabled();
+  await expect(page.getByRole('status')).toHaveText('Select your cube…');
+  await page.locator('form').filter({ has: mac }).dispatchEvent('submit');
+  await expect(page.locator('html')).toHaveAttribute('data-picker-requests', '1');
+  await page.evaluate(() => document.dispatchEvent(new Event('cancel-test-picker')));
+  await expect(page.getByRole('alert')).toContainText('Test chooser canceled.');
+  await expect(connect).toBeEnabled();
+  await expect(mac).toBeEnabled();
+  await expect(page.getByRole('status')).not.toHaveText('Select your cube…');
+  expect(logs.some(message => message.includes('Connect requested'))).toBe(true);
+  expect(logs.some(message => message.includes('Connection stage') && message.includes('Select your cube'))).toBe(true);
+  expect(logs.some(message => message.includes('Library connection failed') && message.includes('Test chooser canceled.'))).toBe(true);
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await mac.press('Enter');
+  await expect(page.locator('html')).toHaveAttribute('data-picker-requests', '2');
+  await page.evaluate(() => document.dispatchEvent(new Event('cancel-test-picker')));
+  await expect(connect).toBeEnabled();
+  await page.reload();
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await expect(mac).toHaveValue('11:22:33:44:55:66');
+});
+
+test('browser-only scramble, solve, persistence, replay and backup', async ({ page }) => {
+  const history = page.getByRole('table', { name: 'Solve history' });
+  const statistics = page.getByRole('table', { name: 'Session statistics' });
+  const external: string[] = [];
+  const failures: string[] = [];
+  page.on('request', request => {
+    if (/^https?:/.test(request.url()) && !request.url().startsWith('http://127.0.0.1:4173/')) external.push(request.url());
+  });
+  page.on('pageerror', error => failures.push(error.message));
+  await page.goto('');
+  await expect(page).toHaveTitle('CuberPlus - Timer');
+  await expect(page.getByRole('heading', { name: 'CuberPlus home', exact: true })).toBeVisible();
+  await expect(page.getByText('Smart cube timing.', { exact: false })).toHaveCount(0);
+  const simulator = page.getByText('Try simulated cube', { exact: true });
+  await expect(simulator).toBeEnabled();
+  await expect(simulator).toBeHidden();
+  await simulator.evaluate(button => (button as HTMLButtonElement).click());
+  await expect(page.getByRole('heading', { name: 'Live cube', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Scramble', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Next scramble', exact: true })).toHaveCount(0);
+  await expect(page.locator('.timer-panel').getByLabel('Solve time', { exact: true })).toBeVisible();
+  await expect(page.locator('main > section').first()).toHaveClass(/timer-panel/);
+  await expect(page.locator('.timer-panel > .scramble')).toBeVisible();
+  await expect(page.locator('.timer-panel').getByRole('img', { name: 'Live 3x3 cube state' })).toBeVisible();
+  const guided = page.getByRole('button', { name: 'Perform guided move' });
+  await expect(guided).toBeEnabled({ timeout: 45000 });
+  const refresh = page.getByRole('button', { name: 'New scramble', exact: true });
+  await expect(refresh).toBeVisible();
+  const previousScramble = await page.locator('.scramble-content').innerText();
+  await refresh.click();
+  await expect(page.locator('.scramble-content')).not.toHaveText(previousScramble, { timeout: 45000 });
+  await expect(refresh).toBeEnabled();
+  await expect(page.locator('.timer-panel .badge')).toHaveCount(0);
+  await expect(page.locator('.timer-panel')).not.toContainText(/Follow the highlighted|Next:|Last solve|Use the cube's calibrated face/);
+  const hasDoubleTurn = (await page.locator('.scramble .move').allTextContents()).some(move => move.endsWith('2'));
+  const generatedMoves = await page.locator('.scramble .move').allTextContents();
+  const hasCommutingPair = generatedMoves.some((move, i) => i > 0 && ['UD', 'RL', 'FB'].some(axis => axis.includes(move[0]) && axis.includes(generatedMoves[i - 1][0])));
+  for (let i = 1; i < generatedMoves.length; i++) {
+    expect(generatedMoves[i][0]).not.toBe(generatedMoves[i - 1][0]);
+    if (i >= 2 && ['UD', 'RL', 'FB'].some(axis => axis.includes(generatedMoves[i][0]) && axis.includes(generatedMoves[i - 1][0]))) {
+      expect(generatedMoves[i][0]).not.toBe(generatedMoves[i - 2][0]);
+    }
+  }
+  const first = (await page.locator('.scramble .current').innerText())[0];
+  const liveCube = page.locator('.timer-panel twisty-player');
+  await expect.poll(() => liveCube.evaluate(element => (element as TwistyPlayer).experimentalModel.twistySceneModel.hintFacelet.get())).toBe('none');
+  await expectAnimatedTurn(page.getByRole('button', { name: first === 'R' || first === 'L' ? 'F' : 'R', exact: true }), '.timer-panel twisty-player');
+  await expect(page.getByText('Wrong turn.', { exact: false })).toHaveCount(0);
+  await expect(page.getByRole('group', { name: 'Correction moves', exact: true })).toBeVisible();
+  await expect(page.locator('.scramble .move:not(.done):not(.correction)')).toHaveCount(0);
+  await expect(page.locator('.scramble .current.correction')).toHaveCSS('background-color', 'rgb(220, 53, 69)');
+  let checkedPartial = false;
+  let checkedCommuting = false;
+  let checkedCommutingDouble = false;
+  for (let i = 0; i < 60; i++) {
+    if (await page.getByRole('button', { name: 'Simulate solve', exact: true }).isEnabled()) break;
+    const current = page.locator('.scramble .current:not(.correction)');
+    if (!checkedCommuting && await current.count()) {
+      const second = await current.evaluate(element => {
+        const next = element.nextElementSibling;
+        return next?.matches('.move:not(.done)') && ['UD', 'RL', 'FB'].some(axis => axis.includes(element.textContent![0]) && axis.includes(next.textContent![0])) ? next.textContent : null;
+      });
+      if (second) {
+        const firstPending = await current.innerText();
+        const button = page.getByRole('button', { name: second.includes('2') ? second[0] : second, exact: true });
+        await button.click();
+        if (second.includes('2')) {
+          await expect(current).toHaveText(firstPending);
+          const partial = current.locator('xpath=following-sibling::span[1]');
+          await expect(partial).not.toHaveClass(/done/);
+          await expect(partial).toHaveClass(/partial/);
+          await expect(partial).toHaveCSS('background-color', 'rgb(245, 185, 66)');
+          await expect(partial).toHaveAttribute('title', 'Partially complete');
+          checkedCommutingDouble = true;
+          await button.click();
+        }
+        await expect(current).toHaveText(firstPending);
+        await expect(page.getByRole('group', { name: 'Correction moves', exact: true })).toHaveCount(0);
+        const completed = current.locator('xpath=following-sibling::span[1]');
+        await expect(completed).toHaveText(second);
+        await expect(completed).toHaveClass(/done/);
+        await expect(completed).toHaveCSS('color', 'rgb(101, 211, 176)');
+        checkedCommuting = true;
+      }
+    }
+    if (!checkedPartial && await current.count() && (await current.innerText()).endsWith('2')) {
+      await page.getByRole('button', { name: (await current.innerText())[0], exact: true }).click();
+      await expect(current).toHaveClass(/partial/);
+      await expect(current).toHaveCSS('background-color', 'rgb(245, 185, 66)');
+      checkedPartial = true;
+    }
+    await guided.click();
+  }
+  expect(checkedPartial || checkedCommutingDouble).toBe(hasDoubleTurn);
+  expect(checkedCommuting).toBe(hasCommutingPair);
+  await expect(page.getByRole('button', { name: 'Simulate solve', exact: true })).toBeEnabled();
+  await expect(page.locator('.timer-panel')).not.toContainText(/Turn .+ once more|Scramble complete\./);
+  await expect(page.getByLabel('Solve time', { exact: true })).toHaveText('0.00');
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await page.getByLabel('Time precision', { exact: true }).selectOption('3');
+  await page.getByRole('dialog', { name: 'Options', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(page.getByLabel('Solve time', { exact: true })).toHaveText('0.000');
+  await expect(page.locator('.timer-panel').getByLabel('Inspection time', { exact: true })).toHaveCount(0);
+  const scramble = await page.getByLabel('Scramble', { exact: true }).innerText();
+  const initialViewport = page.viewportSize()!;
+  await page.setViewportSize({ width: 375, height: 900 });
+  expect(await page.locator('.timer-panel').evaluate(element =>
+    element.querySelector('[role="img"]')!.getBoundingClientRect().top - element.querySelector('.timer-value')!.getBoundingClientRect().bottom,
+  )).toBeLessThanOrEqual(50);
+  const scrambleLayout = await page.getByLabel('Scramble', { exact: true }).evaluate(element => ({
+    height: element.getBoundingClientRect().height,
+    width: element.getBoundingClientRect().width,
+    rowOffset: element.nextElementSibling!.getBoundingClientRect().top - element.getBoundingClientRect().top,
+    timerOffset: document.querySelector('.timer-value')!.getBoundingClientRect().top - element.getBoundingClientRect().top,
+    cubeOffset: document.querySelector('.timer-panel [role="img"]')!.getBoundingClientRect().top - element.getBoundingClientRect().top,
+  }));
+  await page.getByRole('button', { name: 'Simulate solve' }).click();
+  await expect(page.locator('.scramble-placeholder [role="status"]')).toHaveText('Scrambles hidden while solving');
+  await expect(page.locator('.scramble-placeholder').getByRole('button', { name: 'Abort solve', exact: true })).toBeVisible();
+  await expect(page.getByText('reported moves recorded', { exact: false })).toHaveCount(0);
+  await expect(page.locator('.scramble-placeholder')).toBeVisible();
+  await expect(page.locator('.timer-panel .scramble-content')).toBeHidden();
+  await expect(page.locator('[aria-label="New scramble"]')).toBeHidden();
+  await expect(page.locator('[aria-label="New scramble"]')).toBeDisabled();
+  expect(await page.getByLabel('Scramble', { exact: true }).evaluate(element => ({
+    height: element.getBoundingClientRect().height,
+    width: element.getBoundingClientRect().width,
+    rowOffset: element.nextElementSibling!.getBoundingClientRect().top - element.getBoundingClientRect().top,
+    timerOffset: document.querySelector('.timer-value')!.getBoundingClientRect().top - element.getBoundingClientRect().top,
+    cubeOffset: document.querySelector('.timer-panel [role="img"]')!.getBoundingClientRect().top - element.getBoundingClientRect().top,
+  }))).toEqual(scrambleLayout);
+  await page.setViewportSize(initialViewport);
+  await expect(page.getByRole('group', { name: 'Solve timeline', exact: true })).toBeVisible();
+  await expect.poll(async () => parseFloat(await page.locator('.trail-tip').evaluate(element => (element as HTMLElement).style.left))).toBeGreaterThan(0);
+  await expect(page.getByRole('group', { name: 'CFOP steps' })).toBeVisible();
+  await expect(page.locator('.trail-duration[data-status="pending"]:not([data-step="f2l"])')).toHaveCount(1);
+  await expect(history.getByRole('row')).toHaveCount(2);
+  const celebration = page.getByRole('status', { name: 'Personal best', exact: true });
+  await expect(celebration).toBeVisible();
+  await expect(celebration).toContainText(/Single: \d+\.\d{3}s/);
+  await expect(celebration.locator('.pb-disco-ball')).toHaveCSS('animation-duration', '1.4s');
+  await expect(celebration.locator('.pb-disco-ball')).toHaveCSS('animation-iteration-count', 'infinite');
+  await expect(page.getByLabel('Solve notifications', { exact: true })).toHaveCSS('position', 'fixed');
+  await expect(celebration).toHaveCSS('pointer-events', 'auto');
+  await expect(history.getByRole('columnheader')).toHaveText(['Solve', 'Time', 'Turns', 'TPS', 'View']);
+  await expect(page.getByRole('button', { name: 'Export CSV', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Export JSON', includeHidden: true })).toBeHidden();
+  await expect(page.getByText('Import JSON', { exact: true })).toBeHidden();
+  for (const [i, name] of ['Cross', 'F2L Pair 1', 'F2L Pair 2', 'F2L Pair 3', 'F2L Pair 4', 'OLL', 'PLL'].entries()) {
+    const label = page.locator(`.trail-duration[data-step="${i}"]`);
+    await expect(label).toBeVisible();
+    await expect(label).toHaveAttribute('data-status', 'done');
+    await expect(label).toHaveText(/\d+\.\d{3}s$/);
+    await expect(label).toHaveAttribute('aria-label', new RegExp(`^${name}: `));
+  }
+  await expect(page.getByRole('group', { name: 'CFOP steps' }).locator('.trail-duration strong')).toHaveText(['Cross', 'F2L', 'OLL', 'PLL']);
+  await expect(page.getByRole('group', { name: 'F2L sub-times' }).locator('.trail-duration strong')).toHaveText(['F2L 1', 'F2L 2', 'F2L 3', 'F2L 4']);
+  const plot = page.getByRole('group', { name: 'Solve timeline', exact: true });
+  await expect(plot).not.toContainText(/Base cross|Darker:|lighter:|first turn/);
+  await expect(plot.locator('.badge')).toHaveCount(0);
+  const viewport = page.viewportSize()!;
+  await page.setViewportSize({ width: 375, height: 900 });
+  await expect.poll(async () => page.locator('.trail-duration').evaluateAll(elements => {
+    const bounds = document.querySelector('.solve-trail')!.getBoundingClientRect();
+    const boxes = elements.map(element => element.getBoundingClientRect());
+    return boxes.every(box => box.left >= bounds.left - 1 && box.right <= bounds.right + 1) &&
+      boxes.every((box, i) => boxes.slice(i + 1).every(other => box.bottom <= other.top || other.bottom <= box.top || box.right <= other.left || other.right <= box.left));
+  })).toBe(true);
+  const plotBounds = (await plot.boundingBox())!;
+  for (const name of ['Read cube state', 'Cube is physically solved - calibrate']) {
+    const buttonBounds = (await page.getByRole('button', { name, exact: true }).boundingBox())!;
+    expect(buttonBounds.y).toBeGreaterThanOrEqual(plotBounds.y + plotBounds.height);
+  }
+  await page.setViewportSize(viewport);
+  await expect(guided).toBeEnabled();
+  await expect(page.locator('.scramble-placeholder')).toHaveCount(0);
+  await expect(page.locator('.timer-panel .scramble-content')).toBeVisible();
+  await expect(page.getByLabel('Scramble', { exact: true })).not.toHaveText(scramble);
+  await expect(page.getByText('Last solve', { exact: true })).toHaveCount(0);
+  const previousTime = await page.getByLabel('Solve time', { exact: true }).innerText();
+  expect(Number(previousTime)).toBeGreaterThan(0);
+  expect(previousTime).toMatch(/^\d+\.\d{3}$/);
+  await expect(page.locator('.trail-tip')).toHaveAttribute('style', 'left: 100%;');
+  const trail = await page.locator('.trail-segment').evaluateAll(elements => elements.map(element => ({
+    duration: Number(element.getAttribute('data-end')) - Number(element.getAttribute('data-start')),
+    width: parseFloat((element as HTMLElement).style.width),
+    phase: element.getAttribute('data-phase'),
+  })));
+  const durations = await page.locator('.trail-duration:not([data-step="f2l"])').evaluateAll(elements => elements
+    .sort((a, b) => Number(a.getAttribute('data-step')) - Number(b.getAttribute('data-step')))
+    .map(element => Number(element.getAttribute('data-duration'))));
+  await expect(page.locator('.trail-duration[data-step="f2l"]')).toHaveAttribute('data-duration', String(durations.slice(1, 5).reduce((sum, duration) => sum + duration, 0)));
+  // Chromium rounds percentages when serializing CSS styles.
+  expect(trail.reduce((sum, segment) => sum + segment.width, 0)).toBeCloseTo(100, 3);
+  expect(trail.every(segment => ['recognition', 'execution'].includes(segment.phase!))).toBe(true);
+  const recognition = page.locator('.trail-segment.recognition').first();
+  if (await recognition.count()) {
+    await expect(recognition).toHaveCSS('background-image', 'none');
+    await expect(recognition).toHaveCSS('filter', 'brightness(0.6)');
+  }
+  await expect(history.getByRole('row').nth(1).getByRole('cell').first()).toHaveText('1');
+  await expect(history.getByRole('row').nth(1).getByRole('cell').nth(1)).toHaveText(`${previousTime}s`);
+  await expect(statistics.getByRole('row', { name: /^Single / }).getByRole('cell')).toHaveText([previousTime, previousTime]);
+  await expect.poll(async () => (await storedSolves(page)).map(solve => solve.status)).toEqual(['complete']);
+  const recorded = (await storedSolves(page))[0];
+  expect(recorded.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  expect(recorded.inspection).toBeGreaterThanOrEqual(0);
+  await expect(page.getByText('Saved locally', { exact: true })).toHaveCount(0);
+  await expect(history.getByRole('row')).toHaveCount(2);
+  await history.getByRole('button', { name: 'View', exact: true }).click();
+  const replay = page.getByRole('dialog', { name: 'Solve replay' });
+  await expect(replay).toBeVisible();
+  await expect(replay.getByLabel('Solve ID', { exact: true })).toHaveText(`Solve ID: ${recorded.id}`);
+  await expect(replay.getByLabel('Inspection time', { exact: true })).toHaveText(`Inspection: ${(recorded.inspection! / 1000).toFixed(3)}s`);
+  expect(await replay.evaluate(element => element.lastElementChild!.getAttribute('aria-label'))).toBe('Solve ID');
+  expect(await replay.evaluate(element => element.matches(':modal'))).toBe(true);
+  const replayBounds = (await replay.boundingBox())!, screen = page.viewportSize()!;
+  expect(replayBounds.x + replayBounds.width / 2).toBeCloseTo(screen.width / 2, 0);
+  expect(replayBounds.y + replayBounds.height / 2).toBeCloseTo(screen.height / 2, 0);
+  const replayCube = replay.locator('twisty-player');
+  await expect.poll(() => replayCube.evaluate(element => (element as TwistyPlayer).experimentalModel.twistySceneModel.hintFacelet.get())).toBe('none');
+  await expect(page.locator('.replay-step-name')).toHaveText(['Cross', 'F2L Pair 1', 'F2L Pair 2', 'F2L Pair 3', 'F2L Pair 4', 'OLL', 'PLL']);
+  await expect(page.locator('.replay-step-name').first()).toHaveCSS('color', 'rgb(159, 200, 255)');
+  await expect(page.locator('.move-timeline .current')).toHaveCount(1);
+  await expect(replay.getByText('0/', { exact: false })).toContainText('0.000s');
+  await expectAnimatedTurn(page.getByRole('button', { name: 'Next move', exact: true }), '.replay-dialog twisty-player');
+  await expect(page.getByLabel('Replay move')).toHaveValue('1');
+  await expect(page.locator('.move-timeline button').first()).toHaveClass(/\bcurrent\b/);
+  expect(await page.locator('.move-timeline button').first().getAttribute('title')).toBe('0.000s');
+  await expectAnimatedTurn(page.getByRole('button', { name: 'Previous move', exact: true }), '.replay-dialog twisty-player');
+  await page.locator('.move-timeline button').last().click();
+  await expect.poll(() => replayCube.evaluate(async element =>
+    (await (element as TwistyPlayer).experimentalModel.currentPattern.get()).experimentalIsSolved({ ignoreCenterOrientation: true, ignorePuzzleOrientation: true }),
+  )).toBe(true);
+  await page.setViewportSize({ width: 375, height: 900 });
+  await expect.poll(async () => replay.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    return box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight && element.scrollHeight > element.clientHeight;
+  })).toBe(true);
+  await page.setViewportSize(viewport);
+  await page.keyboard.press('Escape');
+  await expect(replay).toHaveCount(0);
+  await expect(history.getByRole('button', { name: 'View', exact: true })).toBeFocused();
+  await history.getByRole('button', { name: 'View', exact: true }).click();
+  await page.getByRole('button', { name: 'Close replay' }).click();
+  await expect(celebration).toBeVisible();
+  await expect(celebration.locator('.pb-disco-ball')).toHaveCSS('animation-iteration-count', 'infinite');
+  await expect(celebration.getByRole('button', { name: 'Dismiss personal best' })).toHaveCSS('pointer-events', 'auto');
+  await celebration.getByRole('button', { name: 'Dismiss personal best' }).click();
+  await expect(celebration).toHaveCount(0);
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export JSON', includeHidden: true }).evaluate(button => (button as HTMLButtonElement).click());
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^timer-.*\.json$/);
+  const csvPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export CSV' }).click();
+  const csv = await csvPromise;
+  expect(csv.suggestedFilename()).toMatch(/^timer-.*\.csv$/);
+  const stream = await csv.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+  const [header, row] = Buffer.concat(chunks).toString('utf8').split('\r\n');
+  expect(header.split(',')).toHaveLength(164);
+  expect(row.split(',')).toHaveLength(164);
+  expect(row).toContain('Simulated 3x3');
+  const values = Object.fromEntries(header.split(',').map((column, i) => [column, row.split(',')[i]]));
+  expect(values.solving_method).toBe('CFOP');
+  expect(values.inspection_time).toBe(String(Math.round(recorded.inspection!)));
+  expect(values.step_6_name).toBe('PLL');
+  expect(values.step_6_cumulative_time).toBe(values.time);
+  expect(durations).toEqual(Array.from({ length: 7 }, (_, i) => Number(values[`step_${i}_time`])));
+  expect(trail.reduce((sum, segment) => sum + segment.duration, 0)).toBe(Number(values.time));
+  expect(trail.filter(segment => segment.phase === 'recognition').reduce((sum, segment) => sum + segment.duration, 0)).toBe(Number(values.total_recognition_time));
+  expect(trail.filter(segment => segment.phase === 'execution').reduce((sum, segment) => sum + segment.duration, 0)).toBe(Number(values.total_execution_time));
+  expect(Array.from({ length: 7 }, (_, i) => Number(values[`step_${i}_time`])).reduce((a, b) => a + b, 0)).toBe(Number(values.time));
+  expect(Array.from({ length: 7 }, (_, i) => Number(values[`step_${i}_face_turns`])).reduce((a, b) => a + b, 0)).toBe(Number(values.face_turns));
+  for (let i = 0; i < 60; i++) {
+    if (await page.getByRole('button', { name: 'Simulate solve', exact: true }).isEnabled()) break;
+    await guided.click();
+  }
+  await expect(page.getByLabel('Solve time', { exact: true })).toHaveText(previousTime);
+  await page.getByRole('button', { name: 'Simulate solve' }).click();
+  await expect(history.getByRole('row')).toHaveCount(3);
+  await expect(guided).toBeEnabled();
+  await page.reload();
+  await expect(history.getByRole('row')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await expect(page.getByLabel('Time precision', { exact: true })).toHaveValue('3');
+  await page.getByRole('dialog', { name: 'Options', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(page.getByLabel('Solve time', { exact: true })).toHaveText('0.000');
+  await expect(history.getByRole('row').nth(1).getByRole('cell').nth(1)).toHaveText(/^\d+\.\d{3}s$/);
+  const originalSingle = await statistics.getByRole('row', { name: /^Single / }).getByRole('cell').allTextContents();
+  const backupChunks: Buffer[] = [];
+  for await (const chunk of (await download.createReadStream())!) backupChunks.push(Buffer.from(chunk));
+  const seed = validateBackup(Buffer.concat(backupChunks).toString('utf8'), await loadCube())[0];
+  const solves = Array.from({ length: 1100 }, (_, i) => {
+    const duration = i < 100 ? 30000 : 10000;
+    return { ...seed, id: `statistics-${i}`, session: 'Statistics test', duration, createdAt: new Date(Date.UTC(2020, 0, 1) - i * 1000).toISOString(),
+      moves: seed.moves.map(move => { const elapsed = move.elapsed * duration / seed.duration; return { ...move, elapsed, hostTime: seed.moves[0].hostTime + elapsed }; }) };
+  });
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await page.getByLabel('Session', { exact: true }).fill('Statistics test');
+  await page.getByRole('dialog', { name: 'Options', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(statistics.getByRole('cell')).toHaveText(Array(10).fill('--'));
+  await page.locator('input[type=file]').setInputFiles({ name: 'statistics.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'timer-v1', solves })) });
+  for (const name of ['Single', 'Ao5', 'Ao12', 'Ao100']) {
+    await expect(statistics.getByRole('row', { name: new RegExp(`^${name} `) }).getByRole('cell')).toHaveText(['30.000', '10.000']);
+  }
+  await expect(statistics.getByRole('row', { name: /^Ao1000 / }).getByRole('cell')).toHaveText(['11.111', '10.000']);
+  await expect(history.getByRole('row')).toHaveCount(101);
+  await page.reload();
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await page.getByLabel('Session', { exact: true }).fill('Statistics test');
+  await page.getByRole('dialog', { name: 'Options', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(statistics.getByRole('row', { name: /^Ao1000 / }).getByRole('cell')).toHaveText(['11.111', '10.000']);
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await page.getByLabel('Session', { exact: true }).fill('Default');
+  await page.getByRole('dialog', { name: 'Options', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(statistics.getByRole('row', { name: /^Single / }).getByRole('cell')).toHaveText(originalSingle);
+  const penalized: Solve = { ...seed, id: 'penalty-example', session: 'Penalties test', penalty: 2000 };
+  const dnf: Solve = { ...seed, id: 'dnf-example', session: 'Penalties test', status: 'incomplete', reason: 'Solve aborted by user.' };
+  await page.locator('input[type=file]').setInputFiles({ name: 'penalties.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'timer-v1', solves: [penalized, dnf] })) });
+  await page.reload();
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await page.getByLabel('Session', { exact: true }).fill('Penalties test');
+  await page.getByRole('dialog', { name: 'Options', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
+  const plusTwo = history.locator('.solve-penalty').filter({ hasText: '+2' });
+  await expect(plusTwo).toBeVisible();
+  await expect(plusTwo).toHaveCSS('background-color', 'rgb(255, 193, 7)');
+  await expect(plusTwo.locator('..')).toHaveText(`${((seed.duration + 2000) / 1000).toFixed(3)}s +2`);
+  await expect(history.locator('.solve-penalty').filter({ hasText: 'DNF' })).toHaveCSS('background-color', 'rgb(220, 53, 69)');
+  await plusTwo.locator('..').locator('..').getByRole('button', { name: 'View', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Solve replay' }).getByLabel('Penalty reason', { exact: true })).toHaveText('+2 reason: over-turn');
+  await page.getByRole('button', { name: 'Close replay', exact: true }).click();
+  await expect(page.locator('[aria-label="Penalty reason"]')).toHaveCount(0);
+  await history.locator('.solve-penalty').filter({ hasText: 'DNF' }).locator('..').locator('..').getByRole('button', { name: 'View', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Solve replay' }).getByLabel('Penalty reason', { exact: true })).toHaveText('DNF reason: solve aborted');
+  await page.getByRole('button', { name: 'Close replay', exact: true }).click();
+  expect(external).toEqual([]);
+  expect(failures).toEqual([]);
+});
+
+test('options use a self-contained responsive dialog with keyboard dismissal and persistent settings', async ({ page }) => {
+  await page.goto('');
+  const options = page.getByRole('button', { name: 'Options', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Options', exact: true });
+  const header = page.locator('header');
+  const originalHeader = await header.boundingBox();
+  await expect(page.getByLabel('Time precision', { exact: true })).toBeHidden();
+  await expect(page.getByLabel('Session', { exact: true })).toBeHidden();
+  await expect(page.getByLabel('Bluetooth MAC (only if needed)', { exact: true })).toBeHidden();
+  await expect(page.getByRole('link', { name: "Find my cube's MAC address" })).toHaveCount(0);
+  await options.click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('Session', { exact: true })).toHaveValue('Default');
+  await expect(dialog.getByLabel('Extra-turn +2 penalty', { exact: true })).toBeChecked();
+  await expect(dialog.getByLabel('Notify for every Ao100/Ao1000 PB', { exact: true })).not.toBeChecked();
+  await expect(dialog.getByLabel('Bluetooth MAC (only if needed)', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('link', { name: "Find my cube's MAC address" })).toBeVisible();
+  expect(await header.boundingBox()).toEqual(originalHeader);
+  await page.getByRole('button', { name: 'Connect cube', exact: true }).evaluate(button => (button as HTMLButtonElement).focus());
+  expect(await dialog.evaluate(element => element.contains(document.activeElement))).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(options).toBeFocused();
+  await options.click();
+  await dialog.getByLabel('Time precision', { exact: true }).selectOption('3');
+  await dialog.getByLabel('Extra-turn +2 penalty', { exact: true }).uncheck();
+  await dialog.getByLabel('Notify for every Ao100/Ao1000 PB', { exact: true }).check();
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(options).toBeFocused();
+  await page.reload();
+  await page.setViewportSize({ width: 375, height: 667 });
+  await options.click();
+  await expect(dialog.getByLabel('Time precision', { exact: true })).toHaveValue('3');
+  await expect(dialog.getByLabel('Extra-turn +2 penalty', { exact: true })).not.toBeChecked();
+  await expect(dialog.getByLabel('Notify for every Ao100/Ao1000 PB', { exact: true })).toBeChecked();
+  const box = (await dialog.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(375);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(667);
+  await dialog.getByRole('button', { name: 'Close options', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(options).toBeFocused();
+});
+
+test('imports backups larger than 10 MB and exports lossless compact backups', async ({ page }) => {
+  const solve = await averageSeed(), cube = await loadCube();
+  await page.goto('');
+  await expect(page.getByText('Try simulated cube', { exact: true })).toBeEnabled();
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'large-backup.json', mimeType: 'application/json',
+    buffer: Buffer.concat([Buffer.alloc(10_000_001, ' '), Buffer.from(JSON.stringify({ format: 'timer-v1', solves: [solve] }))]),
+  });
+  const history = page.getByRole('table', { name: 'Solve history' });
+  await expect(history.locator('tbody tr')).toHaveCount(1);
+  await expect(history.getByRole('button', { name: 'View', exact: true })).toHaveCount(1);
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export JSON', includeHidden: true }).evaluate(button => (button as HTMLButtonElement).click());
+  const download = await downloadPromise;
+  const chunks: Buffer[] = [];
+  for await (const chunk of (await download.createReadStream())!) chunks.push(Buffer.from(chunk));
+  const compact = Buffer.concat(chunks);
+  expect(validateBackup(compact.toString('utf8'), cube)).toEqual([solve]);
+  const restored = JSON.parse(compact.toString('utf8')) as { solves: { id: string }[] };
+  restored.solves[0].id = 'compact-restored';
+  await page.locator('input[type=file]').setInputFiles({ name: 'compact.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(restored)) });
+  await expect(history.locator('tbody tr')).toHaveCount(2);
+  await page.reload();
+  await expect(history.locator('tbody tr')).toHaveCount(2);
+  expect(await storedSolves(page)).toEqual(expect.arrayContaining([solve, { ...solve, id: 'compact-restored' }]));
+});
+
+test('rejects invalid backups without changing history', async ({ page }) => {
+  await page.goto('');
+  await expect(page.getByText('Try simulated cube', { exact: true })).toBeEnabled();
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'invalid.json', mimeType: 'application/json', buffer: Buffer.from('{"format":"timer-v1","solves":[null]}'),
+  });
+  await expect(page.getByRole('alert')).toContainText('Invalid solve');
+  await expect(page.getByRole('table', { name: 'Solve history' }).getByRole('row')).toHaveCount(1);
+});
+
+test('case names stay beside replay step headings and export after backup restoration', async ({ page }) => {
+  const cube = await loadCube(), timer = new TimerEngine(cube, () => {}, () => {});
+  const solution = "R' F R F' R U R2 U' R' F R U R U' F' R U R' U' R' F R2 U' R' U' R U R' F'";
+  const scramble = solution.split(' ').reverse().map(inverse);
+  timer.connect('Test cube'); timer.synchronize(SOLVED); timer.prepare(scramble.join(' '));
+  [...scramble, ...solution.split(' ')].forEach((move, i) => timer.turn({ move, hostTime: i * 100, localTimestamp: i * 100, cubeTimestamp: null }));
+  const solve = timer.result!;
+  await page.goto('');
+  await expect(page.getByText('Try simulated cube', { exact: true })).toBeEnabled();
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'recognized-cases.json', mimeType: 'application/json', buffer: Buffer.from(backupJSON([solve])),
+  });
+  await expect(page.getByRole('table', { name: 'Solve history' }).getByRole('button', { name: 'View', exact: true })).toHaveCount(1);
+  await page.reload();
+  await page.getByRole('table', { name: 'Solve history' }).getByRole('button', { name: 'View', exact: true }).click();
+  const replay = page.getByRole('dialog', { name: 'Solve replay', exact: true });
+  for (const width of [1280, 375]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const [step, label] of [['F2L Pair 4', 'F2L 1'], ['OLL', 'OLL 34'], ['PLL', 'T perm']]) {
+      const group = replay.getByRole('group', { name: `${step} solution`, exact: true });
+      const badge = group.getByLabel(`${step} case`, { exact: true });
+      await expect(badge).toHaveText(label);
+      const heading = (await group.getByRole('heading', { name: step, exact: true }).boundingBox())!;
+      const caseBox = (await badge.boundingBox())!, alg = (await group.getByRole('button').first().boundingBox())!;
+      expect(caseBox.x).toBeGreaterThanOrEqual(heading.x + heading.width);
+      expect(caseBox.y).toBeLessThan(heading.y + heading.height);
+      expect(caseBox.y + caseBox.height).toBeGreaterThan(heading.y);
+      expect(alg.y).toBeGreaterThanOrEqual(Math.max(heading.y + heading.height, caseBox.y + caseBox.height));
+    }
+  }
+  await replay.getByRole('button', { name: 'Close replay', exact: true }).click();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export CSV', exact: true }).click();
+  const chunks: Buffer[] = [];
+  for await (const chunk of (await (await downloadPromise).createReadStream())!) chunks.push(Buffer.from(chunk));
+  const [header, line] = Buffer.concat(chunks).toString('utf8').split('\r\n');
+  const row = Object.fromEntries(header.split(',').map((column, i) => [column, line.split(',')[i]]));
+  expect(row).toMatchObject({ solution_rotation: 'UF', step_4_case: '1', step_5_case: '34', step_6_case: 'T' });
+});
+
+test('all six cross colors start underneath in restored replays and export their solve orientation', async ({ page }) => {
+  const cube = await loadCube();
+  const base = "R U R' U' R' F R2 U' R' U' R U R' F' R U R' U R U2 R' R U R' F U F' L U L' B U B' D";
+  const frames = [['x2', 'DB'], ['z', 'RU'], ["z'", 'LU'], ['', 'UF'], ['x', 'BU'], ["x'", 'FU']];
+  const solves = frames.map(([rotation], i) => {
+    const centers = cube.solved().applyAlg(rotation).patternData.CENTERS.pieces;
+    const remap = (alg: string) => alg.split(' ').map(move => 'ULFRBD'[centers.indexOf('ULFRBD'.indexOf(move[0]))] + move.slice(1));
+    const scramble = remap(base), solution = remap(base.split(' ').reverse().map(inverse).join(' '));
+    const timer = new TimerEngine(cube, () => {}, () => {});
+    timer.connect('Test cube'); timer.synchronize(SOLVED); timer.prepare(scramble.join(' '));
+    [...scramble, ...solution].forEach((move, j) => timer.turn({ move, hostTime: j * 100, localTimestamp: j * 100, cubeTimestamp: null }));
+    return { ...timer.result!, id: `cross-orientation-${i}`, createdAt: new Date(Date.UTC(2026, 10, 1, 12, i)).toISOString() };
+  });
+  await page.goto('');
+  await expect(page.getByText('Try simulated cube', { exact: true })).toBeEnabled();
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'six-cross-colors.json', mimeType: 'application/json', buffer: Buffer.from(backupJSON(solves)),
+  });
+  await expect(page.getByRole('table', { name: 'Solve history' }).getByRole('button', { name: 'View', exact: true })).toHaveCount(6);
+  await page.reload();
+  const views = page.getByRole('table', { name: 'Solve history' }).getByRole('button', { name: 'View', exact: true });
+  await expect(views).toHaveCount(6);
+  for (let i = 0; i < solves.length; i++) {
+    await views.nth(i).click();
+    const replay = page.getByRole('dialog', { name: 'Solve replay', exact: true });
+    const id = await replay.getByLabel('Solve ID', { exact: true }).textContent();
+    const solve = solves.find(solve => id!.includes(solve.id))!;
+    const frame = frames[solves.indexOf(solve)][0], centers = cube.solved().applyAlg(frame).patternData.CENTERS.pieces;
+    const cross = 'URFDLB'.indexOf('ULFRBD'[centers.indexOf(5)]);
+    const rotation = ['x2', 'z', "x'", '', "z'", 'x'][cross];
+    const player = replay.locator('twisty-player');
+    const pattern = () => player.evaluate(async element => (await (element as TwistyPlayer).experimentalModel.currentPattern.get()).patternData);
+    await expect.poll(pattern).toEqual(cube.parse(solve.startFacelets).applyAlg(rotation).patternData);
+    expect((await pattern()).CENTERS.pieces[5]).toBe('ULFRBD'.indexOf('URFDLB'[cross]));
+    await expectAnimatedTurn(replay.getByRole('button', { name: 'Next move', exact: true }), '.replay-dialog twisty-player');
+    await expect.poll(pattern).toEqual(cube.parse(solve.startFacelets).applyMove(solve.moves[0].move).applyAlg(rotation).patternData);
+    await replay.locator('.move-timeline button').last().click();
+    await expect.poll(pattern).toEqual(cube.solved().applyAlg(rotation).patternData);
+    await replay.getByRole('button', { name: 'Close replay', exact: true }).click();
+  }
+  const downloading = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export CSV', exact: true }).click();
+  const chunks: Buffer[] = [];
+  for await (const chunk of (await (await downloading).createReadStream())!) chunks.push(Buffer.from(chunk));
+  const [header, ...lines] = Buffer.concat(chunks).toString('utf8').trim().split('\r\n');
+  const columns = header.split(',');
+  for (const line of lines) {
+    const cells = line.split(','), id = cells[columns.indexOf('id')];
+    expect(cells[columns.indexOf('solution_rotation')]).toBe(frames[solves.findIndex(solve => solve.id === id)][1]);
+  }
+});
+
+test('hide distracting visuals persists and animates zero to three dots without moving Solving', async ({ page }) => {
+  await page.goto('');
+  const options = page.getByRole('dialog', { name: 'Options', exact: true });
+  const setting = options.getByRole('checkbox', { name: 'Hide distracting visuals', exact: true });
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await expect(options.getByText('Hide all', { exact: true })).toHaveCount(0);
+  await expect(options.locator('details')).not.toHaveAttribute('open', '');
+  await setting.check();
+  await expect(options.locator('details')).not.toHaveAttribute('open', '');
+  const heading = options.getByText('Hide distracting visuals', { exact: true });
+  const checkboxBounds = (await setting.boundingBox())!;
+  const headingBounds = (await heading.boundingBox())!;
+  expect(checkboxBounds.x + checkboxBounds.width).toBeLessThan(headingBounds.x);
+  await setting.uncheck();
+  await options.getByText('Hide distracting visuals', { exact: true }).click();
+  await expect(options.locator('details')).toHaveAttribute('open', '');
+  await expect(setting).not.toBeChecked();
+  await setting.check();
+  const cubeSetting = options.getByRole('checkbox', { name: 'Cube', exact: true });
+  await cubeSetting.uncheck();
+  expect(await setting.evaluate(element => (element as HTMLInputElement).indeterminate)).toBe(true);
+  await options.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.reload();
+  await page.setViewportSize({ width: 375, height: 667 });
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await options.getByText('Hide distracting visuals', { exact: true }).click();
+  await expect(options.getByRole('checkbox', { name: 'Timer', exact: true })).toBeChecked();
+  await expect(cubeSetting).not.toBeChecked();
+  await expect(options.getByRole('checkbox', { name: 'Progress bar', exact: true })).toBeChecked();
+  expect(await setting.evaluate(element => (element as HTMLInputElement).indeterminate)).toBe(true);
+  await setting.check();
+  await expect(cubeSetting).toBeChecked();
+  await options.getByRole('button', { name: 'Done', exact: true }).click();
+  const simulator = page.getByText('Try simulated cube', { exact: true });
+  await expect(simulator).toBeEnabled();
+  await simulator.evaluate(button => (button as HTMLButtonElement).click());
+  const guided = page.getByRole('button', { name: 'Perform guided move' });
+  await expect(guided).toBeEnabled({ timeout: 45000 });
+  for (let i = 0; i < 60; i++) {
+    if (await page.getByRole('button', { name: 'Simulate solve', exact: true }).isEnabled()) break;
+    await guided.click();
+  }
+  await expect(page.getByLabel('Solve time', { exact: true })).toBeVisible();
+  await expect(page.locator('.timer-panel twisty-player')).toBeVisible();
+  await page.getByRole('button', { name: 'U', exact: true }).click();
+  const indicator = page.getByRole('status', { name: 'Solving', exact: true });
+  await expect(indicator).toBeVisible();
+  await expect(page.getByLabel('Solve time', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.timer-panel twisty-player')).toHaveCount(0);
+  await expect(page.getByRole('group', { name: 'Solve timeline', exact: true })).toHaveCount(0);
+  const samples = await indicator.evaluate(element => {
+    const word = element.firstElementChild!;
+    const dots = element.querySelector<HTMLElement>('.solving-dots > span')!;
+    const animation = dots.getAnimations()[0];
+    animation.pause();
+    const samples = [200, 600, 1000, 1400, 1800].map(time => {
+      animation.currentTime = time;
+      return {
+        dots: Math.round(3 * dots.getBoundingClientRect().width / dots.parentElement!.getBoundingClientRect().width),
+        wordX: word.getBoundingClientRect().x,
+        wordWidth: word.getBoundingClientRect().width,
+      };
+    });
+    animation.play();
+    return samples;
+  });
+  expect(samples.map(sample => sample.dots)).toEqual([0, 1, 2, 3, 0]);
+  expect(samples.every(sample => sample.wordX === samples[0].wordX && sample.wordWidth === samples[0].wordWidth)).toBe(true);
+  for (const name of ['Timer', 'Cube', 'Progress bar']) {
+    await page.getByRole('button', { name: 'Options', exact: true }).click();
+    await setting.uncheck();
+    await options.getByRole('checkbox', { name, exact: true }).check();
+    expect(await setting.evaluate(element => (element as HTMLInputElement).indeterminate)).toBe(true);
+    await options.getByRole('button', { name: 'Done', exact: true }).click();
+    await expect(page.getByLabel('Solve time', { exact: true })).toHaveCount(name === 'Timer' ? 0 : 1);
+    await expect(indicator).toHaveCount(name === 'Timer' ? 1 : 0);
+    await expect(page.locator('.timer-panel twisty-player')).toHaveCount(name === 'Cube' ? 0 : 1);
+    await expect(page.getByRole('group', { name: 'Solve timeline', exact: true })).toHaveCount(name === 'Progress bar' ? 0 : 1);
+    await page.getByRole('button', { name: 'Options', exact: true }).click();
+    await setting.check();
+    await options.getByRole('button', { name: 'Done', exact: true }).click();
+    await expect(indicator).toBeVisible();
+    await expect(page.getByLabel('Solve time', { exact: true })).toHaveCount(0);
+    await expect(page.locator('.timer-panel twisty-player')).toHaveCount(0);
+    await expect(page.getByRole('group', { name: 'Solve timeline', exact: true })).toHaveCount(0);
+  }
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await setting.uncheck();
+  await options.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(indicator).toHaveCount(0);
+  await expect(page.getByLabel('Solve time', { exact: true })).toBeVisible();
+  await expect(page.locator('.timer-panel twisty-player')).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Solve timeline', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await setting.check();
+  await options.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(indicator).toBeVisible();
+  await page.getByRole('button', { name: 'Abort solve', exact: true }).click();
+  await expect(indicator).toHaveCount(0);
+  await expect(page.getByLabel('Solve time', { exact: true })).toBeVisible();
+  await expect(page.locator('.timer-panel twisty-player')).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Solve timeline', exact: true })).toBeVisible();
+  await expect.poll(async () => (await storedSolves(page)).map(solve => [solve.status, solve.reason, solve.moves.length])).toEqual([['incomplete', 'Solve aborted by user.', 1]]);
+  const dnfBadge = page.locator('.timer-display .solve-penalty');
+  await expect(dnfBadge).toHaveText('DNF');
+  await expect(dnfBadge).toHaveCSS('background-color', 'rgb(220, 53, 69)');
+  const timeBox = await page.getByLabel('Solve time', { exact: true }).boundingBox();
+  const badgeBox = await dnfBadge.boundingBox();
+  expect(badgeBox!.x).toBeGreaterThan(timeBox!.x + timeBox!.width);
+  await expect(page.getByRole('table', { name: 'Solve history' }).locator('.solve-penalty')).toHaveText('DNF');
+  await expect(page.getByText('Return the cube to solved', { exact: true })).toBeVisible({ timeout: 45000 });
+  await expect(page.getByRole('button', { name: 'New scramble', exact: true })).toBeDisabled();
+  const dnf = (await storedSolves(page))[0];
+  for (let i = 0; i < 80; i++) {
+    if (!await page.getByText('Return the cube to solved', { exact: true }).isVisible()) break;
+    await page.getByRole('button', { name: 'Perform guided move', exact: true }).click();
+  }
+  await expect(page.getByText('Return the cube to solved', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'New scramble', exact: true })).toBeEnabled({ timeout: 45000 });
+  await expect(page.locator('.scramble-content .move')).not.toHaveCount(0);
+  expect(await storedSolves(page)).toEqual([dnf]);
+});
+
+test('reload preserves an interrupted solve as incomplete', async ({ page }) => {
+  await page.goto('');
+  await expect(page.getByText('Try simulated cube', { exact: true })).toBeEnabled();
+  await page.getByText('Try simulated cube', { exact: true }).evaluate(button => (button as HTMLButtonElement).click());
+  const guided = page.getByRole('button', { name: 'Perform guided move' });
+  await expect(guided).toBeEnabled({ timeout: 45000 });
+  for (let i = 0; i < 60; i++) {
+    if (await page.getByRole('button', { name: 'Simulate solve', exact: true }).isEnabled()) break;
+    await guided.click();
+  }
+  await page.getByRole('button', { name: 'U', exact: true }).click();
+  await expect(page.locator('.scramble-placeholder').getByRole('button', { name: 'Abort solve', exact: true })).toBeVisible();
+  await expect.poll(async () => (await storedSolves(page)).map(solve => [solve.status, solve.moves.length])).toEqual([['active', 1]]);
+  await expect(page.getByText('Saved locally', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Options', exact: true }).getByLabel('Session', { exact: true })).toBeDisabled();
+  await page.getByRole('dialog', { name: 'Options', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
+  await page.reload();
+  await expect(page.getByRole('table', { name: 'Solve history' }).getByRole('row')).toHaveCount(2);
+  await page.getByRole('table', { name: 'Solve history' }).getByRole('button', { name: 'View', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Solve replay' })).toContainText('incomplete');
+});
+
+test('storage failure is visible and never reports a successful save', async ({ page }) => {
+  await page.addInitScript(() => {
+    const transaction = IDBDatabase.prototype.transaction;
+    IDBDatabase.prototype.transaction = function (...args: Parameters<IDBDatabase['transaction']>) {
+      if (args[1] === 'readwrite') throw new DOMException('Storage quota exceeded.', 'QuotaExceededError');
+      return transaction.apply(this, args);
+    };
+  });
+  await page.goto('');
+  await expect(page.getByText('Try simulated cube', { exact: true })).toBeEnabled();
+  await page.getByText('Try simulated cube', { exact: true }).evaluate(button => (button as HTMLButtonElement).click());
+  const guided = page.getByRole('button', { name: 'Perform guided move' });
+  await expect(guided).toBeEnabled({ timeout: 45000 });
+  for (let i = 0; i < 60; i++) {
+    if (await page.getByRole('button', { name: 'Simulate solve', exact: true }).isEnabled()) break;
+    await guided.click();
+  }
+  await page.getByRole('button', { name: 'U', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Storage quota exceeded');
+  await expect(page.getByText('Not saved - export a backup now', { exact: true })).toBeVisible();
+  await expect(page.getByText('Saved locally', { exact: true })).toHaveCount(0);
+});

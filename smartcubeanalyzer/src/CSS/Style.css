@@ -1,0 +1,96 @@
+/**
+* Template Name: NiceAdmin
+* Updated: Sep 18 2023 with Bootstrap v5.3.2
+* Template URL: https://bootstrapmade.com/nice-admin-bootstrap-admin-html-template/
+* Author: BootstrapMade.com
+* License: https://bootstrapmade.com/license/
+*/
+
+@import "react-datepicker/dist/react-datepicker.css";
+
+.react-datepicker-popper { z-index: 1060 !important; }
+:root { scroll-behavior: smooth; }
+html, body { overflow-x: hidden; }
+body { background: var(--cp-bg); color: var(--cp-text); }
+a { color: var(--cp-accent); text-decoration: none; }
+a:hover { color: var(--cp-accent); text-decoration: none; }
+h1, h2, h3, h4, h5, h6 { font-family: var(--cp-font); }
+
+.card { margin-bottom: 30px; border: 1px solid var(--cp-border); border-radius: 16px; background: var(--cp-panel); box-shadow: none; }
+.card-title { padding: 20px 0 15px; font-size: 18px; font-weight: 650; color: var(--cp-text); }
+.card-body { padding: 0 20px 20px; }
+.card-header, .card-footer { background: var(--cp-panel); border-color: var(--cp-border); color: var(--cp-muted); }
+.card-title span { color: var(--cp-muted); }
+.card-img-overlay { background: var(--cp-panel); }
+@media (min-width: 768px) {
+  .chart-card-expanded .chart-card-scroll { --bs-aspect-ratio: 0; }
+  .chart-card-expanded .chart-card-scroll > * { position: static; height: auto; overflow: visible !important; }
+}
+.alert-heading { font-weight: 650; font-size: 20px; }
+.btn-close { background-size: 25%; }
+.btn-close:focus { outline: 0; box-shadow: none; }
+.header { z-index: 997; }
+.dashboard .info-card { padding-bottom: 10px; }
+.dashboard .info-card h6 { font-size: 28px; color: var(--cp-text); font-weight: 700; margin: 0; padding: 0; }
+.demo-data-menu { max-height: 60vh; max-width: min(22rem, 90vw); overflow-y: auto; }
+.data-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; }
+.demo-data-picker { --cp-primary: #0d6efd; --cp-primary-border: #0d6efd; --cp-primary-hover: #0b5ed7; }
+.container-fluid { max-width: 95% !important; }
+.dropdown-menu { box-shadow: 0 5px 30px #0004; }
+.dropdown-menu .dropdown-footer a { color: var(--cp-text); }
+.dropdown-menu .dropdown-divider, .accordion-item, .footer { border-color: var(--cp-border); }
+@media (min-width: 768px) {
+  .dropdown-menu-arrow::before { background: var(--cp-panel); border-color: var(--cp-border); }
+}
+.accordion-flush .accordion-body, .dashboard .filter .icon { color: var(--cp-muted); }
+.dashboard .filter .icon:hover, .dashboard .filter .icon:focus { color: var(--cp-accent); }
+.dashboard .filter .dropdown-header h6 { color: var(--cp-muted); }
+
+/* Preserve full-cell targets in the algorithm and fastest-solves grids. */
+.algo-case-link { display: flex; align-items: center; block-size: 100%; margin-inline: -8px; padding-inline: 8px; color: inherit; text-decoration: underline dotted; text-underline-offset: 2px; }
+.clickable-grid .rdg-row .rdg-cell { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.algo-case-link:hover, .algo-case-link:focus-visible, .clickable-grid .rdg-row .rdg-cell:hover { color: var(--cp-accent); text-decoration: underline; }
+.rdg, .rdg-cell, .rdg-header-row, .rdg-row { background: var(--cp-panel); color: var(--cp-text); border-color: var(--cp-border); }
+.rdg-cell:hover { background: var(--cp-subtle); }
+
+.rmsc .item-renderer.group-header { align-items: center; font-weight: 600; }
+.rmsc .group-toggle { background: none; border: 0; color: inherit; cursor: pointer; flex: 1; font: inherit; padding: 0; text-align: left; }
+.rmsc .group-caret { display: inline-block; width: 1em; }
+.rmsc, .multi-select {
+  --rmsc-background: var(--cp-panel);
+  --rmsc-border: var(--cp-border);
+  --rmsc-hover: var(--cp-subtle);
+  --rmsc-selected: var(--cp-subtle);
+  --rmsc-primary: var(--cp-accent);
+  --rmsc-gray: var(--cp-muted);
+}
+.rmsc .dropdown-container, .rmsc .dropdown-heading, .rmsc .dropdown-heading-value, .rmsc .dropdown-content, .rmsc .panel-content, .rmsc .select-panel {
+  background: var(--cp-panel) !important;
+  color: var(--cp-text) !important;
+  border-color: var(--cp-border) !important;
+}
+.rmsc .dropdown-heading-value span, .rmsc .dropdown-heading-value .gray, .rmsc .select-item, .rmsc .select-item label, .rmsc .item-renderer span, .rmsc .no-options { color: var(--cp-text) !important; }
+.rmsc .select-item:hover, .rmsc .select-item.selected { background: var(--cp-subtle) !important; }
+.rmsc .search, .rmsc .search input { background: var(--cp-bg) !important; color: var(--cp-text) !important; border-color: var(--cp-border) !important; }
+.rmsc .gray { color: var(--cp-muted) !important; }
+
+.method-select__control, .method-select__control:hover { background: var(--cp-panel) !important; border-color: var(--cp-border) !important; color: var(--cp-text) !important; }
+.method-select__single-value, .method-select__placeholder, .method-select__input-container, .method-select__input-container input { color: var(--cp-text) !important; }
+.method-select__menu { background: var(--cp-panel) !important; border: 1px solid var(--cp-border) !important; }
+.method-select__menu-list, .method-select__option { background: var(--cp-panel) !important; color: var(--cp-text) !important; }
+.method-select__option--is-focused, .method-select__option--is-selected { background: var(--cp-subtle) !important; color: var(--cp-text) !important; }
+.method-select__indicator-separator { background: var(--cp-border) !important; }
+.method-select__dropdown-indicator { color: var(--cp-muted) !important; }
+.method-select__dropdown-indicator:hover { color: var(--cp-text) !important; }
+
+.react-datepicker, .react-datepicker__header, .react-datepicker__time-container .react-datepicker__time { background: var(--cp-panel); color: var(--cp-text); border-color: var(--cp-border); }
+.react-datepicker__current-month, .react-datepicker-time__header, .react-datepicker__day-name, .react-datepicker__day, .react-datepicker__time-name { color: var(--cp-text); }
+.react-datepicker__day:hover, .react-datepicker__time-list-item:hover { background: var(--cp-subtle) !important; }
+.react-datepicker__day--selected, .react-datepicker__day--in-range, .react-datepicker__day--keyboard-selected { background: var(--cp-primary); color: #fff; }
+.react-datepicker__day--disabled, .react-datepicker__day--outside-month { color: var(--cp-muted); }
+
+.preset-filters { display: flex; flex-wrap: wrap; }
+@media (max-width: 575.98px) {
+  .preset-filters { flex-wrap: nowrap; }
+  .preset-filters > .btn { flex: 1 1 0; padding-inline: 4px; font-size: 13px; }
+}
