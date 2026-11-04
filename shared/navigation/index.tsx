@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, type ReactNode, type RefObject } from 'react';
 
-export const APP_VERSION = '1.1.1';
+export const APP_VERSION = '1.1.2';
 export type Tool = 'home' | 'timer' | 'smartcubeanalyzer' | 'scrambler';
 export const HeaderActions = createContext<ReactNode>(null);
 export const PageVisible = createContext(true);

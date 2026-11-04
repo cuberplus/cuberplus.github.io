@@ -3,10 +3,10 @@
 body:has(.replay-dialog[open]) { overflow: hidden; }
 .replay-dialog h2 { font-size: 1.1rem; font-weight: 650; margin-bottom: .8rem; }
 .replay-dialog .scramble, .replay-dialog .move-timeline { font-family: ui-monospace, monospace; line-height: 2.1; }
-.replay-dialog .move { display: inline-block; padding: 0 .45rem; margin: 0 .1rem; border-radius: 5px; border: 0; background: transparent; color: var(--cp-text); }
-.replay-dialog .move.done { color: var(--cp-accent); }
-.replay-dialog .move.current { background: #65d3b0; color: #10141e; }
-.replay-dialog .move.partial { background: #f5b942; color: #10141e; }
+.move { display: inline-block; padding: 0 .45rem; margin: 0 .1rem; border-radius: 5px; border: 0; background: transparent; color: var(--cp-text); }
+.move.done { color: var(--cp-accent); }
+.move.current { background: #65d3b0; color: #10141e; }
+.move.partial { background: #f5b942; color: #10141e; }
 .move.correction { background: #dc3545; color: #fff; }
 .replay-dialog .replay-speed { max-width: 90px; }
 .replay-dialog .replay-step-name { display: table; margin: 0 0 .35rem; padding: .2rem .6rem; border-left: 3px solid #9fc8ff; border-radius: 4px; background: var(--cp-bg); color: var(--cp-accent); font: 700 .75rem var(--cp-font); letter-spacing: .06em; text-transform: uppercase; }

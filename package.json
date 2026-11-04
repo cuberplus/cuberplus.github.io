@@ -35,7 +35,7 @@
     "test": "npm run test:web && npm run test:timer",
     "test:web": "jest --runInBand --selectProjects site analyzer",
     "test:timer": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --selectProjects timer",
-    "test:site": "node scripts/check-site.mjs && node scripts/check-persistent-app.mjs"
+    "test:site": "node scripts/check-site.mjs && node scripts/check-persistent-app.mjs && node scripts/check-scramble.mjs"
   },
   "browserslist": {
     "production": [
