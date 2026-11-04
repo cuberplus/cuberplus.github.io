@@ -1,0 +1,1 @@
+import{r as o,o as r,l as s}from"./storage-BEeQkofJ.js";import"./cubing-core-BlVCN5VW.js";import"./AverageDialog-PmDwcdiv.js";import"./index-BraniEks.js";async function n(){const a=await o();return a.some(t=>t.status!=="active")?r(a,await s()):""}export{n as readTimerData};
