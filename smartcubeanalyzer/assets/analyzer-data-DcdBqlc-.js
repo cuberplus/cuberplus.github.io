@@ -1,0 +1,1 @@
+import{a as e}from"./index-B7e0Gt95.js";import{r as t,t as n,u as r}from"./storage-YEMHLvYq.js";function i(){return a.apply(this,arguments)}function a(){return a=e(function*(){let e=yield t();return e.some(e=>e.status!==`active`)?n(e,yield r()):``}),a.apply(this,arguments)}export{i as readTimerData};
