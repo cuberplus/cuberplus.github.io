@@ -9,6 +9,20 @@ const acubemySample = `solve_id,date,total_time,scramble,solution,turns,tps,move
 139047,2026-01-08T10:32:50.222Z,27167,B2 L2 U L2 U' F2 R2 D2 L2 U R2 L' B2 R' F' L F U R' D B R2 U2,x2 D B' D2' R' L2 D2' x' x U L U L' U F U F' U' R U' R' f R f' U R R' U R' F R F' U2 R U R' y' U' U2' L' U' F' F U L L' U' L U F U F' R U R' U' R' F R F' x' x U' R U' R' U' R U R D R' U' R D' R' U2 R' U2',79,2.9079397798800013,"0 0 644 1336 1902 2308 2864 4409 5295 5387 5624 5819 5879 6421 6723 6989 7187 8791 8968 9192 9464 10187 10229 10502 11323 11474 11804 12118 12344 12451 12599 12748 13082 13326 13518 13632 15314 17578 18449 18614 18884 19064 19332 19771 20058 20415 20668 20797 20954 21238 21421 21570 22620 22798 22876 22992 23119 23176 23309 23415 24014 24331 24372 24797 25002 25078 25241 25376 25560 25606 25786 25965 26111 26233 26368 26567 26808 26909 27167",CFOP,GAN12ui--B3C,PAU-2026-01,,,,U,"x2 D B' D2' R' L2 D2'",2864,2864,"x' x U L U L' U F U F'",4323,1545,2778,"U' R U' R' f R f'",3191,1480,1711,"U R R' U R' F R F' U2 R U R' y'",3254,-737,3991,"U' U2' L' U' F' F U L L' U' L U F U F'",7938,3946,3992,32,"R U R' U' R' F R F'",1845,1050,795,Ra,"x' x U' R U' R' U' R U R D R' U' R D' R' U2 R' U2'",3752,599,3153`;
 
 describe('CsvParser', () => {
+    test('infers first-pair colors from fixed-frame Cubeast recordings and preserves explicit Timer metadata', () => {
+        const scramble = "R U R' U' R' F R2 U' R' U' R U R' F' R U R' U R U2 R' R U R' F U F' L U L' B U B' D";
+        const solution = scramble.split(' ').reverse().map(move => move.includes('2') ? move : move.endsWith("'") ? move[0] : `${move}'`)
+            .map((move, i) => `${move}[${i * 100}]`).join(' ');
+        const header = 'id,date,time,solving_method,solution_rotation,scramble,solution';
+        const row = `pair,2026-01-05 15:09:52 UTC,20000,CFOP,UF,${scramble},${solution}`;
+        expect(parseCsv(`${header}\n${row}`, ',')[0].firstF2LPair).toBe('Red/Blue');
+        expect(parseCsv(`${header},first_f2l_pair\n${row},Green/Orange`, ',')[0].firstF2LPair).toBe('Green/Orange');
+        expect(parseCsv(`${header},first_f2l_pair\n${row},`, ',')[0].firstF2LPair).toBe('');
+        expect(parseCsv(`${header}\n${row.replace('CFOP,UF', 'CFOP,')}`, ',')[0].firstF2LPair).toBeUndefined();
+        const acubemy = `solve_id,date,total_time,analysis_type,cross_face,scramble,solution\npair,2026-01-05,20000,CFOP,D,${scramble},${solution.replace(/\[[^\]]*\]/g, '')}`;
+        expect(parseCsv(acubemy, ',')[0].firstF2LPair).toBe('Red/Blue');
+    });
+
     test('a Timer attempt with no recorded inspection does not become a zero-second inspection', () => {
         const [solve] = parseCsv('id,date,dnf,time,solving_method,inspection_time\na,2026-01-05 15:09:52 UTC,false,10000,CFOP,', ',');
         expect(solve.inspectionTime).toBeNull();

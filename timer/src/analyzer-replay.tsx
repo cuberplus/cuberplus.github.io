@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { Replay } from './Replay';
 import { readSolves } from './storage';
 import { loadCube } from './puzzle';
 import type { Cube } from './puzzle';
 import type { Solve } from './engine';
-import { usePageDialog } from '@cuberplus/navigation';
+import { SettingsContext, usePageDialog } from '@cuberplus/navigation';
 
 export default function AnalyzerReplay({ id, close }: { id: string; close: () => void }) {
+  const { precision } = useContext(SettingsContext);
   const dialog = useRef<HTMLDialogElement>(null);
   const [data, setData] = useState<{ solve: Solve; cube: Cube } | null>(null);
   const [error, setError] = useState('');
@@ -20,7 +21,7 @@ export default function AnalyzerReplay({ id, close }: { id: string; close: () =>
     }).catch(error => { if (!cancelled) setError(error instanceof Error ? error.message : 'Unable to load this solve.'); });
     return () => { cancelled = true; };
   }, [id]);
-  return data ? <Replay {...data} close={close} precision={3} /> :
+  return data ? <Replay {...data} close={close} precision={precision} /> :
     <dialog ref={dialog} className="replay-dialog" aria-label="Solve replay" onCancel={event => { event.preventDefault(); close(); }}>
       <p role={error ? 'alert' : 'status'}>{error || 'Loading solve replay…'}</p>
       <button autoFocus className="btn btn-outline-secondary" onClick={close}>Close replay</button>

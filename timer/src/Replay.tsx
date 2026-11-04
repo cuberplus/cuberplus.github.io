@@ -3,7 +3,8 @@ import { getDnfReason, type Solve } from './engine';
 import { Cube, movesOf } from './puzzle';
 import { CubeView } from './CubeView';
 import { formatTime, turns } from './storage';
-import { analyzeCFOP, CFOP_STEPS } from './cfop';
+import { analyzeCFOP, cfopFrame, cfopRotation, CFOP_STEPS, f2lPair } from './cfop';
+import { pairEmojis } from '../../shared/f2l';
 import { usePageDialog } from '@cuberplus/navigation';
 import './Replay.css';
 
@@ -13,28 +14,31 @@ export function Replay({ cube, solve, close, precision = 2 }: { cube: Cube; solv
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const moves = useMemo(() => solve.moves.map(turn => turn.move), [solve]);
-  const { cross, ends, cases } = useMemo(() => analyzeCFOP(solve, cube), [solve, cube]);
+  const { cross, ends, cases, pairs } = useMemo(() => analyzeCFOP(solve, cube), [solve, cube]);
+  const rotation = useMemo(() => cfopRotation(cube, cross, pairs[0]), [cube, cross, pairs]);
   const visible = usePageDialog(dialog);
   const dismiss = () => { dialog.current?.close(); close(); };
   const steps = useMemo(() => {
+    const frame = cfopFrame(cube, rotation);
     return CFOP_STEPS.map((name, step) => {
       const start = step ? ends[step - 1] ?? solve.moves.length : 0;
       const end = step === 6 ? solve.moves.length : ends[step] ?? solve.moves.length;
       const groups: { notation: string; start: number; end: number; amount: number }[] = [];
       for (let i = start; i < end; i++) {
-        const notation = solve.moves[i].move, amount = notation.includes('2') ? 2 : notation.endsWith("'") ? -1 : 1;
+        const notation = frame(solve.moves[i].move), amount = notation.includes('2') ? 2 : notation.endsWith("'") ? -1 : 1;
         const previous = groups.at(-1);
         if (previous?.notation === notation) { previous.end = i + 1; previous.amount += amount; }
         else groups.push({ notation, start: i, end: i + 1, amount });
       }
       return {
         name: name.replace('Slot', 'Pair'),
+        pair: step > 0 && step < 5 ? f2lPair(pairs[step - 1], cross) : '',
         case: !cases[step] ? '' : cases[step] === 'Solved' ? 'Solved' : step === 6 ? `${cases[step]} perm` : `${step === 5 ? 'OLL' : 'F2L'} ${cases[step]}`,
         empty: step > ends.length ? 'Not reached' : ends[step] === undefined ? 'No moves recorded' : 'Skipped',
         groups: groups.map(group => ({ ...group, move: group.notation[0] + ['4', '', '2', "'"][(group.amount % 4 + 4) % 4] })),
       };
     });
-  }, [ends, cases, solve]);
+  }, [ends, cases, solve, cube, rotation, pairs, cross]);
   useEffect(() => {
     if (!visible || !playing || position >= solve.moves.length) { setPlaying(false); return; }
     const before = position ? solve.moves[position - 1].elapsed : 0, delay = Math.max(20, (solve.moves[position].elapsed - before) / speed);
@@ -47,7 +51,7 @@ export function Replay({ cube, solve, close, precision = 2 }: { cube: Cube; solv
     <p>{solve.status} - {formatTime(solve.duration, precision)}s - {turns(solve)} quarter turns - {solve.timingBasis} timing</p>
     <p className="small text-secondary" aria-label="Inspection time">Inspection: {solve.inspection === undefined ? 'Not recorded' : `${formatTime(solve.inspection, precision)}s`}</p>
     <p className="scramble">{movesOf(solve.scramble).join(' ')}</p>
-    <CubeView cube={cube} facelets={facelets} moves={moves} position={position} speed={speed} cross={cross} />
+    <CubeView cube={cube} facelets={facelets} moves={moves} position={position} speed={speed} cross={cross} rotation={rotation} />
     <div className="d-flex gap-2 align-items-center flex-wrap">
       <button className="btn btn-primary" disabled={!solve.moves.length} onClick={() => { if (position >= solve.moves.length) setPosition(0); setPlaying(!playing); }}>{playing ? 'Pause' : 'Play'}</button>
       <button className="btn btn-outline-secondary" disabled={position === 0} onClick={() => { setPlaying(false); setPosition(p => p - 1); }}>Previous move</button>
@@ -62,7 +66,9 @@ export function Replay({ cube, solve, close, precision = 2 }: { cube: Cube; solv
       <div className="d-flex align-items-baseline gap-2">
         <h3 className="replay-step-name">{step.name}</h3>
         {step.case && <span className="badge text-bg-secondary" aria-label={`${step.name} case`}>{step.case}</span>}
+        {step.pair && <span role="img" aria-label={`${step.pair.replace('/', ' / ')} pair`} title={step.pair.replace('/', ' / ')}>{pairEmojis(step.pair)}</span>}
       </div>
+      {step.name === 'Cross' && rotation && <span className="move" aria-label="Initial rotation">{rotation}</span>}
       {step.groups.length ? step.groups.map(group => {
         const current = position === 0 ? group.start === 0 : group.start < position && position <= group.end;
         return <button key={group.start} className={`move ${group.end <= position ? 'done' : ''} ${current ? 'current' : ''} ${current && position > group.start && position < group.end ? 'partial' : ''}`}

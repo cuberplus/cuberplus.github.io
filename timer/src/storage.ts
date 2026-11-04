@@ -1,6 +1,6 @@
 import { getDnfReason, solveTime, type Solve } from './engine';
 import { Cube, isMove, movesOf } from './puzzle';
-import { analyzeCFOP, CFOP_STEPS, cfopFrame, cfopTiming, elapsedAt } from './cfop';
+import { analyzeCFOP, CFOP_STEPS, cfopFrame, cfopTiming, elapsedAt, f2lPair } from './cfop';
 import { movingAverages } from '../../shared/averages';
 
 const database = (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
@@ -194,6 +194,7 @@ export const formatTime = (milliseconds: number, precision: 2 | 3 = 2): string =
 const cubeastColumns = 'id,date,dnf,time,solving_method,device_name,device_model,device_color_scheme,user,one_turn_away_two_second_penalty,inspection_two_second_penalty,inspection_time,timer_time,missing_turn,solution,timer,description,session_name,session_ruleset,scramble,scramble_provider,ruleset,share_views,share_likes,share_comments,analysis_version,solution_rotation,pickup_time,putdown_time,solving_time,slice_turns,face_turns,quarter_turns,turns_per_second,total_recognition_time,total_execution_time,turns_after_solution,steps_skipped'.split(',').concat(
   Array.from({ length: 9 }, (_, i) => 'name,moves,recorded_moves,skipped,has_turns,time,recognition_time,execution_time,cumulative_time,slice_turns,face_turns,quarter_turns,turns_per_second'.split(',').map(field => `step_${i}_${field}`)).flat(),
   Array.from({ length: 9 }, (_, i) => `step_${i}_case`),
+  'first_f2l_pair',
 );
 const csvCell = (value: string | number | boolean): string => /[",\r\n]/.test(String(value)) ? `"${String(value).replace(/"/g, '""')}"` : String(value);
 export function cubeastCSV(solves: Solve[], cube: Cube): string {
@@ -206,6 +207,7 @@ export function cubeastCSV(solves: Solve[], cube: Cube): string {
       one_turn_away_two_second_penalty: solve.penalty === 2000,
       inspection_time: solve.inspection === undefined ? '' : Math.round(solve.inspection),
       device_name: solve.device, session_name: solve.session, scramble: solve.scramble, scramble_provider: 'random_state',
+      first_f2l_pair: f2lPair(analysis.pairs[0], analysis.cross),
       solution: solve.moves.map((move, i) => `${move.move}[${Math.round(elapsedAt(solve, i + 1))}]`).join(' '),
       timer: 'cube', solving_method: 'CFOP', solution_rotation: analysis.cross === null ? '' : ['DB', 'LU', 'BU', 'UF', 'RU', 'FU'][analysis.cross], description: solve.reason, slice_turns: solve.moves.length, face_turns: solve.moves.length,
       quarter_turns: turns(solve), turns_per_second: solve.duration > 0 ? (solve.moves.length * 1000 / solve.duration).toFixed(2) : '',

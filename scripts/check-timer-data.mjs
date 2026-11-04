@@ -2,7 +2,7 @@ import { chromium, expect } from '@playwright/test';
 import { join } from 'node:path';
 
 const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : undefined });
-const base = 'http://127.0.0.1:4173';
+const base = process.env.SITE_URL ?? 'http://127.0.0.1:4173';
 
 async function database(page, records, removeIds = []) {
   return page.evaluate(({ records, removeIds }) => new Promise((resolve, reject) => {
@@ -73,6 +73,9 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors = [];
   page.on('pageerror', error => { errors.push(error.message); console.error(`Browser error: ${error.message}`); });
+  await page.goto(`${base}/options/`);
+  await page.getByRole('combobox', { name: 'Theme', exact: true }).selectOption('dark');
+  await page.getByRole('combobox', { name: 'Time precision' }).selectOption('3');
   await page.goto(`${base}/smartcubeanalyzer/`);
   const load = page.getByRole('button', { name: 'Display My Stats!', exact: true });
   const demo = page.getByRole('button', { name: 'Demo Data', exact: true });
@@ -159,6 +162,7 @@ try {
   const filters = page.getByRole('button', { name: 'Open filters', exact: true });
   await expect(filters).toBeVisible({ timeout: 60000 });
   await expect(page.locator('canvas').first()).toBeVisible();
+  await expect(page.getByRole('region', { name: 'First F2L Pair', exact: true }).locator('canvas')).toBeVisible();
   await expect(page.locator('.clickable-grid').getByRole('gridcell', { name: '12.000', exact: true })).toBeVisible();
   expect(await database(page)).toEqual(before);
   await filters.click();
@@ -196,6 +200,9 @@ try {
   await page.locator('.clickable-grid').getByRole('gridcell', { name: '12.000', exact: true }).click();
   const replay = page.getByRole('dialog', { name: 'Solve replay', exact: true });
   await expect(replay).toBeVisible({ timeout: 60000 });
+  await expect(replay.getByLabel('Solution orientation', { exact: true })).toHaveCount(0);
+  const initialRotation = replay.getByLabel('Initial rotation', { exact: true });
+  if (await initialRotation.count()) await expect(replay.getByRole('group', { name: 'Cross solution', exact: true }).locator('.move').first()).toHaveAttribute('aria-label', 'Initial rotation');
   await expect(page.getByLabel('Solve ID', { exact: true })).toContainText(seed.id);
   await page.getByRole('button', { name: 'Next move', exact: true }).click();
   await expect(page.getByRole('slider', { name: 'Replay move', exact: true })).toHaveValue('1');
@@ -204,9 +211,11 @@ try {
   await expect(page).toHaveURL(`${base}/smartcubeanalyzer/`);
   expect(popups).toBe(0);
   expect(await database(page)).toEqual(updated);
-  for (const [width, theme] of [[1440, 'dark'], [320, 'light']]) {
+  for (const [width, theme] of [[1440, 'dark'], [320, 'dark'], [320, 'light']]) {
     await page.setViewportSize({ width, height: 1000 });
-    await page.getByRole('button', { name: theme === 'dark' ? 'Dark' : 'Light', exact: true }).click();
+    await page.getByRole('navigation', { name: 'CuberPlus', exact: true }).getByRole('link', { name: 'Options', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Theme', exact: true }).selectOption(theme);
+    await page.getByRole('navigation', { name: 'CuberPlus', exact: true }).getByRole('link', { name: 'Smartcube Analyzer', exact: true }).click();
     const selected = await clickChartPoint(page, 'Average Time');
     const average = page.getByRole('dialog', { name: `Ao5: ${Number(selected.value).toFixed(3)}s`, exact: true });
     await expect(average).toBeVisible();
@@ -215,7 +224,11 @@ try {
     await checkAverage(average, Array.from({ length: 5 }, (_, i) => Number(selected.label) - 4 + i));
     expect(await average.evaluate(dialog => dialog.getBoundingClientRect().width <= innerWidth)).toBe(true);
     if (theme === 'dark') {
-      expect(await average.evaluate(dialog => {
+      if (width === 320 && process.env.CUBERPLUS_SCREENSHOT_DIR) {
+        await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+        await page.screenshot({ path: join(process.env.CUBERPLUS_SCREENSHOT_DIR, 'analyzer-average-mobile.png'), animations: 'disabled' });
+      }
+      if (width === 1440) expect(await average.evaluate(dialog => {
         const style = getComputedStyle(dialog);
         return [style.backgroundColor, style.color, style.padding, style.borderRadius, getComputedStyle(dialog.querySelector('h2')).fontSize];
       })).toEqual(timerStyle);
@@ -227,7 +240,6 @@ try {
       await expect(average).toBeVisible();
       await average.getByRole('button', { name: 'Close average', exact: true }).click();
     } else {
-      if (process.env.CUBERPLUS_SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.CUBERPLUS_SCREENSHOT_DIR, 'analyzer-average-mobile.png'), animations: 'disabled' });
       await page.keyboard.press('Escape');
     }
     await expect(average).toHaveCount(0);
@@ -257,8 +269,8 @@ try {
   await choose.click();
   await (await csvChooser).setFiles({
     name: 'numbered-solves.csv', mimeType: 'text/csv',
-    buffer: Buffer.from('id,date,dnf,time,solving_method\n' + Array.from({ length: 80 }, (_, i) =>
-      `numbered-${i},${new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString().replace('T', ' ').replace('.000Z', ' UTC')},false,${12000 + i * 100},CFOP`).join('\n')),
+    buffer: Buffer.from('id,date,dnf,time,solving_method,first_f2l_pair\n' + Array.from({ length: 80 }, (_, i) =>
+      `numbered-${i},${new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString().replace('T', ' ').replace('.000Z', ' UTC')},false,${12000 + i * 100},CFOP,${i % 2 ? 'Orange/Blue' : 'Red/Green'}`).join('\n')),
   });
   await displayCsv.click();
   await filters.click();
@@ -268,6 +280,12 @@ try {
   const numberedPoint = await clickChartPoint(page, 'Average Time', 0, '73');
   const numberedAverage = page.getByRole('dialog', { name: `Ao5: ${Number(numberedPoint.value).toFixed(3)}s`, exact: true });
   await expect(numberedAverage.locator('tbody th')).toHaveText(['69', '70', '71', '72', '73']);
+  await page.keyboard.press('Escape');
+  const pairPoint = await clickChartPoint(page, 'First F2L Pair', 0, '73');
+  expect(pairPoint.value).toBe(60);
+  const pairAverage = page.getByRole('dialog', { name: /Red \/ Green first pair \(3 solves\)/ });
+  await expect(pairAverage).toBeVisible();
+  await expect(pairAverage.locator('tbody th')).toHaveText(['69', '71', '73']);
   await page.keyboard.press('Escape');
   expect(errors).toEqual([]);
   console.log('PASS shared Timer/Analyzer averages: sortable Solve/Time/Turns/TPS/View, real chart solve numbers 69-73, preserved chop colors without strikethrough, identical dialog styling, inline replay, readonly loading, Escape, light/dark and mobile');

@@ -38,9 +38,9 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); jest.restoreAllMocks(); });
 
-async function draw(moves: string[], position = moves.length, animateSeeks = false, speed = 1, start = SOLVED, cross: number | null = null) {
+async function draw(moves: string[], position = moves.length, animateSeeks = false, speed = 1, start = SOLVED, cross: number | null = null, rotation?: string) {
   const facelets = cube.facelets(cube.parse(start).applyAlg(moves.slice(0, position).join(' ')));
-  await act(async () => root.render(createElement(CubeView, { cube, facelets, moves, position, animateSeeks, speed, cross })));
+  await act(async () => root.render(createElement(CubeView, { cube, facelets, moves, position, animateSeeks, speed, cross, rotation })));
 }
 function frame(milliseconds = 25) {
   clock += milliseconds;
@@ -112,6 +112,22 @@ test.each(['x2', 'z', "x'", '', "z'", 'x'])('cross face %#: preserves sticker co
   await draw(moves, moves.length, false, 1, start, null);
   expect(setup.mock.calls.at(-1)![0]!.toKPattern().patternData).toEqual(cube.parse(start).patternData);
   expect(timeline.mock.calls.at(-1)![0].map(leaf => leaf.animLeaf.toString())).toEqual(moves);
+});
+
+test('changing replay yaw resets the setup and keeps every animated position in the same frame', async () => {
+  const moves = ['R', 'U2', "B'", 'D', 'F', "L'"];
+  const start = cube.facelets(cube.solved().applyAlg('F R2 U L B2'));
+  for (const tilt of ['', 'x2', 'z', "z'", 'x', "x'"]) for (const yaw of ['', 'y', 'y2', "y'"]) {
+    const rotation = `${tilt} ${yaw}`.trim();
+    await draw(moves, 2, false, 1, start, null, rotation);
+    const initial = setup.mock.calls.at(-1)![0]!.toKPattern();
+    const displayed = timeline.mock.calls.at(-1)![0].map(leaf => leaf.animLeaf.toString());
+    for (let end = 0; end <= moves.length; end++) {
+      expect(initial.applyAlg(displayed.slice(0, end).join(' ')).patternData)
+        .toEqual(cube.parse(start).applyAlg(moves.slice(0, end).join(' ')).applyAlg(rotation).patternData);
+    }
+    expect(timestamps.at(-1)).toBe(2000);
+  }
 });
 
 test('resynchronization cancels stale animation, and a delayed frame cannot skip a whole turn', async () => {

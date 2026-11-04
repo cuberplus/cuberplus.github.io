@@ -474,11 +474,11 @@ test('Cubeast CSV matches the sample schema and records milliseconds, UTC dates,
   solve.moves[1].elapsed = 1234.56;
   solve.duration = 1234.56;
   const [header, line, trailing] = cubeastCSV([solve], cube).split('\r\n');
-  expect(header).toBe(cubeastHeader);
+  expect(header).toBe(`${cubeastHeader},first_f2l_pair`);
   expect(trailing).toBe('');
   const columns = header.split(',');
   const cells = line.split(',');
-  expect(cells).toHaveLength(164);
+  expect(cells).toHaveLength(165);
   const row = Object.fromEntries(columns.map((column, i) => [column, cells[i]]));
   expect(row).toMatchObject({
     id: solve.id, date: '2026-10-31 15:22:52 UTC', dnf: 'false', time: '1235',
@@ -538,6 +538,7 @@ test.each([
     const row = Object.fromEntries(header.split(',').map((column, i) => [column, line.split(',')[i]]));
     expect(row.solution_rotation).toBe(rotation);
     expect(row.step_0_moves).toBe("D'");
+    expect(row.first_f2l_pair).toMatch(/^(White|Yellow|Red|Orange|Green|Blue)\/(White|Yellow|Red|Orange|Green|Blue)$/);
     expect(row.solution).toBe(moves.map(move => `${move.move}[${move.elapsed}]`).join(' '));
     expect(cubeastCSV(validateBackup(backupJSON([solve]), cube), cube)).toBe(csv);
     expect(solve).toEqual(before);
@@ -555,8 +556,8 @@ test('Cubeast CSV excludes active attempts, includes incomplete attempts as DNFs
   expect(first.split(',')[0]).toBe(complete.id);
   const columns = header.split(','), cells = second.split(',');
   const row = Object.fromEntries(columns.map((column, i) => [column, cells[i]]));
-  expect(cells).toHaveLength(164);
+  expect(cells).toHaveLength(165);
   expect(row).toMatchObject({ dnf: 'true', time: '', timer_time: '', solving_time: '', session_name: 'Other', description: 'Disconnected.' });
   expect(row.solution).toBe("U2[0] R'[100]");
-  expect(cubeastCSV([], cube)).toBe(cubeastHeader + '\r\n');
+  expect(cubeastCSV([], cube)).toBe(cubeastHeader + ',first_f2l_pair\r\n');
 });

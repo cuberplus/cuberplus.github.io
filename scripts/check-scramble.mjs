@@ -28,6 +28,14 @@ try {
     }
     const simulator = page.getByText('Try simulated cube', { exact: true });
     await expect(simulator).toBeEnabled({ timeout: 60000 });
+    const accent = await page.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--cp-accent)';
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    });
     await simulator.evaluate(button => button.click());
     const guided = page.getByRole('button', { name: 'Perform guided move', exact: true });
     await expect(guided).toBeEnabled({ timeout: 60000 });
@@ -57,10 +65,10 @@ try {
     await expect(original.locator('.partial')).toHaveCSS('background-color', 'rgb(245, 185, 66)');
     await page.getByRole('button', { name: 'R', exact: true }).click();
     await expect(original.locator('.done')).toHaveText('R2');
-    await expect(original.locator('.done')).toHaveCSS('color', 'rgb(101, 211, 176)');
+    await expect(original.locator('.done')).toHaveCSS('color', accent);
     await page.getByRole('button', { name: 'F', exact: true }).click();
     await expect(original.locator('.move')).toHaveText(['R2']);
-    await expect(original.locator('.done')).toHaveCSS('color', 'rgb(101, 211, 176)');
+    await expect(original.locator('.done')).toHaveCSS('color', accent);
     await expect(corrections.locator('.move')).toHaveText(["F'"]);
     await expect(corrections.locator('.current')).toHaveCSS('background-color', 'rgb(220, 53, 69)');
     await guided.click();
@@ -78,13 +86,13 @@ try {
     await expect(corrections).toHaveCount(0);
     await expectSpaced(route.locator('.move'));
     await guided.click();
-    await expect(route.locator('.done').first()).toHaveCSS('color', 'rgb(101, 211, 176)');
+    await expect(route.locator('.done').first()).toHaveCSS('color', accent);
     const remaining = await route.locator('.move').allTextContents();
     const completed = await route.locator('.done').allTextContents();
     const next = await route.locator('.current').innerText();
     await page.getByRole('button', { name: 'RL'.includes(next[0]) ? 'F' : 'R', exact: true }).click();
     await expect(route.locator('.move')).toHaveText(completed);
-    await expect(route.locator('.done').first()).toHaveCSS('color', 'rgb(101, 211, 176)');
+    await expect(route.locator('.done').first()).toHaveCSS('color', accent);
     await expect(corrections.locator('.current')).toHaveCSS('background-color', 'rgb(220, 53, 69)');
     await guided.click();
     await expect(route.locator('.move')).toHaveText(remaining);
@@ -94,7 +102,7 @@ try {
     await expect(simulate).toBeEnabled();
     await expect(route).toHaveCount(0);
     await expect(original.locator('.done')).toHaveText(['R2', 'U', 'F']);
-    for (const move of await original.locator('.done').all()) await expect(move).toHaveCSS('color', 'rgb(101, 211, 176)');
+    for (const move of await original.locator('.done').all()) await expect(move).toHaveCSS('color', accent);
     await context.close();
     console.log(`PASS scramble spacing, partial/completed colors, corrections and recovery at ${width}px${width === 390 ? ' (offline PWA)' : ''}`);
   }

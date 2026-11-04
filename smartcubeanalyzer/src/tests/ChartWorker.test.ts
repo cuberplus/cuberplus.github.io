@@ -43,16 +43,33 @@ describe('chartWorker message handling', () => {
     test('echoes the requestId so stale responses can be discarded', () => {
         expect(run({ requestId: 42 }).requestId).toBe(42);
     });
+    test.each([2, 3] as const)('formats time tables to %s places without rounding chart data', precision => {
+        const solves = makeSolves(20).map(solve => ({ ...solve, time: 12.345 }));
+        const { chartData } = run({ solves, precision });
+        expect(chartData.recordRows[0].time).toBe((12.345).toFixed(precision));
+        expect(chartData.bestSolvesData[0].time).toBe((12.345).toFixed(precision));
+        expect(chartData.runningAverage.datasets[0].data[0]).toBeCloseTo(12.345);
+    });
 
     test('returns every chart the panel renders', () => {
         const { chartData } = run();
         const expectedKeys = [
             'runningAverage', 'runningStdDev', 'runningTps', 'runningTurns',
             'runningRecognitionExecution', 'runningEfficiency', 'histogram', 'stepAverages',
-            'runningColorPercentages', 'dailyRecord', 'streakRows', 'recordRows', 'goodBad',
+            'runningColorPercentages', 'runningFirstPairPercentages', 'dailyRecord', 'streakRows', 'recordRows', 'goodBad',
             'recordHistory', 'stepPercentages', 'typicalCompare', 'bestSolvesData',
         ];
         expectedKeys.forEach(key => expect(chartData).toHaveProperty(key));
+    });
+
+    test('first-pair percentages respect DNFs, original solve numbers, method and palette', () => {
+        const solves = ['Red/Green', 'Orange/Blue', 'Orange/Blue', 'Red/Green'].map((firstF2LPair, index) => makeSolve({ firstF2LPair, dnf: index === 1 }));
+        const { chartData } = run({ solves, windowSize: 2 });
+        const chart = chartData.runningFirstPairPercentages!;
+        expect(chart.labels).toEqual(['3', '4']);
+        expect(chart.datasets.find(dataset => dataset.label === 'Red / Green')!.data).toEqual([50, 50]);
+        expect(chart.datasets[0].borderColor).toMatch(/^rgb\(/);
+        expect(run({ solves, windowSize: 2, methodName: MethodName.Roux }).chartData.runningFirstPairPercentages).toBeUndefined();
     });
 
     test('handles an empty solve list without throwing', () => {

@@ -1,5 +1,5 @@
 import { useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import Navigation, { Footer, PageLocation, usePageDialog } from '@cuberplus/navigation';
+import Navigation, { Footer, PageLocation, SettingsContext, usePageDialog } from '@cuberplus/navigation';
 import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
 import { BluetoothCube } from './bluetooth';
 import { TimerEngine, solveTime, type Solve } from './engine';
@@ -10,7 +10,6 @@ import { CubeView } from './CubeView';
 import { Replay } from './Replay';
 import { SolveTimeline } from './SolveTimeline';
 import { useScreenWakeLock } from './useScreenWakeLock';
-import { useInstall } from '../../src/pwa';
 
 const errorText = (error: Error): string => error.message || 'The operation failed.';
 const historyColumns = [
@@ -46,7 +45,7 @@ export default function App() {
   const [demo, setDemo] = useState(false);
   const [battery, setBattery] = useState<number | null>(null);
   const [mac, setMac] = useState(() => { try { return localStorage.getItem('timer-last-cube-mac') ?? ''; } catch { return ''; } });
-  const [precision, setPrecision] = useState<2 | 3>(() => { try { return localStorage.getItem('timer-time-precision') === '3' ? 3 : 2; } catch { return 2; } });
+  const { precision } = useContext(SettingsContext);
   const [overTurnPenalty, setOverTurnPenalty] = useState(() => { try { return localStorage.getItem('timer-over-turn-penalty') !== 'false'; } catch { return true; } });
   const [showEveryLongPb, setShowEveryLongPb] = useState(() => { try { return localStorage.getItem('timer-show-every-long-pb') === 'true'; } catch { return false; } });
   const [hiddenVisuals, setHiddenVisuals] = useState<HiddenVisuals>(() => {
@@ -58,7 +57,6 @@ export default function App() {
   });
   const [session, setSession] = useState('Default');
   const [replay, setReplay] = useState<Solve | null>(null);
-  const { installPrompt, installed, installError, installApp } = useInstall();
   const engine = useRef<TimerEngine | null>(null);
   const historyRef = useRef<Solve[]>([]);
   const recordChecks = useRef(new Map<string, { solve: Solve; previous: Solve[]; timeout: ReturnType<typeof setTimeout> }>());
@@ -257,7 +255,6 @@ export default function App() {
   }
 
   function startDemo() { engine.current?.connect('Simulated 3x3'); setDemo(true); calibrate(); }
-  function changePrecision(value: 2 | 3) { setPrecision(value); try { localStorage.setItem('timer-time-precision', String(value)); } catch { setError('Time precision changed, but this browser could not save the preference.'); } }
   function changeOverTurnPenalty(value: boolean) {
     setOverTurnPenalty(value);
     if (engine.current) engine.current.overTurnPenaltyEnabled = value;
@@ -343,7 +340,7 @@ export default function App() {
       <div className="cuberplus-header-controls">
         <button className="btn btn-outline-secondary" onClick={() => optionsDialog.current?.showModal()}>Options</button>
         {connected ? <button className="btn btn-outline-secondary" onClick={() => void disconnect()}>Disconnect</button> :
-          <><button className="btn btn-primary" disabled={!canConnect} onClick={connect}>{connecting ? 'Connecting...' : 'Connect cube'}</button>
+          <><button className="btn btn-primary d-inline-flex align-items-center gap-2" disabled={!canConnect} onClick={connect}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M7 7l10 10-5 5V2l5 5L7 17" /></svg>{connecting ? 'Connecting...' : 'Connect cube'}</button>
           <button hidden className="btn btn-outline-secondary" disabled={!cube || busy || connecting} onClick={startDemo}>Try simulated cube</button></>}
         {battery !== null && <span className="badge text-bg-secondary">{battery}% battery</span>}
       </div>
@@ -355,7 +352,6 @@ export default function App() {
         <button className="btn-close btn-close-white" aria-label="Close options" onClick={() => optionsDialog.current?.close()} />
       </div>
       <label className="d-block mb-3">Session<input className="form-control mt-2" maxLength={100} value={session} disabled={timer?.phase === 'solving'} onChange={event => setSession(event.target.value)} /></label>
-      <label className="d-block">Time precision<select aria-label="Time precision" className="form-select mt-2" value={precision} onChange={event => changePrecision(event.target.value === '3' ? 3 : 2)}><option value="2">Hundredths (0.00)</option><option value="3">Thousandths (0.000)</option></select></label>
       <label className="form-check mt-3"><input type="checkbox" className="form-check-input" checked={overTurnPenalty} aria-describedby="over-turn-penalty-help" onChange={event => changeOverTurnPenalty(event.target.checked)} /><span className="form-check-label">Extra-turn +2 penalty</span></label>
       <p id="over-turn-penalty-help" className="small text-secondary mt-2 mb-0">Apply +2 for an extra turn within 0.5 seconds after finishing.</p>
       <label className="form-check mt-3"><input type="checkbox" className="form-check-input" checked={showEveryLongPb} aria-describedby="long-pb-notifications-help" onChange={event => changeLongPbNotifications(event.target.checked)} /><span className="form-check-label">Notify for every Ao100/Ao1000 PB</span></label>
@@ -373,16 +369,11 @@ export default function App() {
           <p id="hide-visuals-help" className="small text-secondary mt-2 mb-0">Choose which visuals to hide while solving.</p>
         </fieldset>
       </details>
-      {!installed && <div className="mt-4">
-        <button className="btn btn-outline-secondary" disabled={!installPrompt} aria-describedby="install-help" onClick={() => void installApp()}>Install app</button>
-        <p id="install-help" className="small text-secondary mt-2 mb-0">{installPrompt ? 'Add CuberPlus to your home screen or apps.' : 'Installation becomes available when your browser offers it. You can also check your browser menu for Install app.'}</p>
-        {installError && <p role="alert" className="text-warning mt-2 mb-0">{installError}</p>}
-      </div>}
       {!connected && <div className="mt-4">
         <form onSubmit={event => { event.preventDefault(); if (canConnect) { optionsDialog.current?.close(); connect(); } }}><label className="d-block">Bluetooth MAC (only if needed)<input className="form-control mt-2" placeholder="AA:BB:CC:DD:EE:FF" value={mac} disabled={connecting} onChange={event => setMac(event.target.value)} /></label></form>
         <a className="d-inline-block mt-2" href="/timer/help/mac-address.html" target="_blank" rel="noopener noreferrer">Find my cube's MAC address</a>
       </div>}
-      {(error.startsWith('Time precision changed') || error.startsWith('Visual preference changed') || error.startsWith('Penalty preference changed') || error.startsWith('PB notification preference changed')) && <p role="alert" className="text-warning mt-3 mb-0">{error}</p>}
+      {(error.startsWith('Visual preference changed') || error.startsWith('Penalty preference changed') || error.startsWith('PB notification preference changed')) && <p role="alert" className="text-warning mt-3 mb-0">{error}</p>}
       <form method="dialog" className="text-end mt-4"><button className="btn btn-primary">Done</button></form>
     </dialog>
     {(!navigator.bluetooth || !window.isSecureContext) && <p className="alert alert-info">Bluetooth needs a supported browser and HTTPS or localhost. Try Chrome/Edge on Windows.</p>}

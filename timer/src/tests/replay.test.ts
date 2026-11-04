@@ -5,10 +5,10 @@ import { createRoot, type Root } from 'react-dom/client';
 import { deserialize, serialize } from 'node:v8';
 import type { Solve } from '../engine';
 import { inverse, loadCube } from '../puzzle';
-import { analyzeCFOP, CFOP_STEPS } from '../cfop';
+import { analyzeCFOP, cfopFrame, CFOP_STEPS } from '../cfop';
 
 await jest.unstable_mockModule('../CubeView', () => ({
-  CubeView: ({ facelets, cross }: { facelets: string; cross: number | null }) => createElement('div', { 'data-facelets': facelets, 'data-cross': cross, 'aria-label': 'Replay cube' }),
+  CubeView: ({ facelets, cross, rotation }: { facelets: string; cross: number | null; rotation: string }) => createElement('div', { 'data-facelets': facelets, 'data-cross': cross, 'data-rotation': rotation, 'aria-label': 'Replay cube' }),
 }));
 const { Replay } = await import('../Replay');
 const cube = await loadCube();
@@ -127,6 +127,45 @@ test.each(['', 'x2', 'z', "z'", 'x', "x'"])('replays restored solves with their 
   await click('Previous move');
   await draw(recording(remap(scramble), '', 'incomplete'));
   expect(container.querySelector('[aria-label="Replay cube"]')!.hasAttribute('data-cross')).toBe(false);
+});
+
+test('pair emoji labels and initial rotations agree with the normalized solution without adding replay moves', async () => {
+  const remap = cfopFrame(cube, 'z y'), raw = scramble.split(' ').reverse().map(inverse);
+  const solve = recording(scramble.split(' ').map(remap).join(' '), raw.map(remap).join(' '));
+  const before = structuredClone(solve);
+  await draw(solve);
+  const rotation = container.querySelector('[aria-label="Replay cube"]')!.getAttribute('data-rotation')!;
+  expect(rotation).toMatch(/^[xyz][2']?(?: [xyz][2']?)?$/);
+  expect(container.querySelector('[aria-label="Solution orientation"]')).toBeNull();
+  expect(container.textContent).not.toMatch(/cross down|first pair back-right/);
+  const initial = groups()[0].querySelector('[aria-label="Initial rotation"]')!;
+  expect(initial.textContent).toBe(rotation);
+  expect(groups()[0].querySelector('.move')).toBe(initial);
+  expect(container.querySelectorAll('[aria-label="Initial rotation"]')).toHaveLength(1);
+  const oriented = cube.solved().applyAlg(rotation), { cross, pairs: order } = analyzeCFOP(solve, cube);
+  expect(oriented.patternData.CENTERS.pieces[5]).toBe('ULFRBD'.indexOf('URFDLB'[cross!]));
+  expect(oriented.patternData.CORNERS.pieces[7]).toBe(order[0]);
+  const icons = Array.from(container.querySelectorAll('.move-timeline [role="img"]'));
+  expect(icons).toHaveLength(4);
+  expect(new Set(icons.map(icon => icon.getAttribute('aria-label'))).size).toBe(4);
+  expect(icons.every(icon => Array.from(icon.textContent!).length === 2)).toBe(true);
+  expect(groups()[1].querySelector('[role="img"]')).not.toBeNull();
+  const displayed = Array.from(container.querySelectorAll('.move-timeline .move')).map(move => move.textContent).join(' ');
+  expect(cube.parse(solve.startFacelets).applyAlg(displayed).patternData)
+    .toEqual(cube.solved().applyAlg(rotation).patternData);
+  expect(container.querySelector<HTMLInputElement>('[aria-label="Replay move"]')!.max).toBe(String(solve.moves.length));
+  await click('Next move');
+  expect(position()).toBe('1');
+  expect(facelets()).toBe(cube.facelets(cube.parse(solve.startFacelets).applyMove(solve.moves[0].move)));
+  expect(solve).toEqual(before);
+});
+
+test('already oriented solves start Cross with the recorded move and no rotation placeholder', async () => {
+  await draw(recording(scramble, scramble.split(' ').reverse().map(inverse).join(' ')));
+  expect(container.querySelector('[aria-label="Replay cube"]')!.getAttribute('data-rotation')).toBe('');
+  expect(container.querySelector('[aria-label="Initial rotation"]')).toBeNull();
+  expect(container.textContent).not.toContain('Already oriented');
+  expect(groups()[0].querySelector('.move')!.textContent).toBe("D'");
 });
 
 test('repeated turns compact within a step without combining across a milestone', async () => {

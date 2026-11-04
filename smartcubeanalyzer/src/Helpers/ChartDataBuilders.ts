@@ -17,6 +17,8 @@ import {
 import { CrossColor, getStep, LabelledChart, Solve, StepName } from './Types';
 import { OllEdgeOrientation, PllCornerPermutation } from './Types';
 import { SEGMENT_COLORS } from './ChartColors';
+import { pairColors } from '../../../shared/f2l';
+import { COLORS, EDGES } from '../../../scrambler/src/cube/cube';
 
 type MovingCalcFn = (values: number[], windowSize: number) => number[];
 
@@ -174,28 +176,26 @@ export function buildRunningColorPercentages(
     pointsPerGraph: number,
     isDark?: boolean
 ): LabelledChart<'line'> {
-    type ColorDef = { color: CrossColor; label: string; borderColor: string; backgroundColor: string };
-    const whiteLineColor = isDark ? 'White' : 'Black';
-    const colorDefs: ColorDef[] = [
-        { color: CrossColor.White, label: 'White', borderColor: whiteLineColor, backgroundColor: whiteLineColor },
-        { color: CrossColor.Yellow, label: 'Yellow', borderColor: 'Yellow', backgroundColor: 'Yellow' },
-        { color: CrossColor.Red, label: 'Red', borderColor: 'Red', backgroundColor: 'Red' },
-        { color: CrossColor.Orange, label: 'Orange', borderColor: 'Orange', backgroundColor: 'Orange' },
-        { color: CrossColor.Blue, label: 'Blue', borderColor: 'Blue', backgroundColor: 'Blue' },
-        { color: CrossColor.Green, label: 'Green', borderColor: 'Green', backgroundColor: 'Green' },
-    ];
-    const hasUnknown = solves.some((s) => s.crossColor === CrossColor.Unknown);
-    const colors: ColorDef[] = hasUnknown
-        ? [...colorDefs, { color: CrossColor.Unknown, label: 'Unknown', borderColor: 'Purple', backgroundColor: 'Purple' }]
-        : colorDefs;
-
-    const datasets = colors.map(c => ({
-        label: `Percentage of solves with ${c.label} cross over last ${windowSize}`,
-        data: reduceDataset(calculateMovingPercentage(solves, windowSize, solve => solve.crossColor === c.color), pointsPerGraph),
-        borderColor: c.borderColor, backgroundColor: c.backgroundColor,
+    const colors = Object.values(CrossColor).filter(color => color !== CrossColor.Unknown || solves.some(solve => solve.crossColor === color));
+    const datasets = colors.map(color => ({
+        label: `Percentage of solves with ${color} cross over last ${windowSize}`,
+        data: reduceDataset(calculateMovingPercentage(solves, windowSize, solve => solve.crossColor === color), pointsPerGraph),
+        borderColor: color === CrossColor.White && !isDark ? 'Black' : color === CrossColor.Unknown ? 'Purple' : color,
+        backgroundColor: color === CrossColor.White && !isDark ? 'Black' : color === CrossColor.Unknown ? 'Purple' : color,
     }));
     const labels = makeLabels(Math.max(0, solves.length - windowSize + 1), pointsPerGraph, windowSize);
     return { labels, datasets };
+}
+
+export function buildFirstPairPercentages(solves: Solve[], windowSize: number, pointsPerGraph: number): LabelledChart<'line'> {
+    const crosses = new Set(solves.map(solve => COLORS.indexOf(solve.crossColor as typeof COLORS[number])).filter(face => face >= 0));
+    const pairs = [...new Set([...EDGES.filter(edge => [...crosses].some(cross => !edge.includes(cross) && !edge.includes((cross + 3) % 6))).map(edge => pairColors(edge)),
+        ...solves.flatMap(solve => solve.firstF2LPair ? [solve.firstF2LPair] : [])])];
+    if (solves.some(solve => !solve.firstF2LPair)) pairs.push('Unknown');
+    return { labels: makeLabels(Math.max(0, solves.length - windowSize + 1), pointsPerGraph, windowSize), datasets: pairs.map(pair => ({
+        label: pair.replace('/', ' / '),
+        data: reduceDataset(calculateMovingPercentage(solves, windowSize, solve => (solve.firstF2LPair || 'Unknown') === pair), pointsPerGraph),
+    })) };
 }
 
 export function buildStepPercentages(
@@ -251,11 +251,11 @@ export function buildPllCategoryChart(solves: Solve[], windowSize: number, point
 
 export function buildInspectionData(
     solves: Array<Solve & { inspectionTime: number }>,
-    windowSize: number
+    windowSize: number, precision = 2
 ): LabelledChart<'bar'> {
     const chunks = splitIntoChunks(solves.slice(-windowSize).sort((a, b) => a.inspectionTime - b.inspectionTime), Const.InspectionGraphChunks);
     return {
-        labels: chunks.map(chunk => '~' + calculateAverage(chunk.map(solve => solve.inspectionTime)).toFixed(2)),
+        labels: chunks.map(chunk => '~' + calculateAverage(chunk.map(solve => solve.inspectionTime)).toFixed(precision)),
         datasets: [
             {
                 label: `Solve time by inspection time (of recent ${windowSize})`,

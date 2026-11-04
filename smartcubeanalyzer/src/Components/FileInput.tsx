@@ -8,7 +8,6 @@ import { Alert, Button, Form, FormControl, Card, Row, Col, ButtonGroup, Containe
 import { HelpPanel } from "./HelpPanel";
 import { CalculateMostUsedMethod, CalculateWindowSize, CalculateAllSessionOptions } from "../Helpers/CubeHelpers";
 import ReactGA from 'react-ga4';
-import { ThemeContext } from "../contexts/ThemeContext";
 
 const CFOP_PRESETS: { label: string; steps: StepName[] }[] = [
     { label: 'Cross+1', steps: [StepName.Cross, StepName.F2L_1] },
@@ -90,24 +89,6 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
                                 &#9776;
                             </Button>
                         )}
-                        <ThemeContext.Consumer>
-                            {({ isDark, setTheme }) => (
-                                <ButtonGroup size="sm">
-                                    <Button
-                                        variant={isDark ? "outline-secondary" : "primary"}
-                                        onClick={() => setTheme("light")}
-                                    >
-                                        Light
-                                    </Button>
-                                    <Button
-                                        variant={isDark ? "primary" : "outline-secondary"}
-                                        onClick={() => setTheme("dark")}
-                                    >
-                                        Dark
-                                    </Button>
-                                </ButtonGroup>
-                            )}
-                        </ThemeContext.Consumer>
                         <Button onClick={() => { this.helpButtonClicked() }}>
                             Help
                         </Button>

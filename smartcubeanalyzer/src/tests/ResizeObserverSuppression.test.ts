@@ -61,16 +61,18 @@ describe('ResizeObserver warning suppression', () => {
         expect(defaultPrevented).toBe(false);
     });
 
-    test('theme-init.js defaults to the Timer dark theme before paint', () => {
+    test('theme-init.js defaults to Aurora before paint', () => {
         dispatchErrorAfterThemeInit('noop');
+        expect(document.documentElement.getAttribute('data-theme')).toBe('aurora');
         expect(document.documentElement.getAttribute('data-bs-theme')).toBe('dark');
     });
 
-    test.each(['light', 'dark'])('theme-init.js preserves the saved %s theme', theme => {
+    test.each(['light', 'dark', 'aurora', 'disco', 'inferno'])('theme-init.js preserves the saved %s theme', theme => {
         localStorage.setItem('theme', theme);
         // eslint-disable-next-line no-new-func
         new Function(themeInit).call(window);
-        expect(document.documentElement.getAttribute('data-bs-theme')).toBe(theme);
+        expect(document.documentElement.getAttribute('data-theme')).toBe(theme);
+        expect(document.documentElement.getAttribute('data-bs-theme')).toBe(theme === 'light' ? 'light' : 'dark');
         localStorage.clear();
     });
 });

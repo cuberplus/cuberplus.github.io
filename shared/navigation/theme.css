@@ -1,31 +1,39 @@
 :root {
   --cp-font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --cp-bg: #10141e;
-  --cp-panel: #181f2d;
-  --cp-subtle: #222c3d;
-  --cp-text: #e8edf5;
-  --cp-muted: #8793a7;
-  --cp-border: #2a3547;
-  --cp-accent: #65d3b0;
-  --cp-primary: #2d8070;
-  --cp-primary-border: #3d9c88;
-  --cp-primary-hover: #246d5e;
-  --cp-danger-bg: #3b202b;
-  --cp-danger: #ff7b86;
-  color-scheme: dark;
+  --cp-bg: #10141e; --cp-panel: #181f2d; --cp-subtle: #222c3d;
+  --cp-text: #e8edf5; --cp-muted: #8793a7; --cp-border: #2a3547; --cp-accent: #65d3b0;
+  --cp-primary: #2d8070; --cp-primary-border: #3d9c88; --cp-primary-hover: #246d5e;
+  --cp-danger-bg: #3b202b; --cp-danger: #ff7b86;
+  color-scheme: dark; overscroll-behavior-x: none;
 }
 :root[data-bs-theme="light"] {
-  --cp-bg: #f3f6fa;
-  --cp-panel: #fff;
-  --cp-subtle: #e5edf3;
-  --cp-text: #182332;
-  --cp-muted: #58677b;
-  --cp-border: #cbd5e1;
-  --cp-accent: #246d5e;
-  --cp-danger-bg: #fce8ec;
-  --cp-danger: #b4233b;
+  --cp-bg: #f3f6fa; --cp-panel: #fff; --cp-subtle: #e5edf3;
+  --cp-text: #182332; --cp-muted: #58677b; --cp-border: #cbd5e1; --cp-accent: #246d5e;
+  --cp-danger-bg: #fce8ec; --cp-danger: #b4233b;
   color-scheme: light;
 }
+:root[data-theme="aurora"] {
+  --cp-bg: #091e29; --cp-panel: #0c2b32; --cp-subtle: #17434a; --cp-text: #e2fff7; --cp-muted: #a9d8d1; --cp-border: #377c7c;
+  --cp-accent: #70ffd4; --cp-primary: #6442a0; --cp-primary-border: #bd9aff; --cp-primary-hover: #503180;
+  --cp-art: radial-gradient(ellipse at 18% 0%, #54ffd522, transparent 48%), repeating-linear-gradient(112deg, transparent 0 12%, #48ffd51c 16%, transparent 20% 30%), radial-gradient(ellipse at 80% 10%, #a67aff66, transparent 55%), radial-gradient(ellipse at 0% 50%, #00efbd66, transparent 60%);
+  --cp-glow: 0 0 32px #40ffd51c, 0 16px 64px #0005; --cp-heading: linear-gradient(110deg, #70ffd4, #91eaff 50%, #c4a0ff);
+}
+:root[data-theme="disco"] {
+  --cp-bg: #20102e; --cp-panel: #321338; --cp-subtle: #4a2352; --cp-text: #fff5e8; --cp-muted: #e5bade; --cp-border: #aa568f;
+  --cp-accent: #ffe66d; --cp-primary: #a42187; --cp-primary-border: #ff80dd; --cp-primary-hover: #801466;
+  --cp-art: radial-gradient(circle at 18% 18%, #fff8 0 1px, transparent 2px), radial-gradient(circle at 78% 32%, #ffe66d99 0 2px, transparent 3px), repeating-conic-gradient(from 25deg at 85% 0%, #ff35c518 0deg 12deg, transparent 12deg 24deg), radial-gradient(ellipse at 0% 10%, #f526cb55, transparent 55%), radial-gradient(ellipse at 100% 70%, #783aff66, transparent 65%);
+  --cp-glow: 0 0 28px #ff35c52e, 0 16px 64px #0005; --cp-heading: linear-gradient(110deg, #ffe66d, #ff80dd 55%, #a49bff);
+}
+:root[data-theme="inferno"] {
+  --cp-bg: #1c0c0a; --cp-panel: #2b1511; --cp-subtle: #44251c; --cp-text: #fff1dc; --cp-muted: #e1b99a; --cp-border: #9b5032;
+  --cp-accent: #ffbc67; --cp-primary: #96351d; --cp-primary-border: #ff9660; --cp-primary-hover: #762711;
+  --cp-art: radial-gradient(circle at 23% 38%, #ffcc8199 0 1px, transparent 2px), radial-gradient(circle at 72% 68%, #ff662b88 0 2px, transparent 3px), url('./inferno.svg'), radial-gradient(ellipse at 12% 100%, #ed35194a, transparent 62%), radial-gradient(ellipse at 95% 40%, #ff950032, transparent 60%);
+  --cp-glow: 0 0 32px #ff5a182b, 0 16px 64px #0007; --cp-heading: linear-gradient(110deg, #ffe2a3, #ff9a42 50%, #ff5035);
+}
+.cuberplus-page { background-image: var(--cp-art, none); background-attachment: fixed; background-size: auto, auto, cover, cover, cover; }
+:root:is([data-theme="aurora"], [data-theme="disco"], [data-theme="inferno"]) .cuberplus-brand { background: var(--cp-heading); background-clip: text; -webkit-text-fill-color: transparent; }
+:root:is([data-theme="aurora"], [data-theme="disco"], [data-theme="inferno"]) :is(.card, .panel, .tool-card, .settings-panel, .worksheet-panel) { box-shadow: var(--cp-glow); }
+:root:is([data-theme="disco"], [data-theme="inferno"]) .cuberplus-page { background-size: 173px 197px, 307px 283px, cover, cover, cover; }
 :root, [data-bs-theme] {
   --bs-font-sans-serif: var(--cp-font);
   --bs-body-bg: var(--cp-bg);
@@ -41,34 +49,24 @@
 }
 body { margin: 0; background: var(--cp-bg); color: var(--cp-text); font-family: var(--cp-font); -webkit-font-smoothing: antialiased; }
 button, input, select, textarea { font-family: inherit; }
-a { color: var(--cp-accent); }
-a:hover { color: var(--cp-accent); }
+a, a:hover { color: var(--cp-accent); }
 :focus-visible { outline-color: var(--cp-accent); }
 .btn-primary, .btn-success {
-  --bs-btn-color: #fff;
   --bs-btn-bg: var(--cp-primary);
   --bs-btn-border-color: var(--cp-primary-border);
-  --bs-btn-hover-color: #fff;
   --bs-btn-hover-bg: var(--cp-primary-hover);
   --bs-btn-hover-border-color: var(--cp-primary-border);
-  --bs-btn-active-color: #fff;
   --bs-btn-active-bg: var(--cp-primary-hover);
   --bs-btn-active-border-color: var(--cp-primary-border);
-  --bs-btn-disabled-color: #fff;
   --bs-btn-disabled-bg: var(--cp-primary);
   --bs-btn-disabled-border-color: var(--cp-primary-border);
   --bs-btn-focus-shadow-rgb: 101, 211, 176;
-  background: var(--cp-primary);
-  border-color: var(--cp-primary-border);
 }
-.btn-primary:hover, .btn-success:hover { background: var(--cp-primary-hover); border-color: var(--cp-primary-border); }
 .btn-outline-primary, .btn-outline-secondary {
   --bs-btn-color: var(--cp-accent);
   --bs-btn-border-color: var(--cp-primary-border);
-  --bs-btn-hover-color: #fff;
   --bs-btn-hover-bg: var(--cp-primary-hover);
   --bs-btn-hover-border-color: var(--cp-primary-border);
-  --bs-btn-active-color: #fff;
   --bs-btn-active-bg: var(--cp-primary);
   --bs-btn-active-border-color: var(--cp-primary-border);
   --bs-btn-disabled-color: var(--cp-muted);
@@ -91,13 +89,7 @@ a:hover { color: var(--cp-accent); }
 .accordion-button:not(.collapsed) { color: var(--cp-accent); background: var(--cp-subtle); }
 @media print {
   :root, :root[data-bs-theme] {
-    --cp-bg: #fff;
-    --cp-panel: #fff;
-    --cp-subtle: #fff;
-    --cp-text: #000;
-    --cp-muted: #333;
-    --cp-border: #aaa;
-    --cp-accent: #15271e;
-    color-scheme: light;
+    --cp-bg: #fff; --cp-panel: #fff; --cp-subtle: #fff; --cp-text: #000; --cp-muted: #333; --cp-border: #aaa; --cp-accent: #15271e;
+    --cp-art: none; --cp-glow: none; color-scheme: light;
   }
 }

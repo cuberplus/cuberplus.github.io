@@ -9,6 +9,7 @@ import {
     buildHistogramData,
     buildGoodBadData,
     buildRunningColorPercentages,
+    buildFirstPairPercentages,
     buildStepPercentages,
     buildOllCategoryChart,
     buildPllCategoryChart,
@@ -72,6 +73,21 @@ function makeSolves(count: number, overrides: Partial<Solve> = {}): Solve[] {
 }
 
 // ── buildRunningAverageData ───────────────────────────────────────────────────
+
+test('first-pair rolling percentages keep the full window denominator and an explicit unknown series', () => {
+    const solves = ['Red/Green', 'Orange/Blue', undefined, 'Red/Green'].map(firstF2LPair => makeSolve({ firstF2LPair }));
+    const chart = buildFirstPairPercentages(solves, 2, 500);
+    expect(chart.labels).toEqual(['2', '3', '4']);
+    const data = Object.fromEntries(chart.datasets.map(dataset => [dataset.label!, dataset.data]));
+    expect(data['Red / Green']).toEqual([50, 0, 50]);
+    expect(data['Orange / Blue']).toEqual([50, 50, 0]);
+    expect(data.Unknown).toEqual([0, 50, 50]);
+    expect(data['Red / Blue']).toEqual([0, 0, 0]);
+    for (let i = 0; i < 3; i++) expect(chart.datasets.reduce((sum, dataset) => sum + Number(dataset.data[i]), 0)).toBeCloseTo(100);
+    const sampled = buildFirstPairPercentages(solves, 2, 2);
+    expect(sampled.datasets.every(dataset => dataset.data.length === sampled.labels!.length)).toBe(true);
+    expect(buildFirstPairPercentages([], 10, 500).datasets).toEqual([]);
+});
 
 describe('buildRunningAverageData', () => {
     test('supports disabling chopping, a custom percentage, and small-window caps', () => {

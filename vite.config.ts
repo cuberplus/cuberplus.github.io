@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { cpSync, createReadStream, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { extname, resolve, sep } from 'node:path';
 import { defineConfig, transformWithEsbuild } from 'vite';
@@ -50,6 +50,8 @@ export default defineConfig({
         cpSync(resolve(root, app, 'public'), resolve(output, app), { recursive: true, filter: source => !/(?:manifest[^\\/]*|index\.html)$/.test(source) });
         writeFileSync(resolve(output, app, 'index.html'), shell);
       }
+      mkdirSync(resolve(output, 'options'), { recursive: true });
+      writeFileSync(resolve(output, 'options', 'index.html'), shell);
       for (const size of [192, 512]) cpSync(resolve(root, 'timer', 'public', `icon-${size}.png`), resolve(output, `icon-${size}.png`));
       writeFileSync(resolve(output, '404.html'), shell);
       const assets = readdirSync(resolve(output, 'assets')).filter(file => !file.endsWith('.map')).map(file => `/assets/${file}`);

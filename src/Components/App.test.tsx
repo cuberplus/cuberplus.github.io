@@ -9,12 +9,12 @@ test('the homepage footer contains only the shared CuberPlus version', () => {
   expect(screen.getByRole('contentinfo').textContent).toBe(`CuberPlus ${APP_VERSION}`);
 });
 
-test.each(['home', 'timer', 'smartcubeanalyzer', 'scrambler'] as const)(
+test.each(['home', 'timer', 'smartcubeanalyzer', 'scrambler', 'options'] as const)(
   'shared navigation marks only %s as the current page',
   current => {
     render(<Navigation current={current} />);
     const links = within(screen.getByRole('navigation', { name: 'CuberPlus' })).getAllByRole('link');
-    expect(links).toHaveLength(4);
+    expect(links).toHaveLength(5);
     const active = links.filter(link => link.getAttribute('aria-current') === 'page');
     expect(active).toHaveLength(1);
     expect(active[0].getAttribute('href')).toBe(current === 'home' ? '/' : `/${current}/`);
@@ -61,6 +61,7 @@ test('the brand and skip link remain alongside the shared navigation', () => {
   expect(links.map(link => [link.getAttribute('aria-label'), link.getAttribute('href')])).toEqual([
     ['Home', '/'], ['Timer', '/timer/'],
     ['Smartcube Analyzer', '/smartcubeanalyzer/'], ['Scrambler', '/scrambler/'],
+    ['Options', '/options/'],
   ]);
   expect(links[0].getAttribute('aria-current')).toBe('page');
   expect(links.slice(1).every(link => !link.hasAttribute('aria-current'))).toBe(true);

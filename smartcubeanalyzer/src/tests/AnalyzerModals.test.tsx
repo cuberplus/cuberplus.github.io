@@ -1,6 +1,9 @@
 /** @jest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render as renderView, screen, within } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import { SettingsProvider } from '@cuberplus/navigation';
+import Options from '../../../src/Options';
 import { ActiveElement } from 'chart.js';
 import { ChartPanel } from '../Components/ChartPanel';
 import { AverageModal } from '../Components/AverageModal';
@@ -9,8 +12,10 @@ import { Const } from '../Helpers/Constants';
 import { splitIntoChunks } from '../Helpers/MathHelpers';
 import { computeAllChartData } from '../Workers/chartWorker';
 import { makeSolves } from './testUtils';
+const render = (ui: ReactElement) => renderView(<SettingsProvider>{ui}</SettingsProvider>);
 
 beforeEach(() => {
+    localStorage.setItem('timer-time-precision', '3');
     Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } });
     Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; } });
 });
@@ -175,6 +180,14 @@ describe('Analyzer inline drill-down', () => {
 });
 
 describe('chopped average modal', () => {
+    test('global precision changes an already-open average without changing solve data', () => {
+        const solves = makeSolves(1).map(solve => ({ ...solve, time: 12.345 }));
+        render(<><Options /><AverageModal solves={solves} numbers={[1]} percentage={0} close={() => undefined} view={() => undefined} /></>);
+        expect(screen.getByRole('heading', { name: 'Ao1: 12.345s' })).not.toBeNull();
+        fireEvent.change(screen.getByRole('combobox', { name: 'Time precision' }), { target: { value: '2' } });
+        expect(screen.getByRole('heading', { name: 'Ao1: 12.35s' })).not.toBeNull();
+        expect(solves[0].time).toBe(12.345);
+    });
     function show(times: number[], percentage = 5, dnfIndices: number[] = []) {
         const solves = makeSolves(times.length).map((solve, i) => ({ ...solve, time: times[i], dnf: dnfIndices.includes(i) }));
         const close = jest.fn(), view = jest.fn<(solve: Solve) => void>();

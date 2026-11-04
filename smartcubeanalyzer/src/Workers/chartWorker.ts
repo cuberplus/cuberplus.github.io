@@ -1,5 +1,5 @@
 import { calculateMovingAverage, calculateMovingPercentage, calculateMovingAverageChopped, makeLabels, reduceDataset } from '../Helpers/MathHelpers';
-import { buildRunningAverageData, buildRunningStdDevData, buildRunningTpsData, buildRunningInspectionData, buildRunningTurnsData, buildRunningRecognitionExecution, buildHistogramData, buildGoodBadData, buildRunningColorPercentages, buildStepPercentages, buildOllCategoryChart, buildPllCategoryChart, buildInspectionData, shouldShowInspectionCharts, buildTypicalCompare, fastestByDay, buildMovingLineChart } from '../Helpers/ChartDataBuilders';
+import { buildRunningAverageData, buildRunningStdDevData, buildRunningTpsData, buildRunningInspectionData, buildRunningTurnsData, buildRunningRecognitionExecution, buildHistogramData, buildGoodBadData, buildRunningColorPercentages, buildFirstPairPercentages, buildStepPercentages, buildOllCategoryChart, buildPllCategoryChart, buildInspectionData, shouldShowInspectionCharts, buildTypicalCompare, fastestByDay, buildMovingLineChart } from '../Helpers/ChartDataBuilders';
 import { applyPaletteToChartData, SEGMENT_COLORS } from '../Helpers/ChartColors';
 import { analyzeStepMoves, computeCaseFailureStats, computeSolveEfficiency } from '../Helpers/MoveAnalysis';
 import { getAufMovesForSolve } from '../Helpers/CsvParser';
@@ -18,6 +18,7 @@ export interface WorkerInput {
     methodName: MethodName;
     use4SegmentTiming: boolean;
     isDark: boolean;
+    precision?: 2 | 3;
     chopPercentage?: number;
 }
 
@@ -71,11 +72,11 @@ const recordTimes = (solves: Solve[], window: number) => {
     return window === 1 ? times : calculateMovingAverageChopped(times, window);
 };
 
-export function buildRecordRows(solves: Solve[]): RecordRow[] {
+export function buildRecordRows(solves: Solve[], precision = 3): RecordRow[] {
     return RECORD_WINDOWS.map(window => {
         const times = recordTimes(solves, window);
         const best = times.reduce((a, b) => Math.min(a, b), Infinity);
-        return { recordType: window === 1 ? 'Single' : `Ao${window}`, time: !times.length ? '-' : best === Infinity ? 'DNF' : best.toFixed(3) };
+        return { recordType: window === 1 ? 'Single' : `Ao${window}`, time: !times.length ? '-' : best === Infinity ? 'DNF' : best.toFixed(precision) };
     });
 }
 
@@ -233,7 +234,7 @@ export function buildCaseData(solves: Solve[], steps: StepName[], windowSize: nu
     };
 }
 
-export function buildAlgorithmPracticeRows(solves: Solve[], steps: StepName[], windowSize: number): AlgoPracticeRow[] {
+export function buildAlgorithmPracticeRows(solves: Solve[], steps: StepName[], windowSize: number, precision = 3): AlgoPracticeRow[] {
     if (steps.length !== 1 || (steps[0] !== StepName.OLL && steps[0] !== StepName.PLL)) {
         return [];
     }
@@ -255,21 +256,21 @@ export function buildAlgorithmPracticeRows(solves: Solve[], steps: StepName[], w
             avgMoves: cs.avgMoves.toFixed(1),
             expectedMoves: cs.expectedMovesBase,
             avgWasted: avgWasted.toFixed(1),
-            avgTime: avgTime.toFixed(3),
+            avgTime: avgTime.toFixed(precision),
         };
     });
 }
 
 // ── Best solves ───────────────────────────────────────────────────────────────
 
-export function computeBestSolvesData(solves: Solve[]): FastestSolve[] {
+export function computeBestSolvesData(solves: Solve[], precision = 3): FastestSolve[] {
     return solves
         .slice()
         .sort((a, b) => a.time - b.time)
         .slice(0, Const.FastestSolvesCount)
         .map(x => ({
             date: x.date.toDateString(),
-            time: x.time.toFixed(3),
+            time: x.time.toFixed(precision),
             scramble: x.scramble,
             id: x.id,
             fullstep: x.isFullStep ? 'Yes 🔥' : 'No',
@@ -312,24 +313,25 @@ export function computeAllChartData(input: WorkerInput): ChartDataBundle {
         histogram: paint(buildHistogramData(solves, windowSize)),
         stepAverages: paintRolling(buildStepAverages(solves, steps, windowSize, pointsPerGraph)),
         runningColorPercentages: paintRolling(buildRunningColorPercentages(solves, windowSize, pointsPerGraph, isDark)),
+        runningFirstPairPercentages: methodName.startsWith('CFOP') ? paintRolling(buildFirstPairPercentages(solves, windowSize, pointsPerGraph)) : undefined,
         inspection: showInspectionCharts
-            ? paint(buildInspectionData(inspectionSolves, windowSize))
+            ? paint(buildInspectionData(inspectionSolves, windowSize, input.precision))
             : null,
         dailyRecord: paint(buildDailyRecordData(solves)),
         streakRows: buildAllStreakRows(solves),
-        recordRows: buildRecordRows(input.solves),
+        recordRows: buildRecordRows(input.solves, input.precision),
         goodBad: paintRolling(buildGoodBadData(solves, windowSize, pointsPerGraph, goodTime, badTime)),
         recordHistory: applyPaletteToChartData(buildRecordHistory(input.solves), isDark),
         stepPercentages: paint(buildStepPercentages(solves, steps, windowSize), true),
         typicalCompare: paint(buildTypicalCompare(solves, windowSize)),
-        bestSolvesData: computeBestSolvesData(solves),
+        bestSolvesData: computeBestSolvesData(solves, input.precision),
     };
 
     if (hasOll) cache.ollCategory = paintRolling(buildOllCategoryChart(solves, windowSize, pointsPerGraph));
     if (hasPll) cache.pllCategory = paintRolling(buildPllCategoryChart(solves, windowSize, pointsPerGraph));
     if (steps.length === 1 && (steps[0] === StepName.OLL || steps[0] === StepName.PLL)) {
         cache.caseData = paint(buildCaseData(solves, steps, windowSize, use4SegmentTiming));
-        cache.algoPracticeRows = buildAlgorithmPracticeRows(solves, steps, windowSize);
+        cache.algoPracticeRows = buildAlgorithmPracticeRows(solves, steps, windowSize, input.precision);
     }
 
     return cache;

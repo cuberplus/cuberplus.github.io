@@ -6,16 +6,16 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); jest.restoreAllMocks(); });
 
-test('all tool headers share one install offer and one pair of browser listeners', async () => {
+test('install subscribers share one offer and one pair of browser listeners', async () => {
   const add = jest.spyOn(window, 'addEventListener'), remove = jest.spyOn(window, 'removeEventListener');
   const first = render(<InstallControl />), second = render(<InstallControl />);
   const prompt = jest.fn().mockResolvedValue({ outcome: 'dismissed' });
   act(() => window.dispatchEvent(Object.assign(new Event('beforeinstallprompt', { cancelable: true }), { prompt })));
-  expect(screen.getAllByRole('button', { name: 'Install', exact: true })).toHaveLength(2);
+  expect(screen.getAllByRole('button', { name: 'Install app', exact: true }).every(button => !(button as HTMLButtonElement).disabled)).toBe(true);
   expect(add.mock.calls.filter(([name]) => name === 'beforeinstallprompt')).toHaveLength(1);
-  await act(async () => fireEvent.click(screen.getAllByRole('button', { name: 'Install', exact: true })[0]));
+  await act(async () => fireEvent.click(screen.getAllByRole('button', { name: 'Install app', exact: true })[0]));
   expect(prompt).toHaveBeenCalledTimes(1);
-  expect(screen.queryByRole('button', { name: 'Install', exact: true })).toBeNull();
+  expect(screen.getAllByRole('button', { name: 'Install app', exact: true }).every(button => (button as HTMLButtonElement).disabled)).toBe(true);
   first.unmount();
   expect(remove.mock.calls.filter(([name]) => name === 'beforeinstallprompt')).toHaveLength(0);
   second.unmount();
@@ -24,12 +24,12 @@ test('all tool headers share one install offer and one pair of browser listeners
 test('a failed install remains usable and a fresh offer can retry', async () => {
   render(<InstallControl />);
   act(() => window.dispatchEvent(Object.assign(new Event('beforeinstallprompt', { cancelable: true }), { prompt: jest.fn().mockRejectedValue(new Error('Denied')) })));
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Install', exact: true })));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Install app', exact: true })));
   expect(screen.getByRole('alert').textContent).toMatch(/browser menu/);
   act(() => window.dispatchEvent(Object.assign(new Event('beforeinstallprompt', { cancelable: true }), { prompt: jest.fn().mockResolvedValue(undefined) })));
   expect(screen.queryByRole('alert')).toBeNull();
   act(() => window.dispatchEvent(new Event('appinstalled')));
-  expect(screen.queryByRole('button', { name: 'Install', exact: true })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Install app', exact: true })).toBeNull();
 });
 test('a waiting update never reloads automatically, and only the obsolete Timer registration is retired', async () => {
   const legacy = { scope: new URL('/timer/', location.origin).href, unregister: jest.fn().mockResolvedValue(true) };

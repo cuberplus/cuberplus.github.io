@@ -31,12 +31,7 @@ export function speedCubeDbUrl(step: StepName, caseName: string): string | null 
 }
 
 export function createTooltip(description: string) {
-    const tooltip = (
-        <Tooltip id="tooltip">
-            {description}
-        </Tooltip>
-    );
-    return tooltip;
+    return <Tooltip id="tooltip">{description}</Tooltip>;
 }
 
 export function ChartCard({ children, title, tooltip, label = title, scrollable = false }: {
@@ -117,7 +112,7 @@ export function shortSegmentName(datasetLabel: string): string {
  * the whole bar is shown at once: the total first, then one line per segment in
  * the order they are stacked from the top down, each keeping its bar's colour.
  */
-export function withCaseTooltip(options: CubeChartOptions): CaseChartOptions {
+export function withCaseTooltip(options: CubeChartOptions, precision = 3): CaseChartOptions {
     return {
         ...options,
         // Hovering anywhere in a case's column describes the whole bar, rather
@@ -132,10 +127,10 @@ export function withCaseTooltip(options: CubeChartOptions): CaseChartOptions {
                     beforeBody: (items: TooltipItem<'bar'>[]) => {
                         let total = 0;
                         for (const item of items) total += Number(item.parsed.y);
-                        return `${TOTAL_SQUARE} Total: ${total.toFixed(3)}s`;
+                        return `${TOTAL_SQUARE} Total: ${total.toFixed(precision)}s`;
                     },
                     label: (item: TooltipItem<'bar'>) =>
-                        `${shortSegmentName(item.dataset.label ?? '')}: ${Number(item.parsed.y).toFixed(3)}s`,
+                        `${shortSegmentName(item.dataset.label ?? '')}: ${Number(item.parsed.y).toFixed(precision)}s`,
                 },
             },
         },

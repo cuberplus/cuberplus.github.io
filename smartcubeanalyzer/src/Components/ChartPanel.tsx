@@ -37,7 +37,7 @@ ChartJS.register(CategoryScale);
 /** Each watched prop is compared with !==, so only identity-comparable values belong here. */
 type WatchedProp = Solve[] | number | string | boolean | MethodName;
 
-type ThemeContextValue = { isDark?: boolean };
+type ThemeContextValue = { isDark?: boolean; precision?: 2 | 3 };
 
 /** Fill the chart card / Ratio box; DataGrid defaults to ~350px without an explicit height chain. */
 const chartDataGridWrapStyle: React.CSSProperties = { height: '100%', width: '100%', minHeight: 0, overflow: 'auto' };
@@ -166,11 +166,12 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
     private _isDark(): boolean {
         return (this.context as ThemeContextValue | undefined)?.isDark ?? false;
     }
+    private _precision(): 2 | 3 { return (this.context as ThemeContextValue | undefined)?.precision ?? 2; }
 
     private _watched(): WatchedProp[] {
         const p = this.props;
         return [p.solves, p.windowSize, p.pointsPerGraph, p.steps.join(','), p.useLogScale,
-            p.goodTime, p.badTime, p.methodName, p.use4SegmentTiming, p.chopAverages !== false, p.chopPercentage ?? 5, this._isDark()];
+            p.goodTime, p.badTime, p.methodName, p.use4SegmentTiming, p.chopAverages !== false, p.chopPercentage ?? 5, this._isDark(), this._precision()];
     }
 
     private _propsChanged(): boolean {
@@ -195,6 +196,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
             methodName: p.methodName,
             use4SegmentTiming: p.use4SegmentTiming,
             isDark: this._isDark(),
+            precision: this._precision(),
             chopPercentage: p.chopAverages === false ? 0 : p.chopPercentage ?? 5,
         });
     }
@@ -270,6 +272,9 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
         if (key === 'runningColorPercentages') {
             const color = dataset.label?.match(/with (\w+) cross/)?.[1];
             solves = solves.filter(solve => solve.crossColor === color); title = `${color} cross`;
+        } else if (key === 'runningFirstPairPercentages') {
+            const pair = dataset.label?.replace(' / ', '/');
+            solves = solves.filter(solve => (solve.firstF2LPair || 'Unknown') === pair); title = `${dataset.label} first pair`;
         } else if (key === 'goodBad') {
             solves = solves.filter(solve => point.datasetIndex === 0 ? solve.time < p.goodTime : solve.time > p.badTime);
             title = point.datasetIndex === 0 ? 'Good solves' : 'Bad solves';
@@ -295,9 +300,11 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
         const plot = (key: keyof ChartDataBundle, title: string, tooltip: string, type = ChartType.Line, x = 'Solve Number', y = 'Time (s)', stacked = true, date = false) => {
             const data = c[key];
             if (!data || !('datasets' in data)) return;
-            const options = { ...createOptions(type, x, y, p.useLogScale, stacked, date, isDark), onClick: (_event: ChartEvent, points: ActiveElement[]) => this.openAverage(key, points[0]), ...(key === 'runningAverage' ? { spanGaps: false } : {}) };
+            const options = { ...createOptions(type, x, y, p.useLogScale, stacked, date, isDark),
+                ...(y.endsWith('(s)') && key !== 'runningTps' ? { plugins: { tooltip: { callbacks: { label: (item: { dataset: { label?: string }; parsed: number | { y: number | null } }) => `${item.dataset.label}: ${Number(typeof item.parsed === 'number' ? item.parsed : item.parsed.y).toFixed(this._precision())}s` } } } } : {}),
+                onClick: (_event: ChartEvent, points: ActiveElement[]) => this.openAverage(key, points[0]), ...(key === 'runningAverage' ? { spanGaps: false } : {}) };
             const chart = type === ChartType.Line ? <Line data={data as ChartData<'line', (number | null | DatedPoint)[], string>} options={options} />
-                : type === ChartType.Bar ? <Bar data={data as LabelledChart<'bar', string | number>} options={key === 'caseData' ? withCaseTooltip(options) : options} />
+                : type === ChartType.Bar ? <Bar data={data as LabelledChart<'bar', string | number>} options={key === 'caseData' ? withCaseTooltip(options, this._precision()) : options} />
                 : <Doughnut data={data as LabelledChart<'doughnut'>} options={options} />;
             charts.push(buildChartHtml(chart, title, tooltip));
         };
@@ -323,6 +330,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
         charts.push(buildChartHtml(<SortableGrid rows={c.bestSolvesData} columns={BEST_SOLVES_COLS} className="clickable-grid" onCellClick={({ row }) => this.openSolveSource(row)} />, `Top ${Const.FastestSolvesCount} Fastest Solves`, `This shows your ${Const.FastestSolvesCount} fastest solves, given the filters`));
         plot('runningStdDev', "Average Standard Deviation", "This chart shows your running average's standard deviation");
         plot('runningColorPercentages', "Percentage of Solves by Cross Color", "This chart shows what percentage of solves started with cross on White/Yellow/etc...", ChartType.Line, 'Solve Number', 'Percentage');
+        plot('runningFirstPairPercentages', "First F2L Pair", "Rolling percentage of solves starting with each F2L pair's two side colors. Unknown includes simultaneous pairs, skipped pairs with no identifiable order, and exports without usable recordings.", ChartType.Line, 'Solve Number', 'Percentage');
         plot('inspection', "Average solve time by inspection time", "This chart shows your average, grouped up by how much inspection time (For example, the left bar is the 1/7 of your solves with the lowest inspection time, and the right bar is the 1/7 of your solves with the most inspection time)", ChartType.Bar, 'Inspection Time (s)', 'Solve Time (s)');
         if (hasStepTimings) plot('stepAverages', "Average Time by Step", "This chart shows what percentage of your solve each step takes");
         plot('runningInspection', "Average Inspection Time", "This chart shows how much inspection time you use on average");

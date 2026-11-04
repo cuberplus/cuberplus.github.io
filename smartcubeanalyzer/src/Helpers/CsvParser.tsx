@@ -1,6 +1,8 @@
 import { Const } from "./Constants";
 import { GetEmptySolve } from "./CubeHelpers";
 import { Solve, CrossColor, MethodName, Step, StepName } from "./Types";
+import { firstF2LPair } from '../../../shared/f2l';
+import { COLORS } from '../../../scrambler/src/cube/cube';
 
 export const AUF_MOVES = new Set(['U', "U'", 'U2', "U2'", "U3", "U3'"]);
 export const ROTATIONS = new Set([
@@ -16,40 +18,12 @@ export function aufMovesForFace(face: FaceLetter): Set<string> {
 }
 
 function getAcubemyAufFaceForCrossFace(crossFace: string | undefined | null): FaceLetter {
-    switch ((crossFace ?? '').toUpperCase()) {
-        case 'U':
-            return 'D';
-        case 'L':
-            return 'R';
-        case 'R':
-            return 'L';
-        case 'F':
-            return 'B';
-        case 'B':
-            return 'F';
-        case 'D':
-        default:
-            return 'U';
-    }
+    const opposites: Record<string, FaceLetter> = { U: 'D', L: 'R', R: 'L', F: 'B', B: 'F' };
+    return opposites[(crossFace ?? '').toUpperCase()] ?? 'U';
 }
 
 function crossFaceFromCrossColor(crossColor: CrossColor): FaceLetter | null {
-    switch (crossColor) {
-        case CrossColor.White:
-            return 'D';
-        case CrossColor.Yellow:
-            return 'U';
-        case CrossColor.Orange:
-            return 'L';
-        case CrossColor.Red:
-            return 'R';
-        case CrossColor.Green:
-            return 'F';
-        case CrossColor.Blue:
-            return 'B';
-        default:
-            return null;
-    }
+    return ({ White: 'D', Yellow: 'U', Orange: 'L', Red: 'R', Green: 'F', Blue: 'B', Unknown: null } as const)[crossColor];
 }
 
 function isAcubemyBeforeAufCutoff(date: Date): boolean {
@@ -258,6 +232,7 @@ interface RowScratch {
     moves: (MoveTiming[] | null)[];
     cumulativeSec: number[];
     penaltyMs: number;
+    solution: string;
 }
 
 type ColumnSetter = (obj: Solve, value: string, scratch: RowScratch) => void;
@@ -278,11 +253,9 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
         "date": (obj, value) => { obj.date = parseUtcDateTime(value); },
         "solution_rotation": (obj, value) => {
             obj.crossColor = Const.crossMappings.get(value) ?? CrossColor.Unknown;
-            if (obj.crossColor == CrossColor.Unknown) {
-                //console.log("Unknown solution rotation: ", value);
-                //obj.isCorrupt = true;
-            };
         },
+        "solution": (_obj, value, scratch) => { scratch.solution = value; },
+        "first_f2l_pair": (obj, value) => { obj.firstF2LPair = value; },
         "scramble": (obj, value) => { obj.scramble = value; },
         "solving_method": (obj, value) => { obj.method = value as MethodName; },
         "turns_per_second": (obj, value) => { obj.tps = Number(value); },
@@ -331,7 +304,7 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
     const formedArr: Solve[] = [];
     const stepCount = GetEmptySolve().steps.length;
     // Reused across rows; the parser is single threaded, so one set of scratch buffers is enough.
-    const scratch: RowScratch = { moves: new Array<MoveTiming[] | null>(stepCount).fill(null), cumulativeSec: new Array<number>(stepCount).fill(-1), penaltyMs: 0 };
+    const scratch: RowScratch = { moves: new Array<MoveTiming[] | null>(stepCount).fill(null), cumulativeSec: new Array<number>(stepCount).fill(-1), penaltyMs: 0, solution: '' };
     const times = [0, 0, 0, 0];
     const total = stringVal.length;
 
@@ -345,6 +318,7 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
 
         const obj = GetEmptySolve();
         scratch.penaltyMs = 0;
+        scratch.solution = '';
         for (let i = 0; i < stepCount; i++) { scratch.moves[i] = null; scratch.cumulativeSec[i] = -1; }
         times[0] = times[1] = times[2] = times[3] = 0;
 
@@ -450,6 +424,7 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
 
         obj.source = 'cubeast';
         obj.rawSource = 'cubeast';
+        if (obj.firstF2LPair === undefined && obj.method.startsWith('CFOP')) obj.firstF2LPair = firstF2LPair(obj.scramble, scratch.solution, COLORS.indexOf(obj.crossColor as typeof COLORS[number]));
         if (obj.dnf) obj.isCorrupt = false;
 
         formedArr.push(obj);
@@ -509,32 +484,17 @@ function parseAcubemyCsv(stringVal: string, splitter: string): Solve[] {
         for (const def of ACUBEMY_STEP_DEFS) {
             const s = steps[def.index];
             const moves = get(def.movesField);
-            s.name = def.name;
-            s.time = 0;
-            s.recognitionTime = 0;
-            s.executionTime = 0;
-            s.turns = countMovesExcludingRotations(moves);
-            if (moves) {
-                s.moves = stripRotationsFromMoveString(moves);
-            }
+            Object.assign(s, { name: def.name, time: 0, recognitionTime: 0, executionTime: 0, turns: countMovesExcludingRotations(moves) });
+            if (moves) s.moves = stripRotationsFromMoveString(moves);
         }
     };
 
     const initEmptyMethodSteps = (solve: Solve, method: MethodName) => {
         const stepNames = Const.MethodSteps[method];
         for (let i = 0; i < solve.steps.length; i++) {
-            const s = solve.steps[i];
             const name = stepNames[i] ?? stepNames[stepNames.length - 1] ?? StepName.Cross;
-            s.name = name;
-            s.time = 0;
-            s.recognitionTime = 0;
-            s.executionTime = 0;
-            s.preAufTime = 0;
-            s.postAufTime = 0;
-            s.turns = 0;
-            s.tps = 0;
-            s.moves = '';
-            s.case = '';
+            Object.assign(solve.steps[i], { name, time: 0, recognitionTime: 0, executionTime: 0,
+                preAufTime: 0, postAufTime: 0, turns: 0, tps: 0, moves: '', case: '' });
         }
     };
 
@@ -770,31 +730,9 @@ function parseAcubemyCsv(stringVal: string, splitter: string): Solve[] {
         }
 
         const crossFace = get("cross_face");
-        if (crossFace) {
-            switch (crossFace) {
-                case "D":
-                    solve.crossColor = CrossColor.White;
-                    break;
-                case "U":
-                    solve.crossColor = CrossColor.Yellow;
-                    break;
-                case "F":
-                    solve.crossColor = CrossColor.Green;
-                    break;
-                case "B":
-                    solve.crossColor = CrossColor.Blue;
-                    break;
-                case "R":
-                    solve.crossColor = CrossColor.Red;
-                    break;
-                case "L":
-                    solve.crossColor = CrossColor.Orange;
-                    break;
-                default:
-                    solve.crossColor = CrossColor.Unknown;
-                    break;
-            }
-        }
+        const crossColors = [CrossColor.Yellow, CrossColor.Red, CrossColor.Green, CrossColor.White, CrossColor.Orange, CrossColor.Blue];
+        if (crossFace) solve.crossColor = crossColors['URFDLB'.indexOf(crossFace)] ?? CrossColor.Unknown;
+        if (solve.method === MethodName.CFOP && crossFace) solve.firstF2LPair = firstF2LPair(solve.scramble, get('solution') || get('raw_solution'), 'URFDLB'.indexOf(crossFace), crossColors);
 
         const steps = solve.steps;
         const ollCaseRaw = get("oll_case_id");

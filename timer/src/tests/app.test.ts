@@ -8,7 +8,8 @@ import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
 import type { Solve } from '../engine';
 import { averageDetails, dailyStreak, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats, solveEndDate } from '../storage';
 import { loadCube, SOLVED, Cube, inverse, isMove, movesOf, locations, sameAxis, simplifyMoves } from '../puzzle';
-import { PageLocation } from '@cuberplus/navigation';
+import { PageLocation, SettingsProvider } from '@cuberplus/navigation';
+import Options from '../../../src/Options';
 
 const cube = await loadCube();
 const generate = jest.fn<() => Promise<string>>();
@@ -42,6 +43,8 @@ await jest.unstable_mockModule('../Replay', () => ({
     createElement('button', { onClick: close }, 'Close replay')),
 }));
 const { default: App } = await import('../App');
+const app = (options = false) => createElement(SettingsProvider, null, createElement(App), options && createElement(Options));
+async function openSiteOptions() { await act(async () => root.render(app(true))); }
 
 let root: Root, container: HTMLDivElement, resolveNext: (scramble: string) => void, rejectNext: (error: Error) => void;
 beforeEach(async () => {
@@ -71,7 +74,7 @@ beforeEach(async () => {
   generate.mockResolvedValueOnce('R U2').mockImplementationOnce(() => new Promise<string>((resolve, reject) => { resolveNext = resolve; rejectNext = reject; })).mockResolvedValue('B R2');
   container = document.createElement('div'); document.body.appendChild(container);
   root = createRoot(container);
-  await act(async () => { root.render(createElement(App)); });
+  await act(async () => { root.render(app()); });
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); jest.useRealTimers(); jest.restoreAllMocks(); });
 
@@ -97,7 +100,7 @@ async function showHistory(solves: Solve[]) {
   await act(async () => root.unmount());
   recovered = solves;
   root = createRoot(container);
-  await act(async () => root.render(createElement(App)));
+  await act(async () => root.render(app()));
 }
 function historySolve(number: number, duration: number, count: number, session = 'Default', status: Solve['status'] = 'complete'): Solve {
   return {
@@ -109,6 +112,17 @@ function historySolve(number: number, duration: number, count: number, session =
 function historyNumbers() {
   return Array.from(container.querySelectorAll('[aria-label="Solve history"] tbody tr')).map(row => Number(row.firstElementChild!.textContent));
 }
+
+test('Connect cube places a decorative Bluetooth icon before its unchanged label', async () => {
+  const button = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Connect cube')!;
+  const icon = button.firstElementChild!;
+  expect(icon.tagName.toLowerCase()).toBe('svg');
+  expect(icon.getAttribute('aria-hidden')).toBe('true');
+  expect(icon.getAttribute('focusable')).toBe('false');
+  expect(icon.nextSibling!.textContent).toBe('Connect cube');
+  await click('Connect cube');
+  expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Disconnect')).toBe(true);
+});
 
 test('new Timer replay links work on an already mounted connected Timer without reopening a dismissed replay on background renders', async () => {
   const solves = [historySolve(1, 1000, 4), historySolve(2, 2000, 4)];
@@ -612,9 +626,9 @@ test('average columns sort numeric metrics and preserve real numbers, penalties,
 });
 
 test.each(['accepted', 'dismissed'] as const)('Options prompts installation once when Chrome offers it (%s)', async outcome => {
-  await click('Options');
+  await openSiteOptions();
   const button = container.querySelector<HTMLButtonElement>('button[aria-describedby="install-help"]')!;
-  expect(button.closest('dialog')).not.toBeNull();
+  expect(button.closest('dialog')).toBeNull();
   expect(button.disabled).toBe(true);
   const prompt = jest.fn<InstallOffer['prompt']>().mockResolvedValue({ outcome });
   const offer = Object.assign(new Event('beforeinstallprompt', { cancelable: true }), { prompt });
@@ -639,31 +653,30 @@ test.each(['accepted', 'dismissed'] as const)('Options prompts installation once
 type InstallOffer = { prompt(): Promise<{ outcome: 'accepted' | 'dismissed' }> };
 
 test('an installation failure stays inside Options and a fresh offer permits retry', async () => {
-  await click('Options');
+  await openSiteOptions();
   const prompt = jest.fn<InstallOffer['prompt']>().mockRejectedValue(new Error('Prompt unavailable'));
   await act(async () => window.dispatchEvent(Object.assign(new Event('beforeinstallprompt'), { prompt })));
   await click('Install app');
-  expect(container.querySelector('dialog [role="alert"]')?.textContent).toContain('Installation could not start');
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('Installation could not start');
   expect(container.querySelector<HTMLButtonElement>('button[aria-describedby="install-help"]')!.disabled).toBe(true);
   prompt.mockResolvedValue({ outcome: 'dismissed' });
   await act(async () => window.dispatchEvent(Object.assign(new Event('beforeinstallprompt'), { prompt })));
-  expect(container.querySelector('dialog [role="alert"]')).toBeNull();
+  expect(container.querySelector('[role="alert"]')).toBeNull();
   await click('Install app');
   expect(prompt).toHaveBeenCalledTimes(2);
 });
 
-test('standalone launches omit installation controls and unmount removes install listeners', async () => {
+test('standalone launches omit installation controls', async () => {
   const removeListener = jest.spyOn(window, 'removeEventListener');
   jest.mocked(window.matchMedia).mockReturnValue({ matches: true } as MediaQueryList);
   await showHistory([]);
-  expect(removeListener).toHaveBeenCalledWith('beforeinstallprompt', expect.any(Function));
-  expect(removeListener).toHaveBeenCalledWith('appinstalled', expect.any(Function));
-  await click('Options');
+  await openSiteOptions();
   const prompt = jest.fn<InstallOffer['prompt']>().mockResolvedValue({ outcome: 'accepted' });
   const offer = Object.assign(new Event('beforeinstallprompt', { cancelable: true }), { prompt });
   await act(async () => window.dispatchEvent(offer));
   expect(offer.defaultPrevented).toBe(false);
   expect(container.querySelector('button[aria-describedby="install-help"]')).toBeNull();
+  expect(removeListener).not.toHaveBeenCalledWith('beforeinstallprompt', expect.any(Function));
 });
 
 test('history numbers every non-active attempt chronologically within its session', async () => {
@@ -1367,19 +1380,16 @@ test('options change timer and CFOP precision immediately and remember the prefe
   expect(container.textContent).not.toContain('Saved locally');
   expect(container.querySelectorAll('input[maxlength="100"]')).toHaveLength(1);
   expect(dialog.querySelector<HTMLInputElement>('input')?.value).toBe('Default');
-  await click('Options');
-  expect(dialog.open).toBe(true);
-  const precision = dialog.querySelector('select')!;
+  await openSiteOptions();
+  expect(dialog.querySelector('select')).toBeNull();
+  const precision = container.querySelector<HTMLSelectElement>('select[aria-label="Time precision"]')!;
   expect(precision.value).toBe('2');
   await act(async () => { precision.value = '3'; precision.dispatchEvent(new Event('change', { bubbles: true })); });
   expect(container.querySelector('[aria-label="Solve time"]')?.textContent).toBe('0.600');
   expect(container.querySelector('.trail-duration[data-step="6"]')?.textContent).toBe('PLL 0.600s');
   expect(container.querySelector('[aria-label="Inspection time"]')).toBeNull();
   expect(localStorage.getItem('timer-time-precision')).toBe('3');
-  await click('Close options');
-  expect(dialog.open).toBe(false);
-  await click('Options');
-  expect(dialog.open).toBe(true);
+  await openSiteOptions();
   expect(precision.value).toBe('3');
   await act(async () => { precision.value = '2'; precision.dispatchEvent(new Event('change', { bubbles: true })); });
   expect(container.querySelector('[aria-label="Solve time"]')?.textContent).toBe('0.60');
@@ -1409,11 +1419,11 @@ test('session summary shows current and best singles plus all four average sizes
 
 test('a blocked preference save does not prevent switching display precision', async () => {
   jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage blocked'); });
-  await click('Options');
-  const precision = container.querySelector('select')!;
+  await openSiteOptions();
+  const precision = container.querySelector<HTMLSelectElement>('select[aria-label="Time precision"]')!;
   await act(async () => { precision.value = '3'; precision.dispatchEvent(new Event('change', { bubbles: true })); });
   expect(container.querySelector('[aria-label="Solve time"]')?.textContent).toBe('0.000');
-  expect(container.querySelector('dialog [role="alert"]')?.textContent).toContain('could not save the preference');
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('could not save');
 });
 
 test('automatically advances, preserves the last time, and replays buffered moves with their original host timing', async () => {

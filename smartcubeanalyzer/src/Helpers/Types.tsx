@@ -126,6 +126,7 @@ export interface Solve {
     date: Date,
     dnf?: boolean,
     crossColor: CrossColor,
+    firstF2LPair?: string,
     scramble: string,
     tps: number,
     // `null` means the source/CSV didn't report inspection time (e.g. Acubemy exports).
@@ -243,6 +244,7 @@ export interface ChartDataBundle {
     histogram: LabelledChart<'bar', number>;
     stepAverages: LabelledChart<'line'>;
     runningColorPercentages: LabelledChart<'line'>;
+    runningFirstPairPercentages?: LabelledChart<'line'>;
     inspection: LabelledChart<'bar'> | null;
     dailyRecord: LabelledChart<'line'>;
     streakRows: StreakRow[];

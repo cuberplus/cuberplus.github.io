@@ -1,11 +1,10 @@
 .homepage {
-  --cp-accent: #a9bfd5;
   --ink: var(--cp-text);
   --muted: var(--cp-muted);
   --line: var(--cp-border);
   min-height: 100vh;
   color: var(--ink);
-  background: var(--cp-bg);
+  background-color: var(--cp-bg);
 }
 .page-width { width: min(1160px, calc(100% - 64px)); margin-inline: auto; }
 a { color: inherit; }

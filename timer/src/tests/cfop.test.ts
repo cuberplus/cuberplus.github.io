@@ -1,6 +1,7 @@
 import type { Solve } from '../engine';
 import { KPattern, KTransformation } from 'cubing/kpuzzle';
-import { analyzeCFOP, cfopFrame, cfopTiming, elapsedAt } from '../cfop';
+import { analyzeCFOP, cfopFrame, cfopRotation, cfopTiming, elapsedAt, f2lPair } from '../cfop';
+import { firstF2LPair } from '../../../shared/f2l';
 import { recognizeCase } from '../cases';
 import { Cube, inverse, loadCube, SOLVED } from '../puzzle';
 import { caseStates } from './fixtures/cfop-cases';
@@ -39,7 +40,7 @@ test.each(['', 'x2', 'z', "z'", 'x', "x'"])('detects all seven milestones on the
   const centers = cube.solved().applyAlg(rotation).patternData.CENTERS.pieces;
   const remap = (alg: string) => alg.split(/\s+/).map(move => 'ULFRBD'[centers.indexOf('ULFRBD'.indexOf(move[0]))] + move.slice(1)).join(' ');
   const solve = recording(remap(scramble)), face = 'URFDLB'.indexOf(remap('D'));
-  expect(analyzeCFOP(solve, cube)).toEqual({ cross: null, ends: [], cases: [] });
+  expect(analyzeCFOP(solve, cube)).toEqual({ cross: null, ends: [], cases: [], pairs: [] });
   for (let i = 0; i < solution.length; i++) {
     const analysis = append(solve, remap(solution[i]));
     expect(analyzeCFOP(structuredClone(solve), cube)).toEqual(analysis);
@@ -57,15 +58,61 @@ test('same-colored but misaligned crosses do not complete Cross', () => {
   const solve = recording(PLL + ' D');
   expect(solve.startFacelets.slice(0, 9)).toBe('U'.repeat(9));
   expect([28, 30, 32, 34].every(i => solve.startFacelets[i] === 'D')).toBe(true);
-  expect(analyzeCFOP(solve, cube)).toEqual({ cross: null, ends: [], cases: [] });
+  expect(analyzeCFOP(solve, cube)).toEqual({ cross: null, ends: [], cases: [], pairs: [] });
   const analysis = append(solve, "D'");
   expect(analysis.cross).toBe(3);
   expect(analysis.ends).toHaveLength(6);
 });
 
+test('records each physical F2L pair in completion order without relabeling reinsertions', () => {
+  const solve = recording(scramble);
+  append(solve, solution[0]); append(solve, solution[1]);
+  expect(analyzeCFOP(solve, cube).pairs).toEqual([7]);
+  append(solve, "B U B' B U' B'");
+  expect(analyzeCFOP(solve, cube).pairs).toEqual([7]);
+  solution.slice(2).forEach(alg => append(solve, alg));
+  const analysis = analyzeCFOP(solve, cube);
+  expect(analysis.pairs).toEqual([7, 6, 5, 4]);
+  expect(analysis.pairs.map(corner => f2lPair(corner, analysis.cross))).toEqual(['Red/Blue', 'Orange/Blue', 'Green/Orange', 'Red/Green']);
+  expect(analyzeCFOP(structuredClone(solve), cube)).toEqual(analysis);
+});
+
+test.each(['', 'x2', 'z', "z'", 'x', "x'"])('pair identity, normalized notation and raw CSV inference agree in all yaw frames with tilt "%s"', tilt => {
+  for (const yaw of ['', 'y', 'y2', "y'"]) {
+    const remap = cfopFrame(cube, `${tilt} ${yaw}`);
+    const alg = scramble.split(' ').map(remap).join(' '), solve = recording(alg);
+    append(solve, solution.join(' ').split(' ').map(remap).join(' '));
+    const { cross, pairs: order } = analyzeCFOP(solve, cube);
+    expect(order.every(corner => corner !== null)).toBe(true);
+    expect(new Set(order).size).toBe(4);
+    const rotation = cfopRotation(cube, cross, order[0]), oriented = cube.solved().applyAlg(rotation);
+    expect(oriented.patternData.CENTERS.pieces[5]).toBe('ULFRBD'.indexOf('URFDLB'[cross!]));
+    expect(oriented.patternData.CORNERS.pieces[7]).toBe(order[0]);
+    const moves = solve.moves.map(move => move.move), displayed = moves.map(cfopFrame(cube, rotation));
+    for (let end = 0; end <= moves.length; end++) {
+      expect(cube.parse(solve.startFacelets).applyAlg(rotation).applyAlg(displayed.slice(0, end).join(' ')).patternData)
+        .toEqual(cube.parse(solve.startFacelets).applyAlg(moves.slice(0, end).join(' ')).applyAlg(rotation).patternData);
+    }
+    expect(firstF2LPair(alg, moves.map((move, i) => `${move}[${i * 100}]`).join(' '), cross!)).toBe(f2lPair(order[0], cross));
+    const notationRotation = 'x y2', orientedMoves = moves.map(cfopFrame(cube, notationRotation)).join(' ');
+    expect(firstF2LPair(alg, `${notationRotation} ${orientedMoves}`, cross!)).toBe(f2lPair(order[0], cross));
+  }
+});
+
+test('ambiguous skipped pairs stay unknown while a later uniquely completed pair is identified', () => {
+  const solve = recording(`${PLL} R U R'`);
+  expect(analyzeCFOP(solve, cube).pairs).toEqual([null, null, null]);
+  append(solve, "R U' R'");
+  expect(analyzeCFOP(solve, cube).pairs).toEqual([null, null, null, 4]);
+  expect(cfopRotation(cube, 3, null)).toBe('');
+  expect(firstF2LPair(solve.scramble, solve.moves.map(move => move.move).join(' '), 3)).toBeUndefined();
+  expect(firstF2LPair('', "R U' R'", 3)).toBeUndefined();
+  expect(firstF2LPair(scramble, 'unsupported', 3)).toBeUndefined();
+});
+
 test('initially completed stages are skipped, milestones stay latched, and PLL includes final AUF', () => {
   const solve = recording('U');
-  expect(analyzeCFOP(solve, cube)).toEqual({ cross: 3, ends: [0, 0, 0, 0, 0, 0], cases: ['', 'Solved', 'Solved', 'Solved', 'Solved', 'Solved'] });
+  expect(analyzeCFOP(solve, cube)).toEqual({ cross: 3, ends: [0, 0, 0, 0, 0, 0], cases: ['', 'Solved', 'Solved', 'Solved', 'Solved', 'Solved'], pairs: [null, null, null, null] });
   append(solve, 'R');
   expect(analyzeCFOP(solve, cube).cross).toBe(3);
   expect(analyzeCFOP(solve, cube).ends).toHaveLength(6);
