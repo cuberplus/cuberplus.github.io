@@ -2,13 +2,14 @@ import { useContext, useEffect, useMemo, useReducer, useRef, useState } from 're
 import Navigation, { Footer, PageLocation, SettingsContext, usePageDialog } from '@cuberplus/navigation';
 import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
 import { BluetoothCube } from './bluetooth';
-import { TimerEngine, solveTime, type Solve } from './engine';
-import { generateScramble, inverse, loadCube, SOLVED, type Cube } from './puzzle';
-import { averageDetails, backupJSON, cubeastCSV, dailyStreak, formatTime, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, saveSolves, sessionStats, solveEndDate, turns, validateBackup } from './storage';
+import { TimerEngine, inspectionPenalty, solveTime, type Solve } from './engine';
+import { generateScramble, inverse, loadCube, movesOf, simplifyMoves, SOLVED, type Cube } from './puzzle';
+import { averageDetails, backupJSON, cubeastCSV, dailyStreak, deleteSolve, formatTime, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, saveSolves, sessionStats, solveEndDate, turns, validateBackup } from './storage';
 import { AverageDetails } from './AverageDetails';
 import { CubeView } from './CubeView';
 import { Replay } from './Replay';
 import { SolveTimeline } from './SolveTimeline';
+import { SolveMistakes } from './SolveMistakes';
 import { useScreenWakeLock } from './useScreenWakeLock';
 
 const errorText = (error: Error): string => error.message || 'The operation failed.';
@@ -23,7 +24,7 @@ type HiddenVisuals = { timer: boolean; cube: boolean; progressBar: boolean };
 
 function SolvePenalty({ solve }: { solve: Solve | null | undefined }) {
   if (solve?.status === 'incomplete') return <>{' '}<span className="badge text-bg-danger solve-penalty">DNF</span></>;
-  if (solve?.status === 'complete' && solve.penalty === 2000) return <>{' '}<span className="badge text-bg-warning solve-penalty">+2</span></>;
+  if (solve?.status === 'complete' && solve.penalty) return <>{' '}<span className="badge text-bg-warning solve-penalty">+{solve.penalty / 1000}</span></>;
   return null;
 }
 
@@ -47,6 +48,7 @@ export default function App() {
   const [mac, setMac] = useState(() => { try { return localStorage.getItem('timer-last-cube-mac') ?? ''; } catch { return ''; } });
   const { precision } = useContext(SettingsContext);
   const [overTurnPenalty, setOverTurnPenalty] = useState(() => { try { return localStorage.getItem('timer-over-turn-penalty') !== 'false'; } catch { return true; } });
+  const [inspection, setInspection] = useState(() => { try { return localStorage.getItem('timer-inspection') === 'true'; } catch { return false; } });
   const [showEveryLongPb, setShowEveryLongPb] = useState(() => { try { return localStorage.getItem('timer-show-every-long-pb') === 'true'; } catch { return false; } });
   const [hiddenVisuals, setHiddenVisuals] = useState<HiddenVisuals>(() => {
     try {
@@ -67,6 +69,7 @@ export default function App() {
   const writes = useRef(Promise.resolve());
   const pending = useRef(0);
   const failedSaves = useRef(new Set<string>());
+  const deletedSolves = useRef(new Set<string>());
   const generation = useRef(0);
   const preparing = useRef(false);
   const resynchronizing = useRef(false);
@@ -74,12 +77,21 @@ export default function App() {
   const mounted = useRef(true);
   const sessionRef = useRef(session);
   sessionRef.current = session;
+  const retry = useRef<{ scramble: string; previousSession: string; id?: string } | null>(null);
   const overTurnPenaltyRef = useRef(overTurnPenalty);
   overTurnPenaltyRef.current = overTurnPenalty;
+  const inspectionRef = useRef(inspection);
+  inspectionRef.current = inspection;
   const showEveryLongPbRef = useRef(showEveryLongPb);
   showEveryLongPbRef.current = showEveryLongPb;
 
   function updateHistory(items: Solve[]) { historyRef.current = items; setHistory(items); }
+  function finishRetry() {
+    if (!retry.current) return;
+    sessionRef.current = retry.current.previousSession;
+    setSession(retry.current.previousSession);
+    retry.current = null;
+  }
 
   function notificationRecords(records: ReturnType<typeof newPersonalBests>) {
     const now = new Date(), date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -96,12 +108,18 @@ export default function App() {
     return eligible;
   }
 
-  const record = (solve: Solve) => {
+  const record = (solve: Solve, notify = true) => {
+    if (deletedSolves.current.has(solve.id)) return;
     const copy = structuredClone(solve);
     const previous = historyRef.current, check = recordChecks.current.get(copy.id);
     updateHistory([copy, ...previous.filter(item => item.id !== copy.id)].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
     if (copy.status === 'incomplete') setCelebrations(current => current.filter(item => item.solve.id !== copy.id));
-    if (copy.status !== 'active') {
+    if (!notify) {
+      if (check) clearTimeout(check.timeout);
+      recordChecks.current.delete(copy.id);
+      recordChecks.current.forEach(candidate => { candidate.previous = candidate.previous.map(item => item.id === copy.id ? copy : item); });
+      setCelebrations([]);
+    } else if (copy.status !== 'active') {
       if (check) check.solve = copy;
       else {
         const timeout = setTimeout(() => {
@@ -128,7 +146,11 @@ export default function App() {
     }
     pending.current++;
     setStorage('Saving locally...');
-    writes.current = writes.current.then(() => saveSolves([copy])).then(() => {
+    writes.current = writes.current.then(async () => {
+      if (deletedSolves.current.has(copy.id)) return;
+      await saveSolves([copy]);
+      if (deletedSolves.current.has(copy.id)) await deleteSolve(copy.id);
+    }).then(() => {
       pending.current--;
       failedSaves.current.delete(copy.id);
       if (pending.current === 0) setStorage(failedSaves.current.size ? 'Some solves not saved - export a backup now' : 'Saved locally');
@@ -138,10 +160,29 @@ export default function App() {
       setStorage('Not saved - export a backup now');
       setError(`Local storage: ${errorText(failure)}`);
     });
+    const attempt = retry.current;
+    if (notify && attempt && copy.session === 'Retries' && copy.scramble === attempt.scramble) {
+      if (!attempt.id && !previous.some(item => item.id === copy.id)) attempt.id = copy.id;
+      if (attempt.id === copy.id && copy.status !== 'active') finishRetry();
+    }
   };
 
   useEffect(() => {
     mounted.current = true; console.info('[Timer Bluetooth] Initializing Timer', { browser: navigator.userAgent, bluetoothAvailable: !!navigator.bluetooth, secureContext: window.isSecureContext });
+    const removeSavedSolve = (event: Event) => {
+      const id = (event as CustomEvent<string>).detail;
+      deletedSolves.current.add(id);
+      const check = recordChecks.current.get(id);
+      if (check) clearTimeout(check.timeout);
+      recordChecks.current.delete(id);
+      recordChecks.current.forEach(candidate => { candidate.previous = candidate.previous.filter(solve => solve.id !== id); });
+      failedSaves.current.delete(id);
+      updateHistory(historyRef.current.filter(solve => solve.id !== id));
+      setReplay(current => current?.id === id ? null : current);
+      setAverage(null); setCelebrations([]); setStreaks(current => current.filter(streak => streak.id !== id));
+      if (pending.current === 0) setStorage(failedSaves.current.size ? 'Some solves not saved - export a backup now' : 'Saved locally');
+    };
+    window.addEventListener('timer-solve-deleted', removeSavedSolve);
     void loadCube().then(async model => {
       let recovered: Solve[] = [];
       try {
@@ -158,13 +199,14 @@ export default function App() {
       if (!mounted.current) return;
       engine.current = new TimerEngine(model, record, render);
       engine.current.overTurnPenaltyEnabled = overTurnPenaltyRef.current;
-      updateHistory(recovered.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+      engine.current.inspectionPenaltyEnabled = inspectionRef.current;
+      updateHistory(recovered.filter(solve => !deletedSolves.current.has(solve.id)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
       setCube(model); console.info('[Timer Bluetooth] Puzzle loaded; connection controls ready');
     }).catch((failure: Error) => { console.error('[Timer Bluetooth] Puzzle initialization failed', failure); setError(errorText(failure)); });
     const interval = setInterval(render, 30);
     const adapter = bluetooth.current;
     const checks = recordChecks.current;
-    return () => { mounted.current = false; clearInterval(interval); checks.forEach(check => clearTimeout(check.timeout)); checks.clear(); void adapter.disconnect(); };
+    return () => { mounted.current = false; window.removeEventListener('timer-solve-deleted', removeSavedSolve); clearInterval(interval); checks.forEach(check => clearTimeout(check.timeout)); checks.clear(); void adapter.disconnect(); };
   }, []);
 
   useEffect(() => {
@@ -173,9 +215,14 @@ export default function App() {
     if (!/^\/timer(?:\/(?:index\.html)?)?$/.test(url.pathname)) return;
     const id = url.searchParams.get('solve');
     if (id) setReplay(historyRef.current.find(solve => solve.id === id) ?? null);
+    const retryId = url.searchParams.get('retry');
+    if (retryId) {
+      const solve = historyRef.current.find(solve => solve.id === retryId && solve.status !== 'active');
+      if (solve) retrySolve(solve); else setError('This solve is no longer saved in Timer.');
+    }
   }, [cube, address]);
 
-  async function prepareScramble(recover = false, existingScramble = '') {
+  async function prepareScramble(recover = false, existingScramble = retry.current?.scramble ?? '') {
     const timer = engine.current;
     const allowed = ['synchronizing', 'scrambling', 'ready', 'finished', ...(recover ? ['recovery', 'recovering'] : [])];
     if (!timer || preparing.current || !allowed.includes(timer.phase)) return;
@@ -186,10 +233,10 @@ export default function App() {
       if (token !== generation.current) return;
       if (timer.facelets !== initial || !allowed.includes(timer.phase)) throw new Error('Cube changed during preparation. Resynchronize and try again.');
       if (recover) timer.prepareRecovery(setup);
-      else timer.prepare(scramble, setup);
+      else timer.prepare(retry.current?.scramble ?? scramble, setup);
       setStatus('');
     } catch (failure) {
-      if (token === generation.current) { queued.current = []; setStatus(''); timer.fail('Scramble preparation failed. Read the cube state to retry.', false); setError(failure instanceof Error ? failure.message : 'Scramble generation failed.'); }
+      if (token === generation.current) { queued.current = []; setStatus(''); finishRetry(); timer.fail('Scramble preparation failed. Read the cube state to retry.', false); setError(failure instanceof Error ? failure.message : 'Scramble generation failed.'); }
     } finally {
       if (token === generation.current) {
         preparing.current = false; setBusy(false); queued.current.splice(0).forEach(({ event, hostTime }) => receive(event, hostTime));
@@ -223,6 +270,7 @@ export default function App() {
         cancelPreparation();
         setBattery(null);
         timer.disconnect();
+        finishRetry();
         void bluetooth.current.disconnect().catch((failure: Error) => setError(errorText(failure)));
       }
     } catch (failure) {
@@ -238,14 +286,14 @@ export default function App() {
       engine.current?.connect(connection.deviceName); if (connection.deviceMAC) setMac(connection.deviceMAC);
     }, setStatus).then(() => { console.info('[Timer Bluetooth] Timer connected successfully'); setStatus(''); }).catch((failure: Error) => {
       console.error('[Timer Bluetooth] Connection/setup failed', failure); setError(errorText(failure)); setStatus('');
-      if (!bluetooth.current.connection) engine.current?.disconnect();
+      if (!bluetooth.current.connection) { engine.current?.disconnect(); finishRetry(); }
     }).finally(() => setConnecting(false));
   }
 
   async function disconnect() {
     cancelPreparation();
     await bluetooth.current.disconnect().catch((failure: Error) => setError(errorText(failure)));
-    engine.current?.disconnect(); setDemo(false); setBattery(null);
+    engine.current?.disconnect(); finishRetry(); setDemo(false); setBattery(null);
   }
 
   function calibrate() {
@@ -255,6 +303,29 @@ export default function App() {
   }
 
   function startDemo() { engine.current?.connect('Simulated 3x3'); setDemo(true); calibrate(); }
+  function changeInspection(value: boolean) {
+    setInspection(value);
+    if (engine.current) engine.current.inspectionPenaltyEnabled = value;
+    try { localStorage.setItem('timer-inspection', String(value)); }
+    catch { setError('Penalty preference changed, but this browser could not save the preference.'); }
+  }
+  function changeSolve(solve: Solve) {
+    if (engine.current?.result?.id === solve.id) engine.current.result = solve;
+    record(solve, false);
+    setReplay(solve);
+    setAverage(null);
+  }
+  async function removeSolve(solve: Solve) { await writes.current; await deleteSolve(solve.id); }
+  function retrySolve(solve: Solve) {
+    const timer = engine.current;
+    if (!timer || resynchronizing.current) return;
+    if (timer.phase === 'solving') { setError('Finish or abort the current solve before retrying.'); return; }
+    retry.current = { scramble: simplifyMoves(movesOf(solve.scramble)).join(' '), previousSession: retry.current?.previousSession ?? sessionRef.current };
+    sessionRef.current = 'Retries'; setSession('Retries'); setReplay(null); setAverage(null); setError('');
+    if (timer.phase === 'disconnected') timer.message = 'Connect your cube to retry this scramble.';
+    else if (['recovery', 'recovering'].includes(timer.phase)) void resynchronize();
+    else void prepareScramble();
+  }
   function changeOverTurnPenalty(value: boolean) {
     setOverTurnPenalty(value);
     if (engine.current) engine.current.overTurnPenaltyEnabled = value;
@@ -277,6 +348,7 @@ export default function App() {
       if (demo) { timer.synchronize(timer.facelets); await prepareScramble(timer.result?.status === 'incomplete'); }
       else await bluetooth.current.refresh();
     } catch (failure) {
+      finishRetry();
       timer.fail('Cube state could not be read. Try Read cube state again.', false);
       setError(failure instanceof Error ? failure.message : 'Cube state could not be read.');
     } finally { resynchronizing.current = false; }
@@ -288,6 +360,7 @@ export default function App() {
       const solves = validateBackup(await file.text(), cube);
       await writes.current;
       await saveSolves(solves);
+      solves.forEach(solve => deletedSolves.current.delete(solve.id));
       recordChecks.current.forEach(check => clearTimeout(check.timeout)); recordChecks.current.clear(); setCelebrations([]);
       updateHistory((await readSolves()).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
       setStorage('Saved locally'); setError('');
@@ -303,6 +376,8 @@ export default function App() {
   }
 
   const timer = engine.current, solve = timer?.active ?? timer?.result, elapsed = timer?.elapsed(performance.now()) ?? 0;
+  const inspecting = inspection && timer?.phase === 'ready', inspectionTime = timer?.inspectionElapsed(performance.now()) ?? 0;
+  const inspectionStatus = inspectionPenalty(inspectionTime);
   const message = status || timer?.message || 'Loading local puzzle tools...';
   const { filtered, statistics } = useMemo(() => {
     const filtered = history.filter(solve => solve.session === session && solve.status !== 'active');
@@ -351,7 +426,9 @@ export default function App() {
         <h2 id="options-title" className="mb-0">Options</h2>
         <button className="btn-close btn-close-white" aria-label="Close options" onClick={() => optionsDialog.current?.close()} />
       </div>
-      <label className="d-block mb-3">Session<input className="form-control mt-2" maxLength={100} value={session} disabled={timer?.phase === 'solving'} onChange={event => setSession(event.target.value)} /></label>
+      <label className="d-block mb-3">Session<input className="form-control mt-2" maxLength={100} value={session} disabled={timer?.phase === 'solving' || !!retry.current} onChange={event => setSession(event.target.value)} /></label>
+      <label className="form-check mt-3"><input type="checkbox" className="form-check-input" checked={inspection} disabled={timer?.phase === 'solving'} aria-describedby="inspection-help" onChange={event => changeInspection(event.target.checked)} /><span className="form-check-label">15-second inspection</span></label>
+      <p id="inspection-help" className="small text-secondary mt-2 mb-0">Count up after scrambling. Starting at 15 seconds adds +2; starting at 17 seconds or later is DNF. +2 penalties stack.</p>
       <label className="form-check mt-3"><input type="checkbox" className="form-check-input" checked={overTurnPenalty} aria-describedby="over-turn-penalty-help" onChange={event => changeOverTurnPenalty(event.target.checked)} /><span className="form-check-label">Extra-turn +2 penalty</span></label>
       <p id="over-turn-penalty-help" className="small text-secondary mt-2 mb-0">Apply +2 for an extra turn within 0.5 seconds after finishing.</p>
       <label className="form-check mt-3"><input type="checkbox" className="form-check-input" checked={showEveryLongPb} aria-describedby="long-pb-notifications-help" onChange={event => changeLongPbNotifications(event.target.checked)} /><span className="form-check-label">Notify for every Ao100/Ao1000 PB</span></label>
@@ -380,6 +457,8 @@ export default function App() {
     {error && <div className="alert alert-danger d-flex justify-content-between" role="alert">{error}<button className="btn-close" aria-label="Dismiss error" onClick={() => setError('')} /></div>}
     {!['Saved locally', 'Saving locally...'].includes(storage) && <p className="text-secondary small mb-3">{storage}</p>}
     <section className={`panel timer-panel ${timer?.phase === 'ready' ? 'ready' : ''}`}>
+      {retry.current && <p className="small text-secondary" role="status">Retry will be saved in Retries, then return to {retry.current.previousSession || 'Default'}.{' '}
+        <button className="btn btn-sm btn-outline-secondary" disabled={busy || solving || resynchronizing.current} onClick={() => { finishRetry(); if (timer?.phase === 'disconnected') timer.message = 'Connect your cube to begin.'; else void prepareScramble(); }}>Cancel retry</button></p>}
       {recovering && <p className="small text-secondary mb-2">Return the cube to solved</p>}
       {returning && !recovering && <p className="small text-secondary mb-2">First solve the current cube</p>}
       <div className={`scramble mb-3${solving ? ' scramble-solving' : ''}`} aria-label="Scramble">
@@ -393,7 +472,7 @@ export default function App() {
           <span role="status">Scrambles hidden while solving</span>
           <button className="btn btn-sm btn-outline-warning" onClick={() => { timer?.fail('Solve aborted by user.', true, 'solve aborted'); void prepareScramble(true); }}>Abort solve</button>
         </div>}
-        <button className={`btn btn-sm btn-outline-secondary scramble-refresh${solving ? ' invisible' : ''}`} aria-label="New scramble" title="New scramble" aria-hidden={solving} disabled={busy || !timer || !['scrambling', 'ready', 'finished'].includes(timer.phase)} onClick={() => void prepareScramble()}>
+        <button className={`btn btn-sm btn-outline-secondary scramble-refresh${solving ? ' invisible' : ''}`} aria-label="New scramble" title="New scramble" aria-hidden={solving} disabled={busy || !timer || !['scrambling', 'ready', 'finished'].includes(timer.phase)} onClick={() => { finishRetry(); void prepareScramble(); }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
             <path d="M20 6v5h-5M20 11a8 8 0 1 0-2.3 6.7" />
           </svg>
@@ -404,10 +483,11 @@ export default function App() {
         <span>Solving</span><span className="solving-dots" aria-hidden="true"><span>...</span></span>
       </div> : <>
           <div className="timer-display d-flex align-items-center justify-content-center gap-3">
-            <div className="timer-value" aria-label="Solve time">{formatTime(timer?.active ? elapsed : solve ? solveTime(solve) : elapsed, precision)}</div>
-            <SolvePenalty solve={solve} />
+            <div className="timer-value" aria-label={inspecting ? 'Inspection time' : 'Solve time'}>{formatTime(inspecting ? inspectionTime : timer?.active ? elapsed : solve ? solveTime(solve) : elapsed, precision)}</div>
+            {!inspecting && <SolvePenalty solve={solve} />}
           </div>
           <div className="timer-details">
+            {inspecting && <p className={`small mb-0 ${inspectionStatus === 'DNF' ? 'text-danger' : 'text-warning'}`} aria-label="Inspection status">Inspection{inspectionStatus ? `: ${inspectionStatus === 'DNF' ? 'DNF' : '+2'}` : ''}</p>}
             {!(solve?.status === 'incomplete' && message === solve.reason) && !/^(?:Follow the highlighted|Wrong turn\.|Turn .+ once more to complete |Scramble complete\.)/.test(message) && <p className="small mb-0" role="status">{message}</p>}
           </div>
       </>}
@@ -415,6 +495,7 @@ export default function App() {
         {cube && timer && <CubeView cube={cube} facelets={timer.facelets} moves={timer.visualizationMoves} animateSeeks />}
       </div>}</div>
           {!hideProgressBar && cube && solve && <SolveTimeline cube={cube} solve={solve} elapsed={elapsed} precision={precision} />}
+          {cube && solve && solve.status !== 'active' && <SolveMistakes cube={cube} solve={solve} history={history} brief />}
           {connected && <div className="d-flex justify-content-center gap-2 flex-wrap mt-3">
             <button className="btn btn-outline-secondary" disabled={busy || timer.phase === 'solving'} onClick={() => void resynchronize()}>Read cube state</button>
             <button className="btn btn-outline-secondary" disabled={busy || timer.phase === 'solving'} onClick={calibrate}>Cube is physically solved - calibrate</button>
@@ -434,7 +515,6 @@ export default function App() {
     </section>
     <section className="panel mt-3">
       <h2>Current / records</h2>
-      <p className="small text-secondary mt-3">Solves: {filtered.filter(solve => solve.status === 'complete').length} completed. Averages include DNFs as the worst times; any untrimmed DNF makes the average DNF.</p>
       <div className="table-responsive">
         <table className="table table-sm" aria-label="Session statistics"><thead><tr><th scope="col">Metric</th><th scope="col">Current</th><th scope="col">Best</th></tr></thead>
           <tbody>{statistics.map(stat => <tr key={stat.name}><th scope="row">{stat.name}</th>
@@ -468,7 +548,7 @@ export default function App() {
       {!filtered.length && <p className="text-secondary">No solves in this session yet. Your data stays on this device.</p>}
     </section>
     {average && <AverageDetails details={average} history={history} precision={precision} view={setReplay} close={() => setAverage(null)} />}
-    {cube && replay && <Replay key={replay.id} cube={cube} solve={replay} precision={precision} close={() => setReplay(null)} />}
+    {cube && replay && <Replay key={replay.id} cube={cube} solve={replay} history={history} precision={precision} change={changeSolve} remove={removeSolve} retry={retrySolve} retryDisabled={solving || resynchronizing.current} close={() => setReplay(null)} />}
     {(!!celebrations.length || !!streaks.length) && <div className="pb-notifications" aria-label="Solve notifications">
       {streaks.map(streak => <div key={streak.id} className="pb-celebration streak-celebration" role="status" aria-label="Daily streak">
         <div className="pb-open">

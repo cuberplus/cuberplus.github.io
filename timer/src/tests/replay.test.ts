@@ -3,6 +3,8 @@ import { jest } from '@jest/globals';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { deserialize, serialize } from 'node:v8';
+import { IDBFactory } from 'fake-indexeddb';
+import { readSolves, saveSolves } from '../storage';
 import type { Solve } from '../engine';
 import { inverse, loadCube } from '../puzzle';
 import { analyzeCFOP, cfopFrame, CFOP_STEPS } from '../cfop';
@@ -11,12 +13,15 @@ await jest.unstable_mockModule('../CubeView', () => ({
   CubeView: ({ facelets, cross, rotation }: { facelets: string; cross: number | null; rotation: string }) => createElement('div', { 'data-facelets': facelets, 'data-cross': cross, 'data-rotation': rotation, 'aria-label': 'Replay cube' }),
 }));
 const { Replay } = await import('../Replay');
+const { SolveMistakes } = await import('../SolveMistakes');
 const cube = await loadCube();
 const pll = "R U R' U' R' F R2 U' R' U' R U R' F'", oll = "R U R' U R U2 R'";
 const scramble = `${pll} ${oll} R U R' F U F' L U L' B U B' D`;
 let root: Root, container: HTMLDivElement;
 const close = jest.fn();
 beforeEach(() => {
+  jest.spyOn(window, 'confirm').mockReturnValue(true);
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: new IDBFactory() });
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true });
   Object.defineProperty(globalThis, 'structuredClone', { configurable: true, value: <T>(value: T): T => deserialize(serialize(value)) as T });
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } });
@@ -24,7 +29,7 @@ beforeEach(() => {
   close.mockClear();
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
 });
-afterEach(async () => { await act(async () => root.unmount()); container.remove(); jest.useRealTimers(); });
+afterEach(async () => { await act(async () => root.unmount()); container.remove(); jest.useRealTimers(); jest.restoreAllMocks(); });
 
 function recording(scramble: string, solution: string, status: Solve['status'] = 'complete'): Solve {
   const moves = solution.split(/\s+/).filter(Boolean).map((move, index) => ({
@@ -36,8 +41,8 @@ function recording(scramble: string, solution: string, status: Solve['status'] =
     status, reason: '', timingBasis: 'host', moves,
   };
 }
-async function draw(solve: Solve) {
-  await act(async () => root.render(createElement(Replay, { cube, solve, close, precision: 3 })));
+async function draw(solve: Solve, change?: (solve: Solve) => void) {
+  await act(async () => root.render(createElement(Replay, { cube, solve, close, change, precision: 3 })));
 }
 async function click(text: string) {
   const button = Array.from(container.querySelectorAll('button')).find(button => button.textContent === text)!;
@@ -48,12 +53,64 @@ const groups = () => Array.from(container.querySelectorAll('[aria-label="Solutio
 const position = () => container.querySelector<HTMLInputElement>('[aria-label="Replay move"]')!.value;
 const facelets = () => container.querySelector('[aria-label="Replay cube"]')!.getAttribute('data-facelets');
 
+test('manual penalties are reversible, preserve automatic reasons, and do not change the raw timeline', async () => {
+  let solve: Solve = { ...recording('R U', "U' R'"), penalty: 4000, penaltyReason: 'inspection, over-turn' };
+  const original = structuredClone(solve);
+  const change = (updated: Solve) => { solve = updated; };
+  await draw(solve, change);
+  const manual = () => container.querySelectorAll<HTMLInputElement>('fieldset input');
+  await act(async () => manual()[0].click());
+  expect(solve).toMatchObject({ penalty: 6000, penaltyReason: 'inspection, over-turn, manual' });
+  await draw(solve, change);
+  expect(container.querySelector('[aria-label="Penalty reason"]')?.textContent).toBe('+6 reasons: inspection, over-turn, manual');
+  await act(async () => manual()[1].click());
+  expect(solve).toMatchObject({ status: 'incomplete', dnfReason: 'manual' });
+  await draw(solve, change);
+  expect(container.querySelector('[aria-label="Penalty reason"]')?.textContent).toBe('DNF reason: manual');
+  expect(container.querySelector('[aria-label="PLL solution"]')?.textContent).not.toContain('Not reached');
+  await act(async () => manual()[1].click());
+  await draw(solve, change);
+  await act(async () => manual()[0].click());
+  expect(solve).toMatchObject(original);
+  expect(solve.dnfReason).toBeUndefined();
+  expect(container.querySelector('dialog')!.lastElementChild!.getAttribute('aria-label')).toBe('Solve mistakes');
+});
+
+test.each(['inspection', 'solve interrupted', 'solve aborted'] as const)('manual controls cannot erase an automatic %s DNF', async dnfReason => {
+  const change = jest.fn<(solve: Solve) => void>();
+  await draw({ ...recording('R U', "U'", 'incomplete'), dnfReason }, change);
+  expect(container.querySelector('fieldset')!.disabled).toBe(true);
+  expect(change).not.toHaveBeenCalled();
+});
+
+test('Analyzer read-only replay has no manual edit controls', async () => {
+  await draw(recording('R', "R'"));
+  expect(container.querySelector('fieldset')).toBeNull();
+  expect(container.querySelector<HTMLAnchorElement>('a')!.getAttribute('href')).toBe('/timer/?retry=replay-fixture');
+});
+
+test('retry closes replay and passes the original solve without modifying its recording', async () => {
+  const solve = recording('R U', "U' R'");
+  const original = structuredClone(solve), retry = jest.fn<(solve: Solve) => void>();
+  await act(async () => root.render(createElement(Replay, { cube, solve, close, retry, retryDisabled: true })));
+  const button = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry')!;
+  expect(button.disabled).toBe(true);
+  await act(async () => button.click());
+  expect(retry).not.toHaveBeenCalled();
+  await act(async () => root.render(createElement(Replay, { cube, solve, close, retry })));
+  await click('Retry');
+  expect(retry).toHaveBeenCalledWith(solve);
+  expect(close).toHaveBeenCalledTimes(1);
+  expect(container.querySelector('dialog')!.open).toBe(false);
+  expect(solve).toEqual(original);
+});
+
 test('opens replay as a modal and closes with its button or Escape', async () => {
   await draw(recording('R', "R'"));
   const dialog = container.querySelector('dialog')!;
   expect(dialog.open).toBe(true);
-  expect(dialog.getAttribute('aria-labelledby')).toBe('replay-title');
-  await click('Close replay');
+  expect(dialog.getAttribute('aria-label')).toBe('Solve replay');
+  await click('Close');
   expect(dialog.open).toBe(false);
   expect(close).toHaveBeenCalledTimes(1);
   dialog.showModal();
@@ -62,15 +119,147 @@ test('opens replay as a modal and closes with its button or Escape', async () =>
   expect(close).toHaveBeenCalledTimes(2);
 });
 
-test('shows the original solve GUID at the very bottom and distinguishes recorded from missing inspection', async () => {
+test('the compact header emphasizes time, keeps inspection beside turns, and orders Delete, Retry, Close', async () => {
+  await draw({ ...recording('R U2', "U2 R'"), inspection: 2345 });
+  const header = container.querySelector('.replay-header')!;
+  expect(header.querySelector('[aria-label="Solve time"]')!.textContent).toBe('0.100s');
+  const inspection = header.querySelector('[aria-label="Inspection time"]')!;
+  expect(inspection.previousElementSibling!.textContent).toBe('3 turns');
+  expect(inspection.textContent).toBe('Inspection: 2.345s');
+  expect(Array.from(header.querySelectorAll('a, button'), element => element.textContent)).toEqual(['Delete', 'Retry', 'Close']);
+  expect(header.querySelector('h2')).toBeNull();
+  expect(header.textContent).not.toMatch(/Solve replay|complete|host timing|quarter turns/i);
+});
+
+test('Delete removes only the selected saved solve, notifies mounted pages, and closes read-only replay', async () => {
+  const solve = recording('R', "R'"), other = { ...solve, id: 'keep-this-solve' };
+  await saveSolves([solve, other]);
+  const dispatch = jest.spyOn(window, 'dispatchEvent');
+  try {
+    await draw(solve);
+    await click('Delete');
+    expect(await readSolves()).toEqual([other]);
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'timer-solve-deleted', detail: solve.id }));
+    expect(container.querySelector('dialog')!.open).toBe(false);
+    expect(close).toHaveBeenCalledTimes(1);
+  } finally { dispatch.mockRestore(); }
+});
+
+test('canceling the deletion confirmation preserves the solve and keeps replay open', async () => {
+  const solve = recording('R', "R'");
+  await saveSolves([solve]);
+  jest.mocked(window.confirm).mockReturnValue(false);
+  await draw(solve);
+  await click('Delete');
+  expect(window.confirm).toHaveBeenCalledWith('Are you sure you want to delete this solve? This cannot be undone.');
+  expect(await readSolves()).toEqual([solve]);
+  expect(container.querySelector('dialog')!.open).toBe(true);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(close).not.toHaveBeenCalled();
+});
+
+test.each([true, false])('Delete waits for storage and disables conflicting actions with Timer retry=%s', async timerRetry => {
+  const solve = recording('R', "R'");
+  let finish!: () => void;
+  const remove = jest.fn<(solve: Solve) => Promise<void>>(() => new Promise(resolve => { finish = resolve; }));
+  const retry = jest.fn<(solve: Solve) => void>();
+  await act(async () => root.render(createElement(Replay, { cube, solve, close, remove, retry: timerRetry ? retry : undefined, change: jest.fn() })));
+  await click('Delete');
+  expect(remove).toHaveBeenCalledWith(solve);
+  expect(remove).toHaveBeenCalledTimes(1);
+  expect(container.querySelector('dialog')!.open).toBe(true);
+  expect(container.querySelector('fieldset')!.disabled).toBe(true);
+  for (const label of ['Deleting...', ...(timerRetry ? ['Retry'] : []), 'Close']) {
+    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === label)!.disabled).toBe(true);
+  }
+  if (!timerRetry) {
+    const link = container.querySelector('a')!;
+    expect(link.getAttribute('aria-disabled')).toBe('true');
+    expect(link.tabIndex).toBe(-1);
+    await act(async () => expect(link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))).toBe(false));
+  }
+  await act(async () => container.querySelector('dialog')!.dispatchEvent(new Event('cancel', { cancelable: true })));
+  expect(close).not.toHaveBeenCalled();
+  await act(async () => finish());
+  expect(container.querySelector('dialog')!.open).toBe(false);
+  expect(close).toHaveBeenCalledTimes(1);
+});
+
+test('failed deletion keeps replay open with an error and allows retrying', async () => {
+  const solve = recording('R', "R'");
+  await saveSolves([solve]);
+  const open = jest.spyOn(indexedDB, 'open').mockImplementation(() => { throw new Error('Storage blocked'); });
+  try {
+    await draw(solve);
+    await click('Delete');
+    expect(container.querySelector('[role="alert"]')!.textContent).toBe('Storage blocked');
+    expect(container.querySelector('dialog')!.open).toBe(true);
+    expect(close).not.toHaveBeenCalled();
+  } finally { open.mockRestore(); }
+  expect(await readSolves()).toEqual([solve]);
+  await click('Delete');
+  expect(await readSolves()).toEqual([]);
+  expect(close).toHaveBeenCalledTimes(1);
+});
+
+test('replay lists real undo mistakes without flagging sensor-split double turns or changing the recording', async () => {
+  const solve = recording('R2', "U U' R' R'");
+  const original = structuredClone(solve);
+  await draw(solve);
+  const feedback = container.querySelector('[aria-label="Solve mistakes"]')!;
+  expect(container.querySelector('dialog')!.lastElementChild).toBe(feedback);
+  expect(feedback.textContent).toContain('Biggest mistake:');
+  expect(feedback.textContent).toContain('Single-move undo');
+  expect(feedback.textContent).not.toContain('Redundant same-face turns');
+  expect(feedback.textContent).not.toContain('Ranked by estimated impact');
+  expect(feedback.querySelectorAll('li')).toHaveLength(1);
+  const explanation = "A move immediately cancelled by its inverse (R R') in the named step or AUF.";
+  expect(feedback.textContent).not.toContain(explanation);
+  const info = feedback.querySelector<HTMLButtonElement>('button[aria-label^="About "]')!;
+  expect(info.textContent).toBe('\u24d8');
+  await act(async () => info.focus());
+  const tooltip = feedback.querySelector('[role="tooltip"]')!;
+  expect(tooltip.textContent).toBe(explanation);
+  expect(tooltip.closest('dialog')).toBe(container.querySelector('dialog'));
+  await act(async () => info.blur());
+  await click('Next move');
+  expect(position()).toBe('1');
+  expect(solve).toEqual(original);
+  await draw(recording('R2', "R' R'"));
+  expect(container.querySelector('[aria-label="Solve mistakes"]')!.textContent).toBe('No clear mistakes detected.');
+  await draw(recording('R2', "R'", 'incomplete'));
+  expect(container.querySelector('[aria-label="Solve mistakes"]')!.textContent).toContain('could not be fully assessed');
+});
+
+test('shows the original solve GUID before the final mistake feedback and distinguishes recorded from missing inspection', async () => {
   const solve = { ...recording('R', "R'"), id: 'd01e4c06-25db-4f27-b14c-ceacff0b5176', inspection: 2345 };
   await draw(solve);
   const dialog = container.querySelector('dialog')!;
-  expect(dialog.lastElementChild!.getAttribute('aria-label')).toBe('Solve ID');
-  expect(dialog.lastElementChild!.textContent).toBe(`Solve ID: ${solve.id}`);
+  expect(dialog.lastElementChild!.getAttribute('aria-label')).toBe('Solve mistakes');
+  expect(dialog.lastElementChild!.previousElementSibling!.getAttribute('aria-label')).toBe('Solve ID');
+  expect(dialog.lastElementChild!.previousElementSibling!.textContent).toBe(`Solve ID: ${solve.id}`);
   expect(container.querySelector('[aria-label="Inspection time"]')!.textContent).toBe('Inspection: 2.345s');
   await draw(recording('R', "R'"));
   expect(container.querySelector('[aria-label="Inspection time"]')!.textContent).toBe('Inspection: Not recorded');
+});
+
+test('feedback recalculates cached timing when the engine adds a penalty to the same solve object', async () => {
+  const solve = { ...recording('R', "R'"), duration: 1000, createdAt: new Date(101000).toISOString() };
+  const history = Array.from({ length: 100 }, (_, i) => ({
+    ...solve, id: `baseline-${i}`, createdAt: new Date(i * 1000).toISOString(),
+  }));
+  const renderFeedback = () => act(async () => root.render(createElement(SolveMistakes, { cube, solve, history })));
+  await renderFeedback();
+  expect(container.textContent).toContain('No clear mistakes detected.');
+  solve.penalty = 2000;
+  await renderFeedback();
+  expect(container.textContent).toContain('Unusually slow solve');
+  delete solve.penalty;
+  await renderFeedback();
+  expect(container.textContent).toContain('No clear mistakes detected.');
+  solve.status = 'incomplete';
+  await renderFeedback();
+  expect(container.textContent).toContain('could not be fully assessed');
 });
 
 test.each([
@@ -189,10 +378,21 @@ test('replay shows recognized F2L, OLL and PLL labels beside the step headings, 
   expect(container.querySelector('[aria-label="F2L Pair 4 case"]')!.textContent).toBe('F2L 1');
   expect(container.querySelector('[aria-label="OLL case"]')!.textContent).toBe('OLL 34');
   expect(container.querySelector('[aria-label="PLL case"]')!.textContent).toBe('T perm');
+  for (const [label, path] of [['F2L Pair 4', 'F2L/F2L_1'], ['OLL', 'OLL/OLL_34'], ['PLL', 'PLL/T']]) {
+    const link = container.querySelector<HTMLAnchorElement>(`a[aria-label="${label} case"]`)!;
+    expect(link.getAttribute('href')).toBe(`https://speedcubedb.com/a/3x3/${path}`);
+    expect(link.target).toBe('_blank');
+    expect(link.rel).toBe('noopener noreferrer');
+  }
   expect(solve).toEqual(before);
   await draw({ ...solve, status: 'incomplete' });
   expect(container.querySelector('[aria-label="OLL case"]')!.textContent).toBe('OLL 34');
   expect(container.querySelector('[aria-label="PLL case"]')).toBeNull();
+  await draw(recording(oll.split(' ').reverse().map(inverse).join(' '), oll));
+  const solved = container.querySelector('[aria-label="PLL case"]')!;
+  expect(solved.textContent).toBe('Solved');
+  expect(solved.tagName).toBe('SPAN');
+  expect(solved.hasAttribute('href')).toBe(false);
 });
 
 test('combined turns seek to the last raw move while next, previous and playback preserve intermediate states', async () => {

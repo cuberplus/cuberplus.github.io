@@ -1,9 +1,10 @@
 /** @jest-environment jsdom */
 import React from 'react';
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, jest, test } from '@jest/globals';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MistakeChart } from '../Components/MistakeChart';
-import { MISTAKES, MistakeKind, markMistakes, summarizeMistakes } from '../Helpers/MistakeAnalysis';
+import { MISTAKES, MistakeKind, markMistakes, rankedMistakes, summarizeMistakes } from '../Helpers/MistakeAnalysis';
+import { consolidateMoves } from '../Helpers/CsvParser';
 import { analyzeMoveMistakes } from '../Helpers/MoveAnalysis';
 import { CrossColor, MethodName, Solve, Step, StepName } from '../Helpers/Types';
 import { FilterPanel } from '../Components/FilterPanel';
@@ -114,8 +115,33 @@ describe('specific mistake reasons', () => {
         expect(classify([makeStep(StepName.PLL, 3, { moves: "U U U' U'" })])).toContain('sequenceUndo');
     });
 
-    test.each(['U U2', 'U3', 'U4', "U3'", 'U8', 'U U U', 'U U', 'R R2', 'Rw3'])('flags redundant turning: %s', moves => {
+    test.each(['U3', 'U4', "U3'", 'U8', 'Rw3'])('flags explicit redundant turning: %s', moves => {
         expect(classify([makeStep(StepName.PLL, 3, { moves })])).toContain('redundantTurns');
+    });
+
+    test.each([
+        ['U U', 'U2'], ["R' R'", 'R2'], ['U U2', "U'"], ['R R2', "R'"],
+        ['Rw Rw', 'Rw2'], ['U U U', "U'"], ["R U U' R'", "R U U' R'"],
+        ["U U' U2", "U U' U2"], ["R R R'", "R R R'"],
+        ['R R R R', "R' R"], ['R R R R R', "R' R R"], ['R R R R R R', "R' R R2"],
+        ['R R R R R R R', "R' R R'"], ['R R R R R R R R', "R' R R' R"],
+        ["R x R", "R x R"], ['R ??? R', 'R ??? R'],
+    ])('consolidates %s into %s without discarding undo evidence or crossing barriers', (raw, expected) => {
+        expect(consolidateMoves(raw)).toBe(expected);
+        expect(consolidateMoves(consolidateMoves(raw))).toBe(expected);
+        expect(classify([makeStep(StepName.PLL, 3, { moves: raw })])).not.toContain('redundantTurns');
+    });
+
+    test('ranks the biggest actionable mistake by estimated impact without mutating stored reasons', () => {
+        const solve = makeSolve({
+            executionTime: 10, turns: 50,
+            steps: [makeStep(StepName.Cross, 3, { turns: 9 }), makeStep(StepName.F2L_1, 8, { recognitionTime: 6 })],
+            mistakes: [{ kind: 'slowSolve' }, { kind: 'crossMoves' }, { kind: 'f2lPause' }],
+        });
+        const original = [...solve.mistakes!];
+        expect(rankedMistakes(solve).map(item => item.kind)).toEqual(['f2lPause', 'crossMoves', 'slowSolve']);
+        expect(solve.mistakes).toEqual(original);
+        expect(rankedMistakes(makeSolve())).toEqual([]);
     });
 
     test('keeps a normal U2 clean and assigns redundant AUF turns to the correct stage', () => {
@@ -270,6 +296,20 @@ describe('recent mistake counts', () => {
     test('keeps zero-count bars empty when no mistakes were detected', () => {
         render(<MistakeChart summary={summarizeMistakes([], 100)} />);
         expect(screen.getAllByRole('progressbar', { hidden: true }).every(bar => bar.getAttribute('aria-valuenow') === '0')).toBe(true);
+    });
+
+    test('clicking a bar selects its exact mistake and keeps zero-count bars disabled', () => {
+        const select = jest.fn();
+        render(<MistakeChart summary={{ windowSize: 5, sampleCount: 2, counts: [
+            { kind: 'singleUndo', step: StepName.PLL, auf: true, count: 1 },
+            { kind: 'crossMoves', count: 0 },
+        ] }} select={select} />);
+        fireEvent.click(screen.getByRole('button', { name: 'View solves with PLL AUF: Single-move undo' }));
+        expect(select).toHaveBeenCalledWith({ kind: 'singleUndo', step: StepName.PLL, auf: true, count: 1 });
+        const empty = screen.getByRole('button', { name: 'View solves with Cross: Inefficient solution' });
+        expect(empty.getAttribute('disabled')).not.toBeNull();
+        fireEvent.click(empty);
+        expect(select).toHaveBeenCalledTimes(1);
     });
 
     test('starts compact and lets the user expand to full height and collapse again', () => {

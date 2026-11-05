@@ -14,16 +14,12 @@ const SUFFIX_QUARTER_TURNS: { [suffix: string]: number } = { "": 1, "'": 3, "2":
 /** The move vocabulary is tiny and repeats across every solve, so parsed tokens are memoised. */
 const MOVE_TOKEN_CACHE = new Map<string, ParsedToken | null>();
 function parseMoveToken(token: string): ParsedToken | null {
-    let cached = MOVE_TOKEN_CACHE.get(token);
-    if (cached === undefined) MOVE_TOKEN_CACHE.set(token, cached = parseMoveTokenUncached(token));
-    return cached;
-}
-
-function parseMoveTokenUncached(token: string): ParsedToken | null {
+    const cached = MOVE_TOKEN_CACHE.get(token);
+    if (cached !== undefined) return cached;
     const m = token.match(MOVE_TOKEN_RE);
-    if (!m) return null;
-    const quarterTurns = SUFFIX_QUARTER_TURNS[m[2] ?? ""];
-    return quarterTurns === undefined ? null : { face: m[1], quarterTurns };
+    const parsed = m ? { face: m[1], quarterTurns: SUFFIX_QUARTER_TURNS[m[2] ?? ""] } : null;
+    MOVE_TOKEN_CACHE.set(token, parsed);
+    return parsed;
 }
 
 export type MoveMistake = { kind: 'singleUndo' | 'sequenceUndo' | 'redundantTurns'; auf: boolean };
@@ -55,89 +51,38 @@ export function analyzeMoveMistakes(tokens: string[], auf: Set<string> = AUF_MOV
     }
     moves.forEach((move, i) => {
         if (!move) return;
-        const repeated = i > 0 && moves[i - 1]?.face === move.face && !inverse(i - 1, i);
-        if (move.count >= 3 || move.count === 0 || repeated) issues.push({ kind: 'redundantTurns', auf: inAuf(repeated ? i - 1 : i, i) });
+        if (move.count >= 3 || move.count === 0) issues.push({ kind: 'redundantTurns', auf: inAuf(i, i) });
     });
     return issues;
 }
 
-function quarterTurnsToSliceTurns(qt: number): number {
-    return ((qt % 4) + 4) % 4 === 0 ? 0 : 1;
-}
-
-function quarterTurnsToNotation(face: string, qt: number): string {
-    const mod = ((qt % 4) + 4) % 4;
-    if (mod === 1) return face;
-    if (mod === 2) return face + "2";
-    if (mod === 3) return face + "'";
-    return "";
-}
-
 export function analyzeStepMoves(movesString: string, _aufMoves: Set<string> = AUF_MOVES): MoveAnalysisResult {
     const tokens = tokenizeMoves(movesString);
-    if (tokens.length === 0) {
-        return { originalTurns: 0, simplifiedTurns: 0, wastedMoves: 0, redundantPairs: [] };
-    }
-
-    type ParsedMove = { face: string; quarterTurns: number; originalIdx: number; originalToken: string };
-    const parsed: ParsedMove[] = [];
-    for (let i = 0; i < tokens.length; i++) {
-        const p = parseMoveToken(tokens[i]);
-        if (p) {
-            parsed.push({ face: p.face, quarterTurns: p.quarterTurns, originalIdx: i, originalToken: tokens[i] });
-        }
-    }
-
-    const originalTurns = parsed.reduce((sum, m) => sum + quarterTurnsToSliceTurns(m.quarterTurns), 0);
-
+    type ParsedMove = ParsedToken & { originalIdx: number };
     const simplified: ParsedMove[] = [];
     const redundantPairs: RedundantPair[] = [];
-
-    for (let i = 0; i < parsed.length; i++) {
-        if (simplified.length > 0 && simplified[simplified.length - 1].face === parsed[i].face) {
-            const prev = simplified[simplified.length - 1];
-            const combined = (prev.quarterTurns + parsed[i].quarterTurns) % 4;
-
-            const startIdx = prev.originalIdx;
-            const endIdx = parsed[i].originalIdx;
-            const pairMoves = tokens.slice(startIdx, endIdx + 1).join(" ");
-
-            if (combined === 0) {
-                redundantPairs.push({ startIdx, endIdx, moves: pairMoves });
-                simplified.pop();
-            } else {
-                const prevSlice = quarterTurnsToSliceTurns(prev.quarterTurns);
-                const curSlice = quarterTurnsToSliceTurns(parsed[i].quarterTurns);
-                const newSlice = quarterTurnsToSliceTurns(combined);
-                if (newSlice < prevSlice + curSlice) {
-                    redundantPairs.push({ startIdx, endIdx, moves: pairMoves });
-                }
-                prev.quarterTurns = combined;
-                prev.originalToken = quarterTurnsToNotation(prev.face, combined);
-            }
+    let originalTurns = 0;
+    tokens.forEach((token, endIdx) => {
+        const move = parseMoveToken(token);
+        if (!move) return;
+        originalTurns++;
+        const prev = simplified.at(-1);
+        if (prev?.face === move.face) {
+            redundantPairs.push({ startIdx: prev.originalIdx, endIdx, moves: tokens.slice(prev.originalIdx, endIdx + 1).join(" ") });
+            prev.quarterTurns = (prev.quarterTurns + move.quarterTurns) % 4;
+            if (!prev.quarterTurns) simplified.pop();
         } else {
-            simplified.push({ ...parsed[i] });
+            simplified.push({ ...move, originalIdx: endIdx });
         }
-    }
-
-    const simplifiedTurns = simplified.reduce((sum, m) => sum + quarterTurnsToSliceTurns(m.quarterTurns), 0);
-    const wastedMoves = originalTurns - simplifiedTurns;
-
-    return { originalTurns, simplifiedTurns, wastedMoves, redundantPairs };
+    });
+    return { originalTurns, simplifiedTurns: simplified.length, wastedMoves: originalTurns - simplified.length, redundantPairs };
 }
 
 function countAufMoves(tokens: string[], direction: 'leading' | 'trailing', aufMoves: Set<string> = AUF_MOVES): number {
     let count = 0;
-    if (direction === 'leading') {
-        for (const t of tokens) {
-            if (aufMoves.has(t)) count++;
-            else break;
-        }
-    } else {
-        for (let i = tokens.length - 1; i >= 0; i--) {
-            if (aufMoves.has(tokens[i])) count++;
-            else break;
-        }
+    for (const token of direction === 'leading' ? tokens : tokens.slice().reverse()) {
+        if (!aufMoves.has(token)) break;
+        count++;
     }
     return count;
 }
@@ -148,7 +93,6 @@ function isRotationOrAuf(t: string, aufMoves: Set<string> = AUF_MOVES): boolean 
 
 export function coreMovesCount(movesString: string | string[], aufMoves: Set<string> = AUF_MOVES): number {
     const tokens = typeof movesString === 'string' ? tokenizeMoves(movesString) : movesString;
-    if (tokens.length === 0) return 0;
     let start = 0;
     while (start < tokens.length && isRotationOrAuf(tokens[start], aufMoves)) start++;
     let end = tokens.length - 1;
@@ -162,26 +106,16 @@ export function coreMovesCount(movesString: string | string[], aufMoves: Set<str
 
 /** Returns median (p50) of sorted array. */
 function median(sorted: number[]): number {
-    if (sorted.length === 0) return 0;
     const mid = Math.floor(sorted.length / 2);
-    if (sorted.length % 2 === 1) return sorted[mid];
-    return (sorted[mid - 1] + sorted[mid]) / 2;
+    return !sorted.length ? 0 : sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 /** Returns the lowest mode (smallest value that appears most often), or null if all values have the same frequency. */
 function lowestMode(sorted: number[]): number | null {
-    if (sorted.length === 0) return null;
     const counts: { [value: number]: number } = {};
-    for (const v of sorted) {
-        counts[v] = (counts[v] ?? 0) + 1;
-    }
+    for (const v of sorted) counts[v] = (counts[v] ?? 0) + 1;
     const maxCount = Math.max(...Object.values(counts));
-    const modes = Object.keys(counts)
-        .map(Number)
-        .filter((v) => counts[v] === maxCount)
-        .sort((a, b) => a - b);
-    if (modes.length === sorted.length) return null;
-    return modes[0];
+    return maxCount > 1 ? sorted.find(value => counts[value] === maxCount)! : null;
 }
 
 export function typicalCaseMoves(sorted: number[]): number {
@@ -198,58 +132,28 @@ export function computeCaseFailureStats(
     for (const solve of solves) {
         const step = getStep(solve, stepName);
         if (!step || !step.case) continue;
-
         const caseName = step.case;
-        if (!(caseName in caseMap)) caseMap[caseName] = [];
-        const solveAufMoves = getAufMovesForSolve(solve);
-        const core = coreMovesCount(step.moves, solveAufMoves);
+        const core = coreMovesCount(step.moves, getAufMovesForSolve(solve));
+        caseMap[caseName] ??= [];
         caseMap[caseName].push({ solveId: solve.id, coreMoves: core, totalTurns: step.turns, stepTime: step.time });
     }
-
     const results: CaseStats[] = [];
-    const caseNames = Object.keys(caseMap);
-
-    for (const caseName of caseNames) {
+    for (const [caseName, instances] of Object.entries(caseMap)) {
         if (caseName === "Solved") continue;
-        const instances = caseMap[caseName];
-
-        const moveCounts = instances.map((i: CaseInstance) => i.coreMoves).sort((a: number, b: number) => a - b);
-        const n = moveCounts.length;
-        let expectedMovesBase: number;
-        if (n === 2) {
-            expectedMovesBase = median(moveCounts);
-        } else {
-            const modeVal = lowestMode(moveCounts);
-            expectedMovesBase = modeVal !== null ? modeVal : median(moveCounts);
-        }
-        // add some tolerance to the expected moves (eg: PLL that end in U+D o R2 counted as R+R)
-        const tolerance = 2;
-        const expectedMoves = expectedMovesBase + tolerance;
-
-        const avgMoves = moveCounts.reduce((a: number, b: number) => a + b, 0) / moveCounts.length;
-        const avgStepTime = instances.reduce((s: number, i: CaseInstance) => s + i.stepTime, 0) / instances.length;
-
-        let failureCount = 0;
-        const taggedInstances = instances.map((inst: CaseInstance) => {
-            const failed = inst.coreMoves > expectedMoves && inst.stepTime > avgStepTime;
-            if (failed) failureCount++;
-            return { solveId: inst.solveId, turns: inst.totalTurns, failed };
-        });
-
+        const moveCounts = instances.map(i => i.coreMoves).sort((a, b) => a - b);
+        const expectedMovesBase = typicalCaseMoves(moveCounts), expectedMoves = expectedMovesBase + 2;
+        const avgMoves = moveCounts.reduce((a, b) => a + b, 0) / moveCounts.length;
+        const avgStepTime = instances.reduce((sum, i) => sum + i.stepTime, 0) / instances.length;
+        const taggedInstances = instances.map(inst => ({
+            solveId: inst.solveId, turns: inst.totalTurns, failed: inst.coreMoves > expectedMoves && inst.stepTime > avgStepTime,
+        }));
+        const failureCount = taggedInstances.filter(i => i.failed).length;
         results.push({
-            caseName,
-            totalCount: instances.length,
-            failureCount,
-            failureRate: instances.length > 0 ? (failureCount / instances.length) * 100 : 0,
-            avgMoves,
-            expectedMovesBase,
-            expectedMoves,
-            instances: taggedInstances,
+            caseName, totalCount: instances.length, failureCount, failureRate: failureCount / instances.length * 100,
+            avgMoves, expectedMovesBase, expectedMoves, instances: taggedInstances,
         });
     }
-
-    results.sort((a, b) => b.failureRate - a.failureRate);
-    return results;
+    return results.sort((a, b) => b.failureRate - a.failureRate);
 }
 
 export function computeAufInefficiency(step: Step): AufInefficiency {
@@ -257,9 +161,7 @@ export function computeAufInefficiency(step: Step): AufInefficiency {
     const preAufMoves = countAufMoves(tokens, 'leading');
     const postAufMoves = countAufMoves(tokens, 'trailing');
     const totalAufTime = step.preAufTime + step.postAufTime;
-    const isHighCost = (preAufMoves + postAufMoves) > 2 || totalAufTime > 0.5;
-
-    return { preAufMoves, postAufMoves, totalAufTime, isHighCost };
+    return { preAufMoves, postAufMoves, totalAufTime, isHighCost: preAufMoves + postAufMoves > 2 || totalAufTime > 0.5 };
 }
 
 /** Lazily-built, per-CaseStats set of the solve ids that failed, so lookups are O(1) instead of a scan. */
@@ -286,9 +188,7 @@ export function computeSolveEfficiency(
     ollCaseStats?: Map<string, CaseStats>,
     pllCaseStats?: Map<string, CaseStats>
 ): SolveEfficiency {
-    let totalOriginal = 0;
-    let totalSimplified = 0;
-
+    let totalOriginal = 0, totalSimplified = 0;
     for (const step of solve.steps) {
         if (!step.moves) continue;
         const counts = stepTurnCounts(step.moves);
@@ -296,22 +196,10 @@ export function computeSolveEfficiency(
         totalSimplified += counts.simplified;
     }
 
-    const moveEfficiency = totalOriginal > 0 ? totalSimplified / totalOriginal : 1;
-
-    let hadOllFailure = false;
-    let hadPllFailure = false;
-
-    const ollStep = getStep(solve, StepName.OLL);
-    if (ollStep && ollStep.case && ollCaseStats) {
-        const stats = ollCaseStats.get(ollStep.case);
-        hadOllFailure = stats ? failedSolveIds(stats).has(solve.id) : false;
-    }
-
-    const pllStep = getStep(solve, StepName.PLL);
-    if (pllStep && pllStep.case && pllCaseStats) {
-        const stats = pllCaseStats.get(pllStep.case);
-        hadPllFailure = stats ? failedSolveIds(stats).has(solve.id) : false;
-    }
-
-    return { moveEfficiency, hadOllFailure, hadPllFailure };
+    const failed = (name: StepName, cases?: Map<string, CaseStats>) => {
+        const step = getStep(solve, name), stats = step?.case ? cases?.get(step.case) : undefined;
+        return stats ? failedSolveIds(stats).has(solve.id) : false;
+    };
+    return { moveEfficiency: totalOriginal > 0 ? totalSimplified / totalOriginal : 1,
+        hadOllFailure: failed(StepName.OLL, ollCaseStats), hadPllFailure: failed(StepName.PLL, pllCaseStats) };
 }

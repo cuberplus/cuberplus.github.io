@@ -1,6 +1,6 @@
 import { calculateMovingAverage, calculateMovingStdDev } from './MathHelpers';
 import { analyzeMoveMistakes, coreMovesCount, MoveMistake, typicalCaseMoves } from './MoveAnalysis';
-import { getAufMovesForSolve, tokenizeMoves } from './CsvParser';
+import { consolidateMoves, getAufMovesForSolve, tokenizeMoves } from './CsvParser';
 import { Solve, StepName } from './Types';
 
 const CASE_MOVES_RULE = 'More than 2 extra core moves versus your typical count for this case and method (5+ examples required). AUF excluded.';
@@ -14,7 +14,7 @@ export const MISTAKES = {
     pllRecognition: { label: 'PLL: Long recognition', rule: 'More than 2 seconds before starting PLL.' },
     singleUndo: { label: 'Single-move undo', rule: "A move immediately cancelled by its inverse (R R') in the named step or AUF." },
     sequenceUndo: { label: 'Multi-move undo', rule: "Two or more moves immediately undone in reverse (R U U' R') in this step or AUF. The inner single undo isn't counted again." },
-    redundantTurns: { label: 'Redundant same-face turns', rule: 'Mergeable same-face turns (U U2, U U) or explicit 3+ quarter turns (U3, U4). A lone U2 is fine; sensor-split turns can trigger this.' },
+    redundantTurns: { label: 'Redundant same-face turns', rule: 'Explicit 3+ quarter turns (U3, U4). Sensor-split turns such as U U are consolidated into U2 before analysis; actual undos are retained.' },
     slowAuf: { label: 'AUF: Slow adjustment', rule: 'More than 0.5 seconds in the post-AUF of a last-layer step. Pre-AUF is excluded.' },
     slowStep: { label: 'Unusually slow step', rule: 'At least one step exceeds its rolling average plus 3 standard deviations, using the selected window.' },
     slowSolve: { label: 'Unusually slow solve', rule: 'Solve time exceeds its rolling average plus 3 standard deviations, using the selected window.' },
@@ -24,6 +24,26 @@ export interface Mistake { kind: MistakeKind; step?: StepName; auf?: boolean; }
 export interface MistakeSummary { sampleCount: number; windowSize: number; counts: (Mistake & { count: number })[]; }
 export const mistakeKey = ({ kind, step, auf }: Mistake) => `${kind}:${step ?? ''}:${auf ? 'auf' : ''}`;
 export const mistakeLabel = ({ kind, step, auf }: Mistake) => `${step ? `${step}${auf ? ' AUF' : ''}: ` : ''}${MISTAKES[kind].label}`;
+export function rankedMistakes(solve: Solve): Mistake[] {
+    const score = ({ kind, step }: Mistake): number => {
+        const steps = solve.steps.filter(s => !step || s.name === step);
+        const max = (value: (s: Solve['steps'][number]) => number) => Math.max(0, ...steps.map(value));
+        const turnTime = solve.executionTime > 0 && solve.turns > 0 ? solve.executionTime / solve.turns : 0.2;
+        switch (kind) {
+            case 'f2lPause': return max(s => PAIRS.has(s.name) ? s.recognitionTime - 2 : 0);
+            case 'ollRecognition': case 'pllRecognition': return max(s => s.name === (kind === 'ollRecognition' ? StepName.OLL : StepName.PLL) ? s.recognitionTime - 2 : 0);
+            case 'slowAuf': return max(s => LAST_LAYER.has(s.name) ? s.postAufTime - 0.5 : 0);
+            case 'crossMoves': return max(s => s.name === StepName.Cross ? s.turns - 8 : 0) * turnTime;
+            case 'f2lMoves': return max(s => PAIRS.has(s.name) ? s.turns - 12 : 0) * turnTime;
+            case 'sequenceUndo': return 4 * turnTime;
+            case 'singleUndo': return 2 * turnTime;
+            case 'ollMoves': case 'pllMoves': return 3 * turnTime;
+            case 'redundantTurns': return turnTime;
+            default: return -1;
+        }
+    };
+    return [...solve.mistakes ?? []].sort((a, b) => score(b) - score(a));
+}
 const PAIRS = new Set([StepName.F2L_1, StepName.F2L_2, StepName.F2L_3, StepName.F2L_4]);
 const LAST_LAYER = new Set([StepName.OLL, StepName.PLL, StepName.EOLL, StepName.COLL, StepName.EPLL, StepName.CPLL, StepName.CMLL, StepName.ZBLL]);
 type MoveFacts = { core: number; issues: MoveMistake[] };
@@ -34,7 +54,7 @@ function moveFacts(moves: string, auf: Set<string>): MoveFacts {
     if (!cache) moveFactsCache.set(face, cache = new Map<string, MoveFacts>());
     let facts = cache.get(moves);
     if (!facts) {
-        const tokens = tokenizeMoves(moves);
+        const tokens = tokenizeMoves(consolidateMoves(moves));
         cache.set(moves, facts = { core: coreMovesCount(tokens, auf), issues: analyzeMoveMistakes(tokens, auf) });
     }
     return facts;
@@ -86,9 +106,12 @@ export function markMistakes(solves: Solve[], windowSize: number): Solve[] {
     return solves;
 }
 
-export function summarizeMistakes(solves: Solve[], windowSize: number): MistakeSummary {
+export function mistakeWindow(solves: Solve[], windowSize: number): Solve[] {
     const size = Number.isFinite(windowSize) ? Math.max(0, Math.floor(windowSize)) : 0;
-    const recent = size ? solves.filter(s => !s.isCorrupt).sort((a, b) => a.date.getTime() - b.date.getTime()).slice(-size) : [];
+    return size ? solves.filter(s => !s.isCorrupt).sort((a, b) => a.date.getTime() - b.date.getTime()).slice(-size) : [];
+}
+export function summarizeMistakes(solves: Solve[], windowSize: number): MistakeSummary {
+    const recent = mistakeWindow(solves, windowSize);
     const counts = new Map<string, Mistake & { count: number }>();
     (Object.keys(MISTAKES) as MistakeKind[]).filter(kind => !['singleUndo', 'sequenceUndo', 'redundantTurns'].includes(kind))
         .forEach(kind => counts.set(mistakeKey({ kind }), { kind, count: 0 }));
@@ -96,5 +119,5 @@ export function summarizeMistakes(solves: Solve[], windowSize: number): MistakeS
         const unique = new Map((solve.mistakes ?? []).map(mistake => [mistakeKey(mistake), mistake]));
         unique.forEach((mistake, key) => counts.set(key, { ...mistake, count: (counts.get(key)?.count ?? 0) + 1 }));
     }
-    return { sampleCount: recent.length, windowSize: size, counts: Array.from(counts.values()).sort((a, b) => b.count - a.count) };
+    return { sampleCount: recent.length, windowSize: Number.isFinite(windowSize) ? Math.max(0, Math.floor(windowSize)) : 0, counts: Array.from(counts.values()).sort((a, b) => b.count - a.count) };
 }

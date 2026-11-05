@@ -6,8 +6,10 @@ import { EdgeCoordinates, Pattern, PatternTables } from './patterns';
 
 export type Mode = 'cross' | 'xcross' | 'block' | 'xxcross';
 export type PairRelation = 'any' | 'adjacent' | 'diagonal';
+export type Metric = 'HTM' | 'QTM';
 export interface Settings {
   mode: Mode;
+  metric: Metric;
   cross: Color | 'any';
   pair: string;
   secondPair: string;
@@ -17,13 +19,15 @@ export interface Settings {
   count: number;
 }
 export const DEFAULT_SETTINGS: Settings = {
-  mode: 'xcross', cross: 'any', pair: 'any', secondPair: 'any',
+  mode: 'xcross', metric: 'HTM', cross: 'any', pair: 'any', secondPair: 'any',
   relation: 'any', minimum: 2, maximum: 20, count: 20,
 };
 export const MODE_LABELS: Record<Mode, string> = {
   cross: 'Cross', xcross: 'X-Cross', block: '2×2×2 block', xxcross: 'XX-Cross',
 };
 export const pairLabel = (edge: number) => EDGES[edge].map(f => COLORS[f]).join(' / ');
+export const solutionLength = (moves: readonly number[], metric: Metric): number =>
+  metric === 'HTM' ? moves.length : moves.reduce((total, move) => total + (move % 3 === 1 ? 2 : 1), 0);
 const findEdge = (faces: number[]) =>
   EDGES.findIndex(edge => edge.every(f => faces.includes(f)));
 const originalPair = (rotation: Rotation, pair: number) =>
@@ -64,6 +68,7 @@ export function goalsFor(settings: Settings): Goal[] {
 
 export function validateSettings(settings: Settings): void {
   if (!Object.prototype.hasOwnProperty.call(MODE_LABELS, settings.mode)) throw new Error('Choose a valid solve mode.');
+  if (!['HTM', 'QTM'].includes(settings.metric)) throw new Error('Choose a valid move metric.');
   if (settings.cross !== 'any' && !COLORS.some(color => color === settings.cross)) throw new Error('Choose a valid cross color.');
   if (!['any', 'adjacent', 'diagonal'].includes(settings.relation)) throw new Error('Choose a valid pair relationship.');
   for (const pair of [settings.pair, settings.secondPair]) {
@@ -162,12 +167,14 @@ export class Solver {
         patterns.forEach((p, i) => { edges[i] = p.edge; corners[i] = p.corner; });
         const search = (level: number, remaining: number, lastFace: number): boolean => {
           if ((++stats.nodes & 16383) === 0 && performance.now() > deadline) throw new SearchTimeout();
-          if (remaining === 0) return true;
-          const current = level * width, next = current + width, allowance = remaining - 1;
+          if (remaining === 0) { path.length = level; return true; }
+          const current = level * width, next = current + width;
           for (let move = 0; move < 18; move++) {
             const face = Math.floor(move / 3);
             if (face === lastFace) { move += 2; continue; }
             if (lastFace >= 0 && (face + 3) % 6 === lastFace && face < lastFace) { move += 2; continue; }
+            const allowance = remaining - (settings.metric === 'QTM' && move % 3 === 1 ? 2 : 1);
+            if (allowance < 0) continue;
             let valid = true;
             for (let i = 0; i < width; i++) {
               const p = patterns[i], m = p.moveMap[move];
@@ -186,7 +193,7 @@ export class Solver {
           return false;
         };
         if (search(0, bound, -1)) {
-          const moves = path.slice(0, bound);
+          const moves = path.slice();
           return {
             moves, algorithm: moves.map(m => MOVES[m]).join(' '),
             cross: COLORS[candidate.goal.cross], pairs: candidate.goal.pairs.map(pairLabel),

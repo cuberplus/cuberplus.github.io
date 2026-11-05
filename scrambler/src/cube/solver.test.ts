@@ -1,7 +1,7 @@
 /** @jest-environment node */
 import { COLORS, applyMoves, parseAlgorithm, randomScramble, solvedCube } from './cube';
 import { PatternTables } from './patterns';
-import { DEFAULT_SETTINGS, Mode, Settings, Solver, goalsFor, validateSettings } from './solver';
+import { DEFAULT_SETTINGS, Mode, Settings, Solver, goalsFor, solutionLength, validateSettings } from './solver';
 import { bruteDistance, seededRandom, verifySolution } from './testHelpers';
 
 jest.setTimeout(60000);
@@ -49,6 +49,29 @@ test.each(['cross', 'xcross', 'block', 'xxcross'] as Mode[])('%s matches indepen
   }
 });
 
+test.each(['cross', 'xcross', 'block', 'xxcross'] as Mode[])('%s QTM solutions match independent quarter-turn-only breadth-first search', mode => {
+  for (const scramble of ['R2', 'F2 R', "R U F'", 'R2 L2']) {
+    for (const cross of ['any', 'White'] as const) {
+      const settings = options({ mode, cross, metric: 'QTM', maximum: 3 });
+      const scrambled = applyMoves(solvedCube(), parseAlgorithm(scramble));
+      const expected = bruteDistance(scrambled, settings, 3);
+      const result = solver.solve(scramble, settings);
+      expect(result ? solutionLength(result.moves, 'QTM') : null).toBe(expected);
+      if (result) verifySolution(scrambled, result, settings);
+    }
+  }
+});
+
+test('a half turn costs two QTM but one HTM, including the search upper bound and returned path', () => {
+  const settings = options({ cross: 'White', pair: '8', minimum: 0, maximum: 1 });
+  expect(solver.solve('R2', settings)?.algorithm).toBe('R2');
+  expect(solver.solve('R2', { ...settings, metric: 'QTM' })).toBeNull();
+  const result = solver.solve('R2', { ...settings, metric: 'QTM', maximum: 2 })!;
+  expect(result.moves).toHaveLength(1);
+  expect(solutionLength(result.moves, 'QTM')).toBe(2);
+  verifySolution(applyMoves(solvedCube(), parseAlgorithm('R2')), result, settings);
+});
+
 test('all six base colors and fixed Blue/Red pair are solved in original scramble orientation', () => {
   const random = seededRandom(223);
   for (const color of COLORS) {
@@ -92,6 +115,7 @@ test('upper bounds exclude unsolved targets, while lower bounds never pad an opt
 });
 
 test('incompatible constraints and invalid numeric settings are rejected explicitly', () => {
+  expect(() => validateSettings(options({ metric: 'STM' as Settings['metric'] }))).toThrow('metric');
   expect(() => validateSettings(options({ minimum: 5, maximum: 3 }))).toThrow('bounds');
   expect(() => validateSettings(options({ maximum: 21 }))).toThrow('bounds');
   expect(() => validateSettings(options({ count: NaN }))).toThrow('scrambles');

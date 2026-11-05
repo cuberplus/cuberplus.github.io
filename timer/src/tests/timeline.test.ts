@@ -69,7 +69,7 @@ test.each([100, 100.125])('completed bar partitions the full solve with %sms int
   solve.duration = solve.moves.at(-1)!.elapsed;
   solve.status = 'complete';
   await draw(solve.duration, 3);
-  expect(container.querySelector<HTMLElement>('.trail-tip')!.style.left).toBe('100%');
+  expect(container.querySelector('.trail-tip')).toBeNull();
   expect(segments().reduce((sum, segment) => sum + Number(segment.dataset.end) - Number(segment.dataset.start), 0)).toBe(Math.round(solve.duration));
   expect(segments().reduce((sum, segment) => sum + parseFloat(segment.style.width), 0)).toBeCloseTo(100, 8);
   expect(new Set(segments().map(segment => segment.dataset.step)).size).toBe(7);
@@ -100,22 +100,24 @@ test('long active solves auto-rescale without dropping time, and unfinished stag
   expect(segments().reduce((sum, segment) => sum + Number(segment.dataset.end) - Number(segment.dataset.start), 0)).toBe(120000);
   solve.status = 'incomplete';
   await draw(solve.duration);
+  expect(container.querySelector('.trail-tip')).toBeNull();
   expect(container.querySelector('.trail-duration[data-step="1"][data-status="pending"]')).not.toBeNull();
   expect(container.querySelector('.trail-duration[data-step="6"][data-status="unreached"]')!.textContent).toBe('PLL --');
 });
 
-test('F2L pairs use distinct shades within one purple hue family', async () => {
+test('all F2L splits, labels and leaders share the same dark purple', async () => {
   append(scramble.split(' ').reverse().map(inverse).join(' '));
   solve.status = 'complete';
   await draw(solve.duration);
   const pairColors = [1, 2, 3, 4].map(i => container.querySelector<HTMLElement>(`.trail-duration[data-step="${i}"]`)!.style.borderTopColor);
-  expect(new Set(pairColors).size).toBe(4);
-  const hues = pairColors.map(color => {
-    const [red, green, blue] = color.match(/\d+/g)!.map(Number);
-    expect(blue).toBeGreaterThan(red); expect(red).toBeGreaterThan(green);
-    return 240 + 60 * (red - green) / (blue - green);
-  });
-  expect(Math.max(...hues) - Math.min(...hues)).toBeLessThan(10);
+  expect(new Set(pairColors).size).toBe(1);
+  const purple = pairColors[0], pairSegments = segments().filter(segment => [1, 2, 3, 4].includes(Number(segment.dataset.step)));
+  expect(new Set(pairSegments.map(segment => segment.dataset.step)).size).toBe(4);
+  expect(pairSegments.every(segment => segment.style.backgroundColor === purple)).toBe(true);
+  expect(container.querySelector<HTMLElement>('.trail-duration[data-step="f2l"]')!.style.borderBottomColor).toBe(purple);
+  const leaders = Array.from(container.querySelectorAll('[aria-label="F2L sub-times"] line'));
+  expect(leaders).toHaveLength(4);
+  expect(leaders.every(line => line.getAttribute('stroke') === purple)).toBe(true);
 });
 
 test('crowded and zero-time labels remain readable on narrow bars and repack after resizing', async () => {

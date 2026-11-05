@@ -15,7 +15,7 @@ export interface AverageRow<T> {
   turns: number;
   tps: number | null;
   trimmed: 'best' | 'worst' | null;
-  penalty?: boolean;
+  penalty?: number;
 }
 
 export function AverageDialog<T>({ rows, time, precision, view, close, title }: {
@@ -43,7 +43,7 @@ export function AverageDialog<T>({ rows, time, precision, view, close, title }: 
     return <tr key={row.number}>
       <th scope="row">{row.number}</th>
       <td>{row.trimmed ? <span className={`average-trimmed-${row.trimmed}`} title={`Excluded ${row.trimmed}`} aria-label={`Excluded ${row.trimmed}: ${value}`}>({value})</span> : value}
-        {row.penalty && <span className="badge text-bg-warning ms-1">+2</span>}
+        {!!row.penalty && <span className="badge text-bg-warning ms-1">+{row.penalty}</span>}
       </td>
       <td>{row.turns}</td><td>{row.tps === null ? '--' : row.tps.toFixed(2)}</td>
       <td><button className="btn btn-sm btn-outline-secondary" aria-label={`View ${title ? '' : 'average '}solve ${row.number}`} onClick={() => view(row.solve)}>View</button></td>

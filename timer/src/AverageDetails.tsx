@@ -19,7 +19,7 @@ export function AverageDetails({ details, history, precision, view, close }: {
         solve, trimmed, number: numbers.get(solve.id)!,
         time: solve.status === 'complete' ? solveTime(solve) / 1000 : 'DNF',
         turns: count, tps: solve.duration > 0 ? count * 1000 / solve.duration : null,
-        penalty: solve.status === 'complete' && solve.penalty === 2000,
+        penalty: solve.status === 'complete' ? (solve.penalty ?? 0) / 1000 : 0,
       };
     });
   }, [details, history]);

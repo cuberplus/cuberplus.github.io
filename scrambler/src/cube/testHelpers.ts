@@ -86,11 +86,12 @@ export function anyTargetSolved(cube: Cube, settings: Settings): boolean {
 }
 
 export function bruteDistance(cube: Cube, settings: Settings, maximum: number): number | null {
+  const moves = MOVES.flatMap((_, move) => settings.metric === 'QTM' && move % 3 === 1 ? [] : [move]);
   let layer = [cube];
   for (let depth = 0; depth <= maximum; depth++) {
     if (layer.some(c => anyTargetSolved(c, settings))) return depth;
     if (depth === maximum) break;
-    layer = layer.flatMap(c => MOVES.map((_, m) => applyMoves(c, [m])));
+    layer = layer.flatMap(c => moves.map(move => applyMoves(c, [move])));
   }
   return null;
 }

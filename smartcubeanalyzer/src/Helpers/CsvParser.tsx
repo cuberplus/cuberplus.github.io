@@ -192,34 +192,62 @@ function parseUtcDateTime(value: string): Date {
 // --- Shared helpers for Acubemy move parsing  ---
 
 function normalizeMovesString(raw: string | undefined | null): string {
-    if (!raw) return "";
-    const trimmed = raw.trim();
-    if (!trimmed) return "";
     // Strip surrounding quotes Acubemy may add around move strings.
-    const withoutQuotes = trimmed.replace(/^"(.*)"$/, "$1");
-    return withoutQuotes.trim();
+    return raw?.trim().replace(/^"(.*)"$/, "$1").trim() ?? "";
 }
 
 export function tokenizeMoves(raw: string | undefined | null): string[] {
     const normalized = normalizeMovesString(raw);
-    if (!normalized) return [];
-    return normalized
-        .split(/\s+/)
-        .filter((token) => token.length > 0);
+    return normalized ? normalized.split(/\s+/) : [];
 }
 
+const consolidatedMoves = new Map<string, string>();
+/** Merge sensor-split turns, but retain cancellations as evidence of actual undos. */
+export function consolidateMoves(raw: string): string {
+    const cached = consolidatedMoves.get(raw);
+    if (cached !== undefined) return cached;
+    if (!/([RLUDFBrludfbMES]w?)(?:2'?|')?\s+\1(?:2'?|')?(?=\s|$|")/.test(raw)) { consolidatedMoves.set(raw, raw); return raw; }
+    const result: string[] = [];
+    let previous: RegExpExecArray | null = null;
+    const amount = (suffix: string) => suffix.startsWith('2') ? 2 : suffix === "'" ? 3 : 1;
+    const tokens = tokenizeMoves(raw), parsed = tokens.map(token => /^([RLUDFBrludfbMES]w?)(2'?|'?)$/.exec(token));
+    const inverse = (left: number, right: number) => {
+        const a = parsed[left], b = parsed[right];
+        return a && b && a[1] === b[1] && (amount(a[2]) + amount(b[2])) % 4 === 0;
+    };
+    for (const [index, token] of tokens.entries()) {
+        const move = parsed[index];
+        if (inverse(index - 1, index) || inverse(index, index + 1)) { result.push(token); previous = null; continue; }
+        const total: number = previous && move && previous[1] === move[1] ? (amount(previous[2]) + amount(move[2])) % 4 : 0;
+        if (total) result[result.length - 1] = move![1] + ['', '', '2', "'"][total];
+        else result.push(token);
+        previous = total ? /^([RLUDFBrludfbMES]w?)(2'?|'?)$/.exec(result[result.length - 1]) : previous?.[1] === move?.[1] ? null : move;
+    }
+    const value = result.join(' ');
+    consolidatedMoves.set(raw, value);
+    return value;
+}
+
+const moveCounts = new Map<string | undefined | null, number>();
 /** Counts move tokens excluding cube rotations (x, y, z). Use for all turn counts. */
 export function countMovesExcludingRotations(movesString: string | undefined | null): number {
-    const tokens = tokenizeMoves(movesString);
-    if (!tokens.length) return 0;
-    return tokens.filter((t) => !ROTATIONS.has(t.toLowerCase())).length;
+    let count = moveCounts.get(movesString);
+    if (count === undefined) moveCounts.set(movesString, count = tokenizeMoves(movesString).filter(t => !ROTATIONS.has(t.toLowerCase())).length);
+    return count;
+}
+
+function consolidateStep(step: Step): boolean {
+    const moves = consolidateMoves(step.moves);
+    if (moves === step.moves) return false;
+    step.moves = moves;
+    step.turns = countMovesExcludingRotations(moves);
+    step.tps = step.time > 0 ? step.turns / step.time : 0;
+    return true;
 }
 
 /** Returns move string with all rotation tokens (x, y, z and variants) removed. Use for Acubemy so stored data has no rotations. */
 export function stripRotationsFromMoveString(movesString: string | undefined | null): string {
-    if (!movesString || !movesString.trim()) return '';
-    const tokens = tokenizeMoves(movesString);
-    return tokens.filter((t) => !ROTATIONS.has(t.toLowerCase())).join(' ');
+    return tokenizeMoves(movesString).filter((t) => !ROTATIONS.has(t.toLowerCase())).join(' ');
 }
 
 /**
@@ -250,6 +278,7 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
         "dnf": (obj, value) => { obj.dnf = value.toLowerCase() === 'true'; },
         "one_turn_away_two_second_penalty": (obj, value, scratch) => { if (value.toLowerCase() === 'true') scratch.penaltyMs += 2000; },
         "inspection_two_second_penalty": (obj, value, scratch) => { if (value.toLowerCase() === 'true') scratch.penaltyMs += 2000; },
+        "manual_two_second_penalty": (obj, value, scratch) => { if (value.toLowerCase() === 'true') scratch.penaltyMs += 2000; },
         "date": (obj, value) => { obj.date = parseUtcDateTime(value); },
         "solution_rotation": (obj, value) => {
             obj.crossColor = Const.crossMappings.get(value) ?? CrossColor.Unknown;
@@ -378,6 +407,7 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
         }
 
         let prevEndTsMs: number | null = null;
+        let normalized = false;
         let recognitionTotal = 0, executionTotal = 0, preAufTotal = 0, postAufTotal = 0, turnsTotal = 0;
         for (let i = 0; i < obj.steps.length; i++) {
             const step = obj.steps[i];
@@ -410,6 +440,7 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
                     prevEndTsMs += step.time * 1000;
                 }
             }
+            normalized = consolidateStep(step) || normalized;
             recognitionTotal += step.recognitionTime;
             executionTotal += step.executionTime;
             preAufTotal += step.preAufTime;
@@ -421,6 +452,7 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
         obj.preAufTime = preAufTotal;
         obj.postAufTime = postAufTotal;
         obj.turns = turnsTotal;
+        if (normalized) obj.tps = obj.time > 0 ? obj.turns / obj.time : 0;
 
         obj.source = 'cubeast';
         obj.rawSource = 'cubeast';
@@ -453,27 +485,15 @@ function parseAcubemyCsv(stringVal: string, splitter: string): Solve[] {
         .split("\n")
         .map((item) => item.split(splitter));
 
-    const buildKeyIndex = (header: string[]): Record<string, number> => {
-        const index: Record<string, number> = {};
-        header.forEach((key, i) => {
-            if (!(key in index)) {
-                index[key] = i;
-            }
-        });
-        return index;
-    };
-
-    const keyIndex = buildKeyIndex(keys);
+    const keyIndex: Record<string, number> = {};
+    keys.forEach((key, i) => { if (!(key in keyIndex)) keyIndex[key] = i; });
 
     const makeRowAccessors = (row: string[]) => {
         const get = (name: string): string => {
             const idx = keyIndex[name];
             return typeof idx === "number" && idx >= 0 ? row[idx] ?? "" : "";
         };
-        const getNumber = (name: string): number => {
-            const v = get(name);
-            return v ? Number(v) : 0;
-        };
+        const getNumber = (name: string): number => Number(get(name));
         return { get, getNumber };
     };
 
@@ -524,13 +544,8 @@ function parseAcubemyCsv(stringVal: string, splitter: string): Solve[] {
         solve: Solve,
         solutionMoves: string | undefined | null
     ) => {
-        const totalTurns = countMovesExcludingRotations(solutionMoves);
-        solve.turns = totalTurns;
-        if (solve.time > 0) {
-            solve.tps = totalTurns / solve.time;
-        } else {
-            solve.tps = 0;
-        }
+        solve.turns = countMovesExcludingRotations(solutionMoves);
+        solve.tps = solve.time > 0 ? solve.turns / solve.time : 0;
     };
 
     /** Strips rotations from solution and move_times in parallel so lengths stay in sync. */
@@ -775,11 +790,7 @@ function parseAcubemyCsv(stringVal: string, splitter: string): Solve[] {
         return solve;
     });
 
-    const sorted = formedArr.sort((a: Solve, b: Solve) => {
-        return a.date.getTime() - b.date.getTime();
-    });
-
-    return sorted;
+    return formedArr.sort((a: Solve, b: Solve) => a.date.getTime() - b.date.getTime());
 }
 
 export function parseCsv(stringVal: string, splitter: string): Solve[] {
@@ -787,14 +798,13 @@ export function parseCsv(stringVal: string, splitter: string): Solve[] {
     const firstBreak = stringVal.indexOf("\n");
     const header = (firstBreak < 0 ? stringVal : stringVal.slice(0, firstBreak)).trim();
 
-    if (header.includes("id,date,dnf,time,solving_method")) {
-        return parseCubeastCsv(stringVal, splitter);
+    if (!header.includes("solve_id,date,total_time")) return parseCubeastCsv(stringVal, splitter);
+    const solves = parseAcubemyCsv(stringVal, splitter);
+    for (const solve of solves) for (const step of solve.steps) {
+        const turns = step.turns;
+        if (!consolidateStep(step)) continue;
+        solve.turns += step.turns - turns;
+        solve.tps = solve.time > 0 ? solve.turns / solve.time : 0;
     }
-
-    if (header.includes("solve_id,date,total_time")) {
-        return parseAcubemyCsv(stringVal, splitter);
-    }
-
-    // default to cubeast parser for backward compatibility
-    return parseCubeastCsv(stringVal, splitter);
+    return solves;
 }

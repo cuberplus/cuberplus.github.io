@@ -1,4 +1,4 @@
-import { getDnfReason, solveTime, type Solve } from './engine';
+import { getDnfReason, getPenaltyReasons, solveTime, type Solve } from './engine';
 import { Cube, isMove, movesOf } from './puzzle';
 import { analyzeCFOP, CFOP_STEPS, cfopFrame, cfopTiming, elapsedAt, f2lPair } from './cfop';
 import { movingAverages } from '../../shared/averages';
@@ -47,6 +47,19 @@ export async function readSolves(): Promise<Solve[]> {
   } finally { db.close(); }
 }
 
+export async function deleteSolve(id: string): Promise<void> {
+  const db = await database();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('solves', 'readwrite');
+      tx.objectStore('solves').delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onabort = () => reject(tx.error ?? new Error('Cannot delete local solve.'));
+    });
+  } finally { db.close(); }
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('timer-solve-deleted', { detail: id }));
+}
+
 const finite = (n: number): boolean => typeof n === 'number' && Number.isFinite(n);
 const text = (s: string, max = 1000): boolean => typeof s === 'string' && s.length <= max;
 
@@ -79,12 +92,16 @@ export function validateBackup(json: string, cube: Cube): Solve[] {
         !text(solve.startFacelets, 54) || !text(solve.reason) ||
         !finite(solve.duration) || solve.duration < 0 ||
         (solve.inspection !== undefined && (!finite(solve.inspection) || solve.inspection < 0)) ||
-        (solve.penalty !== undefined && solve.penalty !== 2000) ||
-        (solve.penaltyReason !== undefined && (solve.penaltyReason !== 'over-turn' || solve.penalty !== 2000)) ||
-        (solve.dnfReason !== undefined && (!['solve interrupted', 'solve aborted'].includes(solve.dnfReason) || solve.status !== 'incomplete')) ||
+        (solve.penalty !== undefined && (!finite(solve.penalty) || solve.penalty <= 0)) ||
+        (solve.penaltyReason !== undefined && (!text(solve.penaltyReason, 100) || !solve.penalty)) ||
+        (solve.dnfReason !== undefined && (!['solve interrupted', 'solve aborted', 'inspection', 'manual'].includes(solve.dnfReason) ||
+          solve.status === 'complete' || (solve.status === 'active' && solve.dnfReason !== 'inspection'))) ||
         !['active', 'complete', 'incomplete'].includes(solve.status) ||
         !['host', 'device-fit'].includes(solve.timingBasis) ||
         !Array.isArray(solve.moves)) throw new Error('Invalid solve record in backup.');
+    const reasons = getPenaltyReasons(solve);
+    if (reasons.some(reason => !['over-turn', 'inspection', 'manual'].includes(reason)) || new Set(reasons).size !== reasons.length ||
+        reasons.length * 2000 !== (solve.penalty ?? 0)) throw new Error('Invalid solve record in backup.');
     ids.add(solve.id);
     const pattern = cube.parse(solve.startFacelets);
     if (!cube.equals(pattern, cube.solved().applyAlg(solve.scramble))) throw new Error('Solve start does not match its scramble.');
@@ -96,8 +113,8 @@ export function validateBackup(json: string, cube: Cube): Solve[] {
           (move.serial !== undefined && (!Number.isInteger(move.serial) || move.serial < 0)) ||
           (i === 0 ? move.elapsed !== 0 : move.elapsed < solve.moves[i - 1].elapsed)) throw new Error('Invalid move timeline.');
     });
-    if (solve.status === 'complete' && (!solve.moves.length || !cube.isSolved(pattern.applyAlg(solve.moves.map(move => move.move).join(' '))))) throw new Error('Completed solve does not end solved.');
-    const restored: Solve = solve.status === 'active' ? { ...solve, status: 'incomplete', reason: 'Interrupted attempt recovered from backup.', dnfReason: 'solve interrupted' } : { ...solve };
+    if ((solve.status === 'complete' || solve.dnfReason === 'manual') && (!solve.moves.length || !cube.isSolved(pattern.applyAlg(solve.moves.map(move => move.move).join(' '))))) throw new Error('Completed solve does not end solved.');
+    const restored: Solve = solve.status === 'active' ? { ...solve, status: 'incomplete', reason: 'Interrupted attempt recovered from backup.', dnfReason: solve.dnfReason ?? 'solve interrupted' } : { ...solve };
     Reflect.deleteProperty(restored, 'orientations');
     if (restored.penalty === 2000) restored.penaltyReason ??= 'over-turn';
     if (restored.status === 'incomplete') restored.dnfReason = getDnfReason(restored);
@@ -133,7 +150,7 @@ export function numberedSolves(solves: Solve[]): { solve: Solve; number: number 
 export function averageDetails(solves: Solve[], count: number, best = false): {
   time: number | 'DNF'; solves: { solve: Solve; trimmed: 'best' | 'worst' | null }[];
 } | null {
-  const finished = solves.filter(solve => solve.status !== 'active');
+  const finished = solves.filter(solve => solve.status !== 'active' && (!best || solve.session !== 'Retries'));
   const stats = rollingAverages((best ? finished : finished.slice(0, count)).map(averageValue), count);
   if (stats.current === null) return null;
   const start = best ? stats.bestStart : 0, window = finished.slice(start, start + count);
@@ -147,17 +164,18 @@ export function averageDetails(solves: Solve[], count: number, best = false): {
   };
 }
 export function sessionStats(solves: Solve[]): { name: string; current: number | 'DNF' | null; best: number | 'DNF' | null }[] {
-  const values = solves.filter(s => s.status !== 'active').map(averageValue), latest = solves.find(s => s.status !== 'active');
+  const finished = solves.filter(s => s.status !== 'active'), values = finished.map(averageValue), latest = finished[0];
+  const records = finished.every(solve => solve.session !== 'Retries') ? values : finished.filter(solve => solve.session !== 'Retries').map(averageValue);
   return [
-    { name: 'Single', current: !latest ? null : latest.status === 'complete' ? solveTime(latest) : 'DNF', best: averageResult(values.length ? values.reduce((best, value) => Math.min(best, value), Infinity) : null) },
+    { name: 'Single', current: !latest ? null : latest.status === 'complete' ? solveTime(latest) : 'DNF', best: averageResult(records.length ? records.reduce((best, value) => Math.min(best, value), Infinity) : null) },
     ...[5, 12, 100, 1000].map(count => {
       const { current, best } = rollingAverages(values, count);
-      return { name: `Ao${count}`, current: averageResult(current), best: averageResult(best) };
+      return { name: `Ao${count}`, current: averageResult(current), best: averageResult(records === values ? best : rollingAverages(records, count).best) };
     }),
   ];
 }
 export function newPersonalBests(previous: Solve[], solve: Solve): { name: string; time: number }[] {
-  if (solve.status === 'active') return [];
+  if (solve.status === 'active' || solve.session === 'Retries') return [];
   const session = previous.filter(item => item.session === solve.session && item.id !== solve.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const before = sessionStats(session), finished = [solve, ...session.filter(item => item.status !== 'active')];
@@ -194,17 +212,18 @@ export const formatTime = (milliseconds: number, precision: 2 | 3 = 2): string =
 const cubeastColumns = 'id,date,dnf,time,solving_method,device_name,device_model,device_color_scheme,user,one_turn_away_two_second_penalty,inspection_two_second_penalty,inspection_time,timer_time,missing_turn,solution,timer,description,session_name,session_ruleset,scramble,scramble_provider,ruleset,share_views,share_likes,share_comments,analysis_version,solution_rotation,pickup_time,putdown_time,solving_time,slice_turns,face_turns,quarter_turns,turns_per_second,total_recognition_time,total_execution_time,turns_after_solution,steps_skipped'.split(',').concat(
   Array.from({ length: 9 }, (_, i) => 'name,moves,recorded_moves,skipped,has_turns,time,recognition_time,execution_time,cumulative_time,slice_turns,face_turns,quarter_turns,turns_per_second'.split(',').map(field => `step_${i}_${field}`)).flat(),
   Array.from({ length: 9 }, (_, i) => `step_${i}_case`),
-  'first_f2l_pair',
+  'first_f2l_pair', 'manual_two_second_penalty', 'penalty_reason', 'dnf_reason',
 );
 const csvCell = (value: string | number | boolean): string => /[",\r\n]/.test(String(value)) ? `"${String(value).replace(/"/g, '""')}"` : String(value);
 export function cubeastCSV(solves: Solve[], cube: Cube): string {
   const rows = solves.filter(solve => solve.status !== 'active').map(solve => {
-    const duration = solve.status === 'complete' ? Math.round(solve.duration) : '';
+    const duration = solve.status === 'complete' ? Math.round(solve.duration) : '', penalties = getPenaltyReasons(solve);
     const analysis = analyzeCFOP(solve, cube), frame = cfopFrame(cube, analysis.cross ?? 3);
     const values: Record<string, string | number | boolean> = {
       id: solve.id, date: new Date(solve.createdAt).toISOString().slice(0, 19).replace('T', ' ') + ' UTC',
       dnf: solve.status !== 'complete', time: solve.status === 'complete' ? Math.round(solveTime(solve)) : '', timer_time: duration, solving_time: duration,
-      one_turn_away_two_second_penalty: solve.penalty === 2000,
+      one_turn_away_two_second_penalty: penalties.includes('over-turn'), inspection_two_second_penalty: penalties.includes('inspection'),
+      manual_two_second_penalty: penalties.includes('manual'), penalty_reason: penalties.join(', '), dnf_reason: solve.status === 'incomplete' ? getDnfReason(solve) : '',
       inspection_time: solve.inspection === undefined ? '' : Math.round(solve.inspection),
       device_name: solve.device, session_name: solve.session, scramble: solve.scramble, scramble_provider: 'random_state',
       first_f2l_pair: f2lPair(analysis.pairs[0], analysis.cross),

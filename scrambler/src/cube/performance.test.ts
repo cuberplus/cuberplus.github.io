@@ -1,7 +1,7 @@
 /** @jest-environment node */
 import { applyMoves, parseAlgorithm, randomScramble, solvedCube } from './cube';
 import { WorksheetRow, generateWorksheet } from './generation';
-import { DEFAULT_SETTINGS, Solver } from './solver';
+import { DEFAULT_SETTINGS, Solver, solutionLength } from './solver';
 import { bruteDistance, seededRandom, verifySolution } from './testHelpers';
 
 jest.setTimeout(60000);
@@ -70,6 +70,7 @@ test('10 XX-Cross solves with two fixed diagonal pairs complete within 5 seconds
 test.each([
   { label: '4–5 X-Cross', settings: { ...DEFAULT_SETTINGS, minimum: 4, maximum: 5 } },
   { label: '3–6 X-Cross', settings: { ...DEFAULT_SETTINGS, minimum: 3, maximum: 6 } },
+  { label: '2–5 QTM X-Cross', settings: { ...DEFAULT_SETTINGS, metric: 'QTM' as const, minimum: 2, maximum: 5 } },
   { label: 'White Cross', settings: {
     ...DEFAULT_SETTINGS, mode: 'cross' as const, cross: 'White' as const, minimum: 3, maximum: 6,
   } },
@@ -86,7 +87,7 @@ test.each([
     if (event.type === 'row') rows.push(event.row);
   }, { scramble: () => randomScramble(25, random), yieldControl: () => Promise.resolve() });
   const counts = Array.from({ length: settings.maximum - settings.minimum + 1 }, (_, i) =>
-    rows.filter(row => row.moves.length === settings.minimum + i).length);
+    rows.filter(row => solutionLength(row.moves, settings.metric) === settings.minimum + i).length);
   expect(rows).toHaveLength(20);
   expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
   expect(new Set(rows.map(row => row.scramble)).size).toBe(20);
@@ -95,24 +96,24 @@ test.each([
     expect(faces.every((face, i) => i === 0 || face !== faces[i - 1])).toBe(true);
     expect(faces.every((face, i) => i < 2 || face !== faces[i - 2] || face % 3 !== faces[i - 1] % 3)).toBe(true);
     verifySolution(applyMoves(solvedCube(), parseAlgorithm(row.scramble)), row, settings);
-    expect(solver.solve(row.scramble, settings)?.moves.length).toBe(row.moves.length);
+    expect(solutionLength(solver.solve(row.scramble, settings)!.moves, settings.metric)).toBe(solutionLength(row.moves, settings.metric));
   }
   const elapsed = performance.now() - started;
   console.info(`${label} balanced worksheet: ${elapsed.toFixed(0)} ms; lengths ${counts.join('/')}`);
   expect(elapsed).toBeLessThan(5000);
 });
 
-test('zero-to-two-turn balanced cases agree with independent exhaustive search', async () => {
+test.each(['HTM', 'QTM'] as const)('zero-to-two-turn %s balanced cases agree with independent exhaustive search', async metric => {
   const settings = { ...DEFAULT_SETTINGS, mode: 'cross' as const, cross: 'White' as const,
-    minimum: 0, maximum: 2, count: 6 };
+    metric, minimum: 0, maximum: 2, count: 6 };
   const rows: WorksheetRow[] = [], random = seededRandom(307);
   await generateWorksheet(settings, solver, event => {
     if (event.type === 'row') rows.push(event.row);
   }, { scramble: () => randomScramble(25, random), yieldControl: () => Promise.resolve() });
-  expect(rows.map(row => row.moves.length)).toEqual([0, 1, 2, 0, 1, 2]);
+  expect(rows.map(row => solutionLength(row.moves, metric))).toEqual([0, 1, 2, 0, 1, 2]);
   for (const row of rows) {
     const scrambled = applyMoves(solvedCube(), parseAlgorithm(row.scramble));
     verifySolution(scrambled, row, settings);
-    expect(bruteDistance(scrambled, settings, 2)).toBe(row.moves.length);
+    expect(bruteDistance(scrambled, settings, 2)).toBe(solutionLength(row.moves, metric));
   }
 });

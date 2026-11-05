@@ -9,7 +9,7 @@ import { SettingsContext, usePageDialog } from '@cuberplus/navigation';
 export default function AnalyzerReplay({ id, close }: { id: string; close: () => void }) {
   const { precision } = useContext(SettingsContext);
   const dialog = useRef<HTMLDialogElement>(null);
-  const [data, setData] = useState<{ solve: Solve; cube: Cube } | null>(null);
+  const [data, setData] = useState<{ solve: Solve; cube: Cube; history: Solve[] } | null>(null);
   const [error, setError] = useState('');
   usePageDialog(dialog);
   useEffect(() => {
@@ -17,13 +17,13 @@ export default function AnalyzerReplay({ id, close }: { id: string; close: () =>
     Promise.all([readSolves(), loadCube()]).then(([solves, cube]) => {
       const solve = solves.find(solve => solve.id === id && solve.status !== 'active');
       if (!solve) throw new Error('This solve is no longer saved in Timer.');
-      if (!cancelled) setData({ solve, cube });
+      if (!cancelled) setData({ solve, cube, history: solves });
     }).catch(error => { if (!cancelled) setError(error instanceof Error ? error.message : 'Unable to load this solve.'); });
     return () => { cancelled = true; };
   }, [id]);
   return data ? <Replay {...data} close={close} precision={precision} /> :
     <dialog ref={dialog} className="replay-dialog" aria-label="Solve replay" onCancel={event => { event.preventDefault(); close(); }}>
       <p role={error ? 'alert' : 'status'}>{error || 'Loading solve replay…'}</p>
-      <button autoFocus className="btn btn-outline-secondary" onClick={close}>Close replay</button>
+      <button autoFocus className="btn btn-outline-secondary" onClick={close}>Close</button>
     </dialog>;
 }

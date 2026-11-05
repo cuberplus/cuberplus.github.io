@@ -1,13 +1,30 @@
 /** @jest-environment node */
 import { GenerationEvent, generateWorksheet } from './generation';
 import { MOVES, applyMoves, parseAlgorithm, solvedCube } from './cube';
-import { DEFAULT_SETTINGS, Solution } from './solver';
+import { DEFAULT_SETTINGS, Solution, solutionLength } from './solver';
 
 const result = (length: number): Solution => ({
   moves: Array(length).fill(0), algorithm: Array(length).fill('U').join(' '),
   cross: 'White', pairs: ['Blue / Red'], nodes: 1, elapsedMs: 1,
 });
 const immediate = () => Promise.resolve();
+
+test('QTM balances weighted lengths and splits half turns when a one-quarter-turn suffix is needed', async () => {
+  const events: GenerationEvent[] = [], seeds = ['R2', 'F2'];
+  const solve = jest.fn().mockReturnValueOnce({ ...result(1), moves: parseAlgorithm('R2') })
+    .mockReturnValueOnce({ ...result(1), moves: parseAlgorithm('F2') });
+  await generateWorksheet({ ...DEFAULT_SETTINGS, metric: 'QTM', minimum: 1, maximum: 2, count: 2 },
+    { solve }, event => events.push(event),
+    { scramble: () => seeds.shift()!, yieldControl: immediate });
+  const rows = events.flatMap(event => event.type === 'row' ? [event.row] : []);
+  expect(rows.map(row => solutionLength(row.moves, 'QTM'))).toEqual([1, 2]);
+  expect(rows.map(row => row.algorithm)).toEqual(['R', 'F2']);
+  expect(rows.map(row => row.scramble)).toEqual(["R'", 'F2']);
+  for (const row of rows) {
+    expect(applyMoves(solvedCube(), [...parseAlgorithm(row.scramble), ...row.moves])).toEqual(solvedCube());
+  }
+  expect(solve.mock.calls.every(([, settings]) => settings.metric === 'QTM')).toBe(true);
+});
 
 test('inclusive bounds balance optimal lengths, duplicate seeds are skipped, and IDs are consecutive', async () => {
   const events: GenerationEvent[] = [];

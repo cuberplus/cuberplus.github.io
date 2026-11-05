@@ -87,6 +87,28 @@ test('rows are sorted by HTM, diagrams are inline SVGs, and column subsets and b
   expect(screen.queryByRole('columnheader', { name: 'My first pair' })).not.toBeInTheDocument();
 });
 
+test('QTM is sent to the solver and used for worksheet counts and sorting without relabeling the previous batch', () => {
+  const { container } = render(<App />);
+  addRows();
+  const metric = screen.getByLabelText('Move metric');
+  expect(metric).toHaveValue('HTM');
+  fireEvent.change(metric, { target: { value: 'QTM' } });
+  expect(screen.getByText(/A half turn counts as two moves/)).toBeInTheDocument();
+  expect(container.querySelector('.turn-count small')).toHaveTextContent('HTM');
+  fireEvent.click(screen.getByRole('button', { name: /Generate worksheet/ }));
+  expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ metric: 'QTM' }));
+  for (const [id, moves, algorithm] of [[1, [1, 4], 'U2 R2'], [2, [0, 3, 6], 'U R F']] as const) {
+    emit({ type: 'row', row: { id, scramble: 'R U F2', moves: [...moves], algorithm, cross: 'White', pairs: [], nodes: 1, elapsedMs: 1 } });
+  }
+  emit({ type: 'done', attempts: 2, elapsedMs: 30 });
+  const rows = screen.getAllByRole('row').slice(1);
+  expect(rows[0].querySelector('.turn-count')).toHaveTextContent('3QTM');
+  expect(rows[1].querySelector('.turn-count')).toHaveTextContent('4QTM');
+  expect(container.querySelector('.worksheet-heading')).toHaveTextContent('2–20 QTM');
+  fireEvent.change(metric, { target: { value: 'HTM' } });
+  expect(rows[1].querySelector('.turn-count')).toHaveTextContent('4QTM');
+});
+
 test('XX-Cross options, fixed colors/pairs, turn bounds, printing, and cancellation are wired', () => {
   const print = jest.spyOn(window, 'print').mockImplementation(() => {});
   render(<App />);

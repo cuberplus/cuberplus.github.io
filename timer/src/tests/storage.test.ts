@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
-import { TimerEngine, type Solve } from '../engine';
+import { TimerEngine, setPenalty, type Solve } from '../engine';
+import { parseCsv } from '../../../smartcubeanalyzer/src/Helpers/CsvParser';
 import { Cube, inverse, loadCube, SOLVED } from '../puzzle';
 import { average, averageDetails, backupJSON, cubeastCSV, dailyStreak, newPersonalBests, personalBestNotifications, readSolves, saveSolves, sessionStats, turns, validateBackup } from '../storage';
 import { readTimerData } from '../analyzer-data';
@@ -191,6 +192,40 @@ test('penalties round-trip through local storage and backups without changing ra
   expect(validateBackup(backupJSON([restored]), cube)).toEqual([solve]);
 });
 
+test('stacked penalties retain all reasons through storage, backups, statistics and Analyzer CSV', async () => {
+  const solve = { ...sample(), duration: 3000 };
+  ['inspection', 'over-turn', 'manual'].forEach(reason => setPenalty(solve, reason as 'inspection' | 'over-turn' | 'manual'));
+  await saveSolves([solve]);
+  const saved = (await readSolves()).find(item => item.id === solve.id)!;
+  expect(validateBackup(backupJSON([saved]), cube)).toEqual([solve]);
+  expect(sessionStats([solve])[0]).toMatchObject({ current: 9000, best: 9000 });
+  expect(average(Array.from({ length: 5 }, () => solve), 5)).toBe(9000);
+  const csv = cubeastCSV([saved], cube), [analyzed] = parseCsv(csv, ',');
+  expect(csv).toContain('"inspection, over-turn, manual"');
+  expect(analyzed).toMatchObject({ time: 9, dnf: false });
+  expect(solve.duration).toBe(3000);
+});
+
+test.each(['manual', 'inspection'] as const)('completed %s DNFs retain their reconstruction and reason through backups and Analyzer', dnfReason => {
+  const solve: Solve = { ...sample(), status: 'incomplete', dnfReason };
+  expect(validateBackup(backupJSON([solve]), cube)).toEqual([solve]);
+  const csv = cubeastCSV([solve], cube), [header, line] = csv.split('\r\n');
+  const row = Object.fromEntries(header.split(',').map((column, i) => [column, line.split(',')[i]]));
+  expect(row).toMatchObject({ dnf: 'true', dnf_reason: dnfReason, step_6_moves: "U'" });
+  expect(parseCsv(csv, ',')[0].dnf).toBe(true);
+});
+
+test('an active inspection DNF recovers without losing its inspection reason', () => {
+  const solve: Solve = { ...sample(), status: 'active', dnfReason: 'inspection' };
+  expect(validateBackup(backupJSON([solve]), cube)[0]).toMatchObject({ status: 'incomplete', dnfReason: 'inspection' });
+});
+
+test('a manual DNF cannot disguise an unfinished timeline that could be restored as complete', () => {
+  const solve: Solve = { ...sample(), status: 'incomplete', dnfReason: 'manual' };
+  solve.moves = solve.moves.slice(0, 1);
+  expect(() => validateBackup(backupJSON([solve]), cube)).toThrow('does not end solved');
+});
+
 test('legacy penalties and DNFs receive reasons, including recovered active attempts', () => {
   const seed = sample();
   const restored = validateBackup(backupJSON([
@@ -207,6 +242,10 @@ test('legacy penalties and DNFs receive reasons, including recovered active atte
 test.each([
   { penalty: 2000, penaltyReason: 'invalid' },
   { penaltyReason: 'over-turn' },
+  { penalty: 4000, penaltyReason: 'manual, manual' },
+  { penalty: 4000, penaltyReason: 'inspection' },
+  { penalty: 2000, penaltyReason: 123 },
+  { status: 'active', dnfReason: 'manual' },
   { status: 'incomplete', dnfReason: 'invalid' },
   { dnfReason: 'solve aborted' },
 ])('rejects invalid penalty reason fields %j', fields => {
@@ -351,6 +390,27 @@ test('PB detection respects session boundaries, penalties, ties and incomplete a
   expect(newPersonalBests(previous, { ...seed, session: 'Other', duration: 20000 })).toEqual([{ name: 'Single', time: 20000 }]);
 });
 
+test.each([5, 12, 100, 1000])('retries retain current Single/Ao%s statistics without setting records or triggering PBs', count => {
+  const seed = sample();
+  const retries = Array.from({ length: count }, (_, i) => ({ ...seed, id: `retry-${i}`, session: 'Retries', duration: 1000 }));
+  expect(newPersonalBests(retries.slice(1), retries[0])).toEqual([]);
+  expect(sessionStats(retries).find(stat => stat.name === 'Single')).toEqual({ name: 'Single', current: 1000, best: null });
+  expect(sessionStats(retries).find(stat => stat.name === `Ao${count}`)).toEqual({ name: `Ao${count}`, current: 1000, best: null });
+  expect(averageDetails(retries, count)?.time).toBe(1000);
+  expect(averageDetails(retries, count, true)).toBeNull();
+});
+
+test('fast retries cannot replace ordinary single or average records or their detail windows', () => {
+  const seed = sample();
+  const regular = [10000, 11000, 12000, 13000, 14000].map((duration, i) => ({ ...seed, id: `regular-${i}`, duration }));
+  const retries = regular.map(solve => ({ ...solve, id: `retry-${solve.id}`, session: 'Retries', duration: 1000 }));
+  const stats = sessionStats([...retries, ...regular]);
+  expect(stats.find(stat => stat.name === 'Single')).toEqual({ name: 'Single', current: 1000, best: 10000 });
+  expect(stats.find(stat => stat.name === 'Ao5')).toEqual({ name: 'Ao5', current: 1000, best: 12000 });
+  expect(averageDetails([...retries, ...regular], 5, true)?.solves.map(item => item.solve.id)).toEqual(regular.map(solve => solve.id).reverse());
+  expect(newPersonalBests([...retries, ...regular], { ...seed, duration: 9000 })).toEqual(newPersonalBests(regular, { ...seed, duration: 9000 }));
+});
+
 test('a slower newest Ao12 does not re-celebrate an unchanged historical PB due to rounding drift', () => {
   const seed = sample();
   const previous = [11061.2, 11049.64, 12629.46, 12904.71, 13730.08, 11337.38, 12487.66, 12645.04, 12788.3, 13350.35, 11119.56, 11000]
@@ -474,11 +534,11 @@ test('Cubeast CSV matches the sample schema and records milliseconds, UTC dates,
   solve.moves[1].elapsed = 1234.56;
   solve.duration = 1234.56;
   const [header, line, trailing] = cubeastCSV([solve], cube).split('\r\n');
-  expect(header).toBe(`${cubeastHeader},first_f2l_pair`);
+  expect(header).toBe(`${cubeastHeader},first_f2l_pair,manual_two_second_penalty,penalty_reason,dnf_reason`);
   expect(trailing).toBe('');
   const columns = header.split(',');
   const cells = line.split(',');
-  expect(cells).toHaveLength(165);
+  expect(cells).toHaveLength(168);
   const row = Object.fromEntries(columns.map((column, i) => [column, cells[i]]));
   expect(row).toMatchObject({
     id: solve.id, date: '2026-10-31 15:22:52 UTC', dnf: 'false', time: '1235',
@@ -556,8 +616,8 @@ test('Cubeast CSV excludes active attempts, includes incomplete attempts as DNFs
   expect(first.split(',')[0]).toBe(complete.id);
   const columns = header.split(','), cells = second.split(',');
   const row = Object.fromEntries(columns.map((column, i) => [column, cells[i]]));
-  expect(cells).toHaveLength(165);
+  expect(cells).toHaveLength(168);
   expect(row).toMatchObject({ dnf: 'true', time: '', timer_time: '', solving_time: '', session_name: 'Other', description: 'Disconnected.' });
   expect(row.solution).toBe("U2[0] R'[100]");
-  expect(cubeastCSV([], cube)).toBe(cubeastHeader + ',first_f2l_pair\r\n');
+  expect(cubeastCSV([], cube)).toBe(cubeastHeader + ',first_f2l_pair,manual_two_second_penalty,penalty_reason,dnf_reason\r\n');
 });

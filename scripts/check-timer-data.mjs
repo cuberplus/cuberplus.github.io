@@ -46,6 +46,13 @@ async function checkAverage(average, numbers) {
   await expect(table.locator('tbody th')).toHaveText(numbers.map(String));
 }
 
+async function dismissCelebrations(page) {
+  for (const name of ['Dismiss personal best', 'Dismiss daily streak']) {
+    const buttons = page.getByRole('button', { name, exact: true });
+    while (await buttons.count()) await buttons.last().click();
+  }
+}
+
 async function clickChartPoint(page, title, datasetIndex = 0, index = -1) {
   const canvas = page.getByRole('region', { name: title, exact: true }).locator('canvas');
   await canvas.scrollIntoViewIfNeeded();
@@ -121,7 +128,10 @@ try {
   for (let i = 0; i < 100 && !await solve.isEnabled(); i++) await guided.click();
   await expect(solve).toBeEnabled();
   await solve.click();
+  await expect(page.locator('.trail-tip')).toBeVisible();
   await expect(page.getByRole('table', { name: 'Solve history' }).locator('tbody tr')).toHaveCount(1, { timeout: 30000 });
+  await expect(page.locator('.trail-tip')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Solve mistakes', exact: true })).toContainText(/Biggest mistake:|No clear mistakes detected/);
   await page.waitForTimeout(1000);
   const [seed] = await database(page);
   expect(seed.status).toBe('complete');
@@ -200,6 +210,37 @@ try {
   await page.locator('.clickable-grid').getByRole('gridcell', { name: '12.000', exact: true }).click();
   const replay = page.getByRole('dialog', { name: 'Solve replay', exact: true });
   await expect(replay).toBeVisible({ timeout: 60000 });
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const header = replay.locator('.replay-header');
+    await expect(header.locator('a, button')).toHaveText(['Delete', 'Retry', 'Close']);
+    await expect(header).not.toContainText(/Solve replay|complete|host timing|quarter turns/i);
+    await expect(header.getByLabel('Solve time', { exact: true })).toHaveText('12.000s');
+    expect(await header.getByLabel('Solve time', { exact: true }).evaluate(time =>
+      parseFloat(getComputedStyle(time).fontSize) > parseFloat(getComputedStyle(time.parentElement).fontSize))).toBe(true);
+    const inspection = header.getByLabel('Inspection time', { exact: true });
+    const turns = inspection.locator('xpath=preceding-sibling::span');
+    await expect(turns).toHaveText(/^\d+ turns$/);
+    const [turnBox, inspectionBox] = await Promise.all([turns.boundingBox(), inspection.boundingBox()]);
+    expect(inspectionBox.x).toBeGreaterThan(turnBox.x + turnBox.width);
+    expect(Math.abs(inspectionBox.y - turnBox.y)).toBeLessThan(5);
+    expect(await replay.evaluate(dialog => dialog.scrollWidth <= dialog.clientWidth)).toBe(true);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect(replay.getByRole('region', { name: 'Solve mistakes', exact: true })).toBeVisible();
+  await expect(replay.locator(':scope > :last-child')).toHaveAttribute('aria-label', 'Solve mistakes');
+  await expect(replay).not.toContainText('Ranked by estimated impact');
+  const mistakeInfo = replay.getByRole('region', { name: 'Solve mistakes', exact: true }).getByRole('button', { name: /^About / }).first();
+  if (await mistakeInfo.count()) {
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await mistakeInfo.click();
+      await expect(replay.getByRole('tooltip')).toBeVisible();
+      await page.getByRole('button', { name: 'Next move', exact: true }).focus();
+      await expect(replay.getByRole('tooltip')).toHaveCount(0);
+    }
+    await page.setViewportSize({ width: 1440, height: 1000 });
+  }
   await expect(replay.getByLabel('Solution orientation', { exact: true })).toHaveCount(0);
   const initialRotation = replay.getByLabel('Initial rotation', { exact: true });
   if (await initialRotation.count()) await expect(replay.getByRole('group', { name: 'Cross solution', exact: true }).locator('.move').first()).toHaveAttribute('aria-label', 'Initial rotation');
@@ -235,7 +276,7 @@ try {
       await average.locator('tbody button').first().click();
       await expect(replay).toBeVisible();
       await page.getByRole('button', { name: 'Next move', exact: true }).click();
-      await page.getByRole('button', { name: 'Close replay', exact: true }).click();
+      await page.getByRole('button', { name: 'Close', exact: true }).click();
       await expect(replay).toHaveCount(0);
       await expect(average).toBeVisible();
       await average.getByRole('button', { name: 'Close average', exact: true }).click();
@@ -260,7 +301,7 @@ try {
   }), seed.id);
   await page.locator('.clickable-grid').getByRole('gridcell', { name: '12.000', exact: true }).click();
   await expect(replay.getByRole('alert')).toHaveText('This solve is no longer saved in Timer.');
-  await page.getByRole('button', { name: 'Close replay', exact: true }).click();
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(replay).toHaveCount(0);
   await expect(page).toHaveURL(`${base}/smartcubeanalyzer/`);
   expect(popups).toBe(0);
@@ -269,8 +310,8 @@ try {
   await choose.click();
   await (await csvChooser).setFiles({
     name: 'numbered-solves.csv', mimeType: 'text/csv',
-    buffer: Buffer.from('id,date,dnf,time,solving_method,first_f2l_pair\n' + Array.from({ length: 80 }, (_, i) =>
-      `numbered-${i},${new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString().replace('T', ' ').replace('.000Z', ' UTC')},false,${12000 + i * 100},CFOP,${i % 2 ? 'Orange/Blue' : 'Red/Green'}`).join('\n')),
+    buffer: Buffer.from('id,date,dnf,time,solving_method,first_f2l_pair,step_0_name,step_0_slice_turns\n' + Array.from({ length: 80 }, (_, i) =>
+      `numbered-${i},${new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString().replace('T', ' ').replace('.000Z', ' UTC')},false,${12000 + i * 100},CFOP,${i % 2 ? 'Orange/Blue' : 'Red/Green'},Cross,${i % 2 ? 7 : 9}`).join('\n')),
   });
   await displayCsv.click();
   await filters.click();
@@ -287,7 +328,158 @@ try {
   await expect(pairAverage).toBeVisible();
   await expect(pairAverage.locator('tbody th')).toHaveText(['69', '71', '73']);
   await page.keyboard.press('Escape');
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.getByRole('region', { name: 'Mistakes', exact: true }).getByRole('button', { name: 'View solves with Cross: Inefficient solution', exact: true }).click();
+    const mistakes = page.getByRole('dialog', { name: 'Cross: Inefficient solution (2 solves)', exact: true });
+    await expect(mistakes).toBeVisible();
+    await expect(mistakes.locator('tbody th')).toHaveText(['77', '79']);
+    await page.keyboard.press('Escape');
+  }
+  for (const width of [1440, 390]) {
+    const context = await browser.newContext({ viewport: { width, height: 1000 } });
+    await context.addInitScript(() => localStorage.setItem('theme', 'dark'));
+    const penaltyPage = await context.newPage();
+    penaltyPage.on('pageerror', error => errors.push(error.message));
+    await penaltyPage.clock.install();
+    await penaltyPage.goto(`${base}/timer/`);
+    await expect(penaltyPage.getByText('Try simulated cube', { exact: true })).toBeEnabled({ timeout: 60000 });
+    await database(penaltyPage, [{ ...seed, duration: 10000, session: 'Default', penalty: 4000, penaltyReason: 'inspection, over-turn' }]);
+    await penaltyPage.reload();
+    await penaltyPage.getByRole('button', { name: 'Options', exact: true }).click();
+    const inspection = penaltyPage.getByRole('checkbox', { name: '15-second inspection', exact: true });
+    await expect(inspection).not.toBeChecked();
+    await inspection.check();
+    await penaltyPage.reload();
+    await penaltyPage.getByRole('button', { name: 'Options', exact: true }).click();
+    await expect(inspection).toBeChecked();
+    await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
+    await penaltyPage.getByRole('button', { name: 'View', exact: true }).click();
+    let replay = penaltyPage.getByRole('dialog', { name: 'Solve replay', exact: true });
+    await replay.getByRole('checkbox', { name: 'Manual +2', exact: true }).check();
+    await expect(replay.getByLabel('Penalty reason', { exact: true })).toHaveText('+6 reasons: inspection, over-turn, manual');
+    await replay.getByRole('checkbox', { name: 'Manual DNF', exact: true }).check();
+    await expect(replay.getByLabel('Penalty reason', { exact: true }).first()).toHaveText('DNF reason: manual');
+    await expect.poll(async () => (await database(penaltyPage))[0]).toMatchObject({ status: 'incomplete', dnfReason: 'manual', penalty: 6000 });
+    await penaltyPage.reload();
+    await penaltyPage.getByRole('button', { name: 'View', exact: true }).click();
+    replay = penaltyPage.getByRole('dialog', { name: 'Solve replay', exact: true });
+    await expect(replay.getByRole('checkbox', { name: 'Manual DNF', exact: true })).toBeChecked();
+    await expect(replay.getByRole('checkbox', { name: 'Manual +2', exact: true })).toBeChecked();
+    await replay.getByRole('checkbox', { name: 'Manual DNF', exact: true }).uncheck();
+    await replay.getByRole('checkbox', { name: 'Manual +2', exact: true }).uncheck();
+    await expect(replay.getByLabel('Penalty reason', { exact: true })).toHaveText('+4 reasons: inspection, over-turn');
+    await replay.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(penaltyPage.getByRole('button', { name: 'View current Single', exact: true })).toHaveText('14.00');
+    await penaltyPage.getByText('Try simulated cube', { exact: true }).evaluate(button => button.click());
+    const guided = penaltyPage.getByRole('button', { name: 'Perform guided move', exact: true });
+    const simulate = penaltyPage.getByRole('button', { name: 'Simulate solve', exact: true });
+    for (const [milliseconds, count, reason] of [[15000, 2, '+2'], [17000, 3, 'DNF']]) {
+      await expect(guided).toBeEnabled({ timeout: 60000 });
+      for (let i = 0; i < 100 && !await simulate.isEnabled(); i++) await guided.click();
+      await expect(simulate).toBeEnabled();
+      await penaltyPage.clock.fastForward(milliseconds);
+      await expect(penaltyPage.getByLabel('Inspection status', { exact: true })).toHaveText(`Inspection: ${reason}`);
+      await simulate.click();
+      await expect(penaltyPage.getByRole('table', { name: 'Solve history' }).locator('tbody tr')).toHaveCount(count, { timeout: 30000 });
+      await expect.poll(async () => (await database(penaltyPage)).filter(solve => solve.id !== seed.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0])
+        .toMatchObject(reason === '+2' ? { status: 'complete', penalty: 2000, penaltyReason: 'inspection' } : { status: 'incomplete', dnfReason: 'inspection' });
+      const latest = (await database(penaltyPage)).filter(solve => solve.id !== seed.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+      expect(latest).toMatchObject(reason === '+2' ? { status: 'complete', penalty: 2000, penaltyReason: 'inspection' } : { status: 'incomplete', dnfReason: 'inspection' });
+      expect(latest.inspection).toBeGreaterThanOrEqual(milliseconds);
+    }
+    await penaltyPage.getByRole('button', { name: 'Options', exact: true }).click();
+    await inspection.uncheck();
+    const session = penaltyPage.getByRole('textbox', { name: 'Session', exact: true });
+    await session.fill('Practice');
+    await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
+    const original = (await database(penaltyPage)).find(solve => solve.id === seed.id);
+    await dismissCelebrations(penaltyPage);
+    await penaltyPage.locator('.site-page--timer').getByRole('link', { name: 'Smartcube Analyzer', exact: true }).click();
+    await penaltyPage.getByRole('button', { name: 'Display My Stats!', exact: true }).click();
+    await penaltyPage.locator('.clickable-grid').getByRole('gridcell', { name: '14.00', exact: true }).click();
+    replay = penaltyPage.getByRole('dialog', { name: 'Solve replay', exact: true });
+    await expect(replay.getByRole('link', { name: 'Retry', exact: true })).toHaveAttribute('href', `/timer/?retry=${encodeURIComponent(seed.id)}`);
+    await replay.getByRole('link', { name: 'Retry', exact: true }).click();
+    await expect(penaltyPage).toHaveURL(new RegExp(`/timer/\\?retry=${encodeURIComponent(seed.id)}$`));
+    await expect(replay).toHaveCount(0);
+    await expect(penaltyPage.getByText('Retry will be saved in Retries, then return to Practice.', { exact: false })).toBeVisible();
+    await expect(guided).toBeEnabled({ timeout: 60000 });
+    for (let i = 0; i < 150 && !await simulate.isEnabled(); i++) await guided.click();
+    await expect(simulate).toBeEnabled();
+    await simulate.click();
+    await expect.poll(async () => (await database(penaltyPage)).filter(solve => solve.session === 'Retries' && solve.status === 'complete'), { timeout: 30000 }).toHaveLength(1);
+    let attempts = (await database(penaltyPage)).filter(solve => solve.session === 'Retries');
+    expect(attempts[0]).toMatchObject({ scramble: original.scramble, status: 'complete' });
+    expect(attempts[0].id).not.toBe(original.id);
+    expect((await database(penaltyPage)).find(solve => solve.id === seed.id)).toEqual(original);
+    await penaltyPage.clock.fastForward(501);
+    await dismissCelebrations(penaltyPage);
+    await penaltyPage.getByRole('button', { name: 'Options', exact: true }).click();
+    await expect(session).toHaveValue('Practice');
+    await expect(session).toBeEnabled();
+    await session.fill('Retries');
+    await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
+    await penaltyPage.getByRole('table', { name: 'Solve history' }).getByRole('button', { name: 'View', exact: true }).click();
+    replay = penaltyPage.getByRole('dialog', { name: 'Solve replay', exact: true });
+    await replay.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect(guided).toBeEnabled({ timeout: 60000 });
+    for (let i = 0; i < 150 && !await simulate.isEnabled(); i++) await guided.click();
+    await simulate.click();
+    await expect.poll(async () => (await database(penaltyPage)).filter(solve => solve.session === 'Retries' && solve.status === 'complete'), { timeout: 30000 }).toHaveLength(2);
+    await penaltyPage.reload();
+    attempts = (await database(penaltyPage)).filter(solve => solve.session === 'Retries');
+    expect(attempts).toHaveLength(2);
+    expect(attempts.every(solve => solve.scramble === original.scramble && solve.status === 'complete')).toBe(true);
+    await penaltyPage.goto(`${base}/timer/`);
+    await penaltyPage.getByRole('button', { name: 'Options', exact: true }).click();
+    await session.fill('Retries');
+    await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
+    await penaltyPage.getByRole('table', { name: 'Solve history' }).getByRole('button', { name: 'View', exact: true }).first().click();
+    replay = penaltyPage.getByRole('dialog', { name: 'Solve replay', exact: true });
+    await expect(replay.locator('.replay-header a, .replay-header button')).toHaveText(['Delete', 'Retry', 'Close']);
+    const deletedId = await replay.getByLabel('Solve ID', { exact: true }).locator('span').textContent();
+    const beforeDelete = await database(penaltyPage);
+    penaltyPage.once('dialog', async dialog => {
+      expect(dialog.type()).toBe('confirm');
+      expect(dialog.message()).toBe('Are you sure you want to delete this solve? This cannot be undone.');
+      await dialog.dismiss();
+    });
+    await replay.getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect(replay).toBeVisible();
+    expect(await database(penaltyPage)).toEqual(beforeDelete);
+    penaltyPage.once('dialog', dialog => dialog.accept());
+    await replay.getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect(replay).toHaveCount(0);
+    expect(await database(penaltyPage)).toEqual(beforeDelete.filter(solve => solve.id !== deletedId));
+    await expect(penaltyPage.getByRole('table', { name: 'Solve history' }).locator('tbody tr')).toHaveCount(1);
+    await penaltyPage.getByRole('button', { name: 'Options', exact: true }).click();
+    await session.fill('Default');
+    await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
+    await expect(penaltyPage.getByRole('table', { name: 'Solve history' }).locator('tbody tr')).toHaveCount(3);
+    await penaltyPage.locator('.site-page--timer').getByRole('link', { name: 'Smartcube Analyzer', exact: true }).click();
+    await penaltyPage.getByRole('button', { name: 'Display My Stats!', exact: true }).click();
+    await penaltyPage.locator('.clickable-grid').getByRole('gridcell', { name: '14.00', exact: true }).click();
+    await expect(replay.locator('.replay-header a, .replay-header button')).toHaveText(['Delete', 'Retry', 'Close']);
+    penaltyPage.once('dialog', async dialog => {
+      expect(dialog.type()).toBe('confirm');
+      expect(dialog.message()).toBe('Are you sure you want to delete this solve? This cannot be undone.');
+      await dialog.accept();
+    });
+    await replay.getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect(replay).toHaveCount(0);
+    await expect(penaltyPage.locator('.clickable-grid').getByRole('gridcell', { name: '14.00', exact: true })).toHaveCount(0);
+    expect(await database(penaltyPage)).toEqual(beforeDelete.filter(solve => solve.id !== deletedId && solve.id !== seed.id));
+    await penaltyPage.getByRole('navigation', { name: 'CuberPlus', exact: true }).getByRole('link', { name: 'Timer', exact: true }).click();
+    await expect(penaltyPage.getByRole('table', { name: 'Solve history' }).locator('tbody tr')).toHaveCount(2);
+    await penaltyPage.reload();
+    expect((await database(penaltyPage)).some(solve => solve.id === deletedId || solve.id === seed.id)).toBe(false);
+    await context.close();
+  }
   expect(errors).toEqual([]);
+  console.log('PASS desktop/mobile Timer and Analyzer retry: same scramble, separate persisted attempts in retries, original unchanged and previous session restored');
+  console.log('PASS desktop/mobile Delete before Retry: persisted individual deletion from Timer and Analyzer, refreshed charts and mounted Timer history, other solves preserved');
+  console.log('PASS desktop/mobile inspection count-up, automatic +2/DNF, stacked manual penalties, reasons, persistence and undo');
   console.log('PASS shared Timer/Analyzer averages: sortable Solve/Time/Turns/TPS/View, real chart solve numbers 69-73, preserved chop colors without strikethrough, identical dialog styling, inline replay, readonly loading, Escape, light/dark and mobile');
 } finally {
   await browser.close();

@@ -10,12 +10,13 @@
  * couple of entries. Each item must stay a single short label.
  */
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import React from 'react';
 import { FileInput } from '../Components/FileInput';
 import { DEMO_DATASETS, DEFAULT_DEMO_FILE } from '../Helpers/SampleData';
+import { parseCsv } from '../Helpers/CsvParser';
 
 const requested: string[] = [];
 
@@ -41,6 +42,19 @@ function openMenu() {
     render(React.createElement(FileInput));
     fireEvent.click(screen.getByLabelText('Choose demo data'));
 }
+
+test('deleted Timer solves leave the loaded Analyzer data without removing other sources with the same ID', () => {
+    const ref = React.createRef<FileInput>();
+    const { unmount } = render(React.createElement(FileInput, { ref }));
+    const [sample] = parseCsv('id,date,dnf,time,solving_method\nsame,2024-01-01 00:00:00 UTC,false,10000,CFOP', ',');
+    const keep = { ...sample, id: 'keep', source: 'timer' as const }, external = { ...sample, source: 'cubeast' as const };
+    act(() => ref.current!.setState({ solves: [{ ...sample, source: 'timer' }, keep, external] }));
+    act(() => window.dispatchEvent(new CustomEvent('timer-solve-deleted', { detail: sample.id })));
+    expect(ref.current!.state.solves).toEqual([keep, external]);
+    act(() => window.dispatchEvent(new CustomEvent('timer-solve-deleted', { detail: 'keep' })));
+    expect(ref.current!.state.solves).toEqual([external]);
+    unmount();
+});
 
 describe('the demo data picker', () => {
     test('the button is labelled Demo Data, on a single line', () => {

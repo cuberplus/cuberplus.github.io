@@ -35,7 +35,8 @@ export function analyzeCFOP(solve: Solve, cube: Cube) {
   };
   if (state.processed === 0) check(0);
   while (state.processed < solve.moves.length) { state.pattern = state.pattern.applyMove(solve.moves[state.processed].move); check(++state.processed); }
-  return { cross: state.cross, ends: solve.status === 'incomplete' ? state.ends.slice(0, 6) : state.ends, cases: solve.status === 'incomplete' ? state.cases.slice(0, 6) : state.cases, pairs: state.pairs };
+  const unfinished = solve.status === 'incomplete' && !(['manual', 'inspection'].includes(solve.dnfReason ?? '') && cube.isSolved(state.pattern));
+  return { cross: state.cross, ends: unfinished ? state.ends.slice(0, 6) : state.ends, cases: unfinished ? state.cases.slice(0, 6) : state.cases, pairs: state.pairs };
 }
 export const f2lPair = (corner: number | null | undefined, cross: number | null): string =>
   corner == null || cross === null ? '' : pairColors(corners[corner].filter(face => face !== cross));

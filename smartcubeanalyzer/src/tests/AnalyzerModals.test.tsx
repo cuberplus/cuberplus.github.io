@@ -40,6 +40,24 @@ function point(index: number, datasetIndex = 0): ActiveElement {
 }
 
 describe('Analyzer inline drill-down', () => {
+    test('mistake drill-down matches the counted window, exact step/AUF, corrupt exclusions, DNFs, and original numbers', () => {
+        const solves = makeSolves(9).map((solve, i) => ({
+            ...solve, source: 'timer' as const, dnf: i === 6, isCorrupt: i === 8,
+            mistakes: [{ kind: 'singleUndo' as const, step: i === 5 ? StepName.OLL : StepName.PLL, auf: i !== 7 }],
+        }));
+        const instance = panel({ solves, windowSize: 4 });
+        instance.openMistakes({ kind: 'singleUndo', step: StepName.PLL, auf: true });
+        expect(instance.state.average!.solves).toEqual([solves[4], solves[6]]);
+        expect(instance.state.average!.numbers).toEqual([5, 7]);
+        expect(instance.state.average!.percentage).toBe(0);
+        render(<AverageModal {...instance.state.average!} close={() => undefined} view={solve => instance.openSolveSource(solve)} />);
+        expect(screen.getByRole('heading', { name: 'PLL AUF: Single-move undo (2 solves)' })).not.toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'View solve 7' }));
+        expect(instance.state.replayId).toBe(solves[6].id);
+        instance.openMistakes({ kind: 'crossMoves' });
+        expect(instance.state.average!.numbers).toEqual([5, 7]);
+    });
+
     test('a local Timer row selects inline replay without opening or encoding a URL', () => {
         const instance = panel();
         const open = jest.spyOn(window, 'open').mockReturnValue(null);

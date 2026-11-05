@@ -33,22 +33,24 @@ export async function generateWorksheet(settings: Settings, solver: Pick<Solver,
     if (!seen.has(seed)) {
       seen.add(seed);
       const solution = solver.solve(seed, searchSettings, Math.min(30000, remaining));
-      if (solution && solution.moves.length >= settings.minimum) {
-        highest = Math.max(highest, Math.min(solution.moves.length, settings.maximum));
+      const turns = settings.metric === 'QTM'
+        ? solution?.moves.flatMap(move => move % 3 === 1 ? [move - 1, move - 1] : [move]) : solution?.moves;
+      if (solution && turns && turns.length >= settings.minimum) {
+        highest = Math.max(highest, Math.min(turns.length, settings.maximum));
         const least = Math.min(...counts.slice(0, highest - settings.minimum + 1));
         let length = settings.minimum;
-        for (let candidate = length + 1; candidate <= Math.min(solution.moves.length, settings.maximum); candidate++) {
+        for (let candidate = length + 1; candidate <= Math.min(turns.length, settings.maximum); candidate++) {
           if (counts[candidate - settings.minimum] < counts[length - settings.minimum]) length = candidate;
         }
-        const prefix = solution.moves.length - length;
+        const prefix = turns.length - length;
         // Every suffix of a globally shortest solution is itself globally shortest.
-        const scramble = simplifyMoves([...parseAlgorithm(seed), ...solution.moves.slice(0, prefix)])
+        const scramble = simplifyMoves([...parseAlgorithm(seed), ...turns.slice(0, prefix)])
           .map(move => MOVES[move]).join(' ');
         // Retry easy seeds briefly when a harder length is behind, without stalling on rare lengths.
         if (!emitted.has(scramble) &&
             (counts[length - settings.minimum] === least || ++balancingMisses >= 8)) {
           emitted.add(scramble);
-          const moves = solution.moves.slice(prefix);
+          const moves = settings.metric === 'QTM' ? simplifyMoves(turns.slice(prefix)) : turns.slice(prefix);
           counts[length - settings.minimum]++;
           balancingMisses = 0;
           emit({ type: 'row', row: {

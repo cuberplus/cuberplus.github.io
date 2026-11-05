@@ -27,6 +27,13 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
         ReactGA.initialize('G-BHXNCQ3K0D');
     }
 
+    private removeSolve = (event: Event) => {
+        const id = (event as CustomEvent<string>).detail;
+        this.setState(state => ({ solves: state.solves.filter(solve => solve.source !== 'timer' || solve.id !== id) }));
+    };
+    componentDidMount() { window.addEventListener('timer-solve-deleted', this.removeSolve); }
+    componentWillUnmount() { window.removeEventListener('timer-solve-deleted', this.removeSolve); }
+
     private async loadData(read: () => Promise<Solve[]>, demo = false) {
         this.setState({ isParsing: true, loadError: undefined });
         try {
@@ -65,14 +72,6 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
         });
     }
 
-    helpButtonClicked() {
-        this.setState({ showHelpModal: true });
-    }
-
-    closeButtonClicked() {
-        this.setState({ showHelpModal: false });
-    }
-
     render() {
         return (
             <div>
@@ -89,13 +88,13 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
                                 &#9776;
                             </Button>
                         )}
-                        <Button onClick={() => { this.helpButtonClicked() }}>
+                        <Button onClick={() => this.setState({ showHelpModal: true })}>
                             Help
                         </Button>
                     </div>
                 </header>
 
-                <HelpPanel showHelpPanel={this.state.showHelpModal} onCloseHandler={() => this.closeButtonClicked()} />
+                <HelpPanel showHelpPanel={this.state.showHelpModal} onCloseHandler={() => this.setState({ showHelpModal: false })} />
 
                 <Container className="container-fluid mt-2 mt-md-3">
                     <Row className="align-items-stretch g-2 g-md-3">

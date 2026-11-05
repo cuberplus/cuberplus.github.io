@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import { TimerEngine, finalizeTiming, type RecordedTurn, type Solve } from '../engine';
+import { TimerEngine, finalizeTiming, setPenalty, solveTime, type RecordedTurn, type Solve } from '../engine';
 import { Cube, SOLVED, inverse, loadCube, movesOf, simplifyMoves } from '../puzzle';
 
 let cube: Cube;
@@ -18,6 +18,64 @@ function create(scramble = 'R U2') {
   });
   return { engine, records, turn };
 }
+
+test.each([14999, 15000, 16999, 17000, 17001])('optional inspection scores the first turn after %s ms without changing solve duration', inspection => {
+  const { engine, records, turn } = create();
+  engine.inspectionPenaltyEnabled = true;
+  turn('R'); turn('U2');
+  engine.turn({ move: 'U2', hostTime: 300 + inspection, localTimestamp: null, cubeTimestamp: null });
+  expect(engine.active?.status).toBe('active');
+  engine.turn({ move: "R'", hostTime: 800 + inspection, localTimestamp: null, cubeTimestamp: null });
+  expect(engine.phase).toBe('finished');
+  expect(engine.result).toMatchObject({ duration: 500, inspection, status: inspection >= 17000 ? 'incomplete' : 'complete' });
+  expect(engine.result?.penalty).toBe(inspection >= 15000 && inspection < 17000 ? 2000 : undefined);
+  expect(engine.result?.penaltyReason).toBe(inspection >= 15000 && inspection < 17000 ? 'inspection' : undefined);
+  expect(engine.result?.dnfReason).toBe(inspection >= 17000 ? 'inspection' : undefined);
+  expect(records.at(-1)).toEqual(engine.result);
+  engine.prepare('F');
+  expect(engine.phase).toBe('scrambling');
+});
+
+test('inspection defaults off and an unlimited inspection remains a valid solve', () => {
+  const { engine, turn } = create();
+  expect(engine.inspectionPenaltyEnabled).toBe(false);
+  turn('R'); turn('U2');
+  engine.turn({ move: 'U2', hostTime: 30300, localTimestamp: null, cubeTimestamp: null });
+  engine.turn({ move: "R'", hostTime: 30800, localTimestamp: null, cubeTimestamp: null });
+  expect(engine.result).toMatchObject({ status: 'complete', inspection: 30000, duration: 500 });
+  expect(engine.result?.penalty).toBeUndefined();
+  expect(engine.result?.dnfReason).toBeUndefined();
+});
+
+test('inspection, over-turn and manual +2 penalties stack once each and manual removal preserves automatic reasons', () => {
+  const { engine, turn } = create();
+  engine.inspectionPenaltyEnabled = true;
+  turn('R'); turn('U2');
+  engine.turn({ move: 'U2', hostTime: 16300, localTimestamp: null, cubeTimestamp: null });
+  engine.turn({ move: "R'", hostTime: 16800, localTimestamp: null, cubeTimestamp: null });
+  engine.turn({ move: 'U', hostTime: 16900, localTimestamp: null, cubeTimestamp: null });
+  expect(engine.result).toMatchObject({ penalty: 4000, penaltyReason: 'inspection, over-turn' });
+  setPenalty(engine.result!, 'manual');
+  setPenalty(engine.result!, 'manual');
+  expect(engine.result).toMatchObject({ penalty: 6000, penaltyReason: 'inspection, over-turn, manual' });
+  expect(solveTime(engine.result!)).toBe(6500);
+  setPenalty(engine.result!, 'manual', false);
+  expect(engine.result).toMatchObject({ penalty: 4000, penaltyReason: 'inspection, over-turn' });
+  expect(solveTime(engine.result!)).toBe(4500);
+});
+
+test('inspection DNF survives interruption and clearing the last manual +2 removes its reason', () => {
+  const { engine, turn } = create();
+  engine.inspectionPenaltyEnabled = true;
+  turn('R'); turn('U2');
+  engine.turn({ move: 'U', hostTime: 17300, localTimestamp: null, cubeTimestamp: null });
+  engine.disconnect();
+  expect(engine.result).toMatchObject({ status: 'incomplete', dnfReason: 'inspection' });
+  const solve = setPenalty({ ...engine.result! }, 'manual');
+  setPenalty(solve, 'manual', false);
+  expect(solve.penalty).toBeUndefined();
+  expect(solve.penaltyReason).toBeUndefined();
+});
 
 test('facelet conversion matches a known physical F R state', () => {
   const pattern = cube.solved().applyAlg('F R');

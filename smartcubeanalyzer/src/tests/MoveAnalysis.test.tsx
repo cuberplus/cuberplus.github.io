@@ -86,6 +86,10 @@ describe('coreMovesCount', () => {
     test('supports custom AUF move set (D-based)', () => {
         const dAufMoves = aufMovesForFace('D');
         expect(coreMovesCount("D R D'", dAufMoves)).toBe(1);
+        expect(coreMovesCount("D R D'")).toBe(3);
+        dAufMoves.add('R');
+        expect(coreMovesCount("D R D'", dAufMoves)).toBe(0);
+        expect(coreMovesCount(['D', 'R', "D'"], dAufMoves)).toBe(0);
     });
 });
 

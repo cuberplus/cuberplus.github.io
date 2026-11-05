@@ -5,8 +5,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { webcrypto } from 'node:crypto';
 import { deserialize, serialize } from 'node:v8';
 import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
-import type { Solve } from '../engine';
-import { averageDetails, dailyStreak, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats, solveEndDate } from '../storage';
+import { getPenaltyReasons, setPenalty, type Solve } from '../engine';
+import { averageDetails, cubeastCSV, dailyStreak, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats, solveEndDate } from '../storage';
 import { loadCube, SOLVED, Cube, inverse, isMove, movesOf, locations, sameAxis, simplifyMoves } from '../puzzle';
 import { PageLocation, SettingsProvider } from '@cuberplus/navigation';
 import Options from '../../../src/Options';
@@ -14,6 +14,10 @@ import Options from '../../../src/Options';
 const cube = await loadCube();
 const generate = jest.fn<() => Promise<string>>();
 const save = jest.fn<(solves: Solve[]) => Promise<void>>().mockResolvedValue();
+const erase = jest.fn<(id: string) => Promise<void>>().mockImplementation(async id => {
+  recovered = recovered.filter(solve => solve.id !== id);
+  window.dispatchEvent(new CustomEvent('timer-solve-deleted', { detail: id }));
+});
 let recovered: Solve[] = [];
 let emit: (event: SmartCubeEvent) => void;
 let physicalFacelets = SOLVED, physicalSerial: number | undefined;
@@ -31,16 +35,20 @@ await jest.unstable_mockModule('../bluetooth', () => ({ BluetoothCube: class {
   async refresh() { emit({ type: 'FACELETS', timestamp: 0, facelets: physicalFacelets, serial: physicalSerial }); }
 } }));
 await jest.unstable_mockModule('../storage', () => ({
-  saveSolves: save, readSolves: async () => recovered, backupJSON: () => '', validateBackup: () => recovered,
-  cubeastCSV: () => '', averageDetails, dailyStreak, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats, solveEndDate, turns: (solve: Solve) => solve.moves.length,
+  saveSolves: save, deleteSolve: erase, readSolves: async () => recovered, backupJSON: () => '', validateBackup: () => recovered,
+  cubeastCSV, averageDetails, dailyStreak, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats, solveEndDate, turns: (solve: Solve) => solve.moves.length,
   formatTime: (ms: number, precision: 2 | 3 = 2) => (ms / 1000).toFixed(precision),
 }));
 await jest.unstable_mockModule('../CubeView', () => ({
   CubeView: ({ facelets }: { facelets: string }) => createElement('div', { role: 'img', 'aria-label': 'Live 3x3 cube state', 'data-facelets': facelets }),
 }));
 await jest.unstable_mockModule('../Replay', () => ({
-  Replay: ({ solve, close }: { solve: Solve; close: () => void }) => createElement('div', { 'aria-label': 'Solve replay', 'data-solve-id': solve.id },
-    createElement('button', { onClick: close }, 'Close replay')),
+  Replay: ({ solve, close, change, remove, retry, retryDisabled }: { solve: Solve; close: () => void; change?: (solve: Solve) => void; remove?: (solve: Solve) => Promise<void>; retry?: (solve: Solve) => void; retryDisabled?: boolean }) => createElement('div', { 'aria-label': 'Solve replay', 'data-solve-id': solve.id },
+    remove && createElement('button', { onClick: () => void remove(solve) }, 'Delete'),
+    createElement('button', { onClick: close }, 'Close'),
+    retry && createElement('button', { onClick: () => retry(solve), disabled: retryDisabled }, 'Retry'),
+    change && createElement('button', { onClick: () => change(setPenalty({ ...solve }, 'manual', !getPenaltyReasons(solve).includes('manual'))) }, 'Toggle manual +2'),
+    change && createElement('button', { onClick: () => change({ ...solve, status: solve.dnfReason === 'manual' ? 'complete' : 'incomplete', dnfReason: solve.dnfReason === 'manual' ? undefined : 'manual' }) }, 'Toggle manual DNF')),
 }));
 const { default: App } = await import('../App');
 const app = (options = false) => createElement(SettingsProvider, null, createElement(App), options && createElement(Options));
@@ -52,6 +60,7 @@ beforeEach(async () => {
   physicalFacelets = SOLVED; physicalSerial = undefined;
   localStorage.removeItem('timer-time-precision');
   localStorage.removeItem('timer-over-turn-penalty');
+  localStorage.removeItem('timer-inspection');
   localStorage.removeItem('timer-pb-daily-records');
   localStorage.removeItem('timer-show-every-long-pb');
   localStorage.removeItem('timer-hide-distracting-visuals');
@@ -70,7 +79,7 @@ beforeEach(async () => {
     if (!alg) throw new Error('Unexpected cube state in test recovery.');
     return movesOf(alg).reverse().map(inverse);
   });
-  save.mockClear(); generate.mockReset();
+  save.mockReset().mockResolvedValue(); erase.mockClear(); generate.mockReset();
   generate.mockResolvedValueOnce('R U2').mockImplementationOnce(() => new Promise<string>((resolve, reject) => { resolveNext = resolve; rejectNext = reject; })).mockResolvedValue('B R2');
   container = document.createElement('div'); document.body.appendChild(container);
   root = createRoot(container);
@@ -96,6 +105,18 @@ async function finishFirst() {
   expect(container.querySelector('.trail-duration[data-step="6"][data-status="done"]')).not.toBeNull();
 }
 
+test('shows biggest-mistake feedback after finishing and clears it during the next solve', async () => {
+  await click('Connect cube');
+  await act(async () => { move('R', 100); move('U2', 200); move('U', 300); move("U'", 500); move('U2', 700); move("R'", 900); });
+  const feedback = container.querySelector('[aria-label="Solve mistakes"]')!;
+  expect(feedback.textContent).toContain('Biggest mistake:');
+  expect(feedback.textContent).toContain('undo');
+  expect(feedback.querySelector('ul')).toBeNull();
+  await act(async () => resolveNext('F L2'));
+  await act(async () => { move('F', 1600); move('L2', 1800); move('L2', 2000); });
+  expect(container.querySelector('[aria-label="Solve mistakes"]')).toBeNull();
+});
+
 async function showHistory(solves: Solve[]) {
   await act(async () => root.unmount());
   recovered = solves;
@@ -112,6 +133,166 @@ function historySolve(number: number, duration: number, count: number, session =
 function historyNumbers() {
   return Array.from(container.querySelectorAll('[aria-label="Solve history"] tbody tr')).map(row => Number(row.firstElementChild!.textContent));
 }
+async function chooseSession(value: string) {
+  const input = container.querySelector<HTMLInputElement>('input[maxlength="100"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+test('deleting from replay refreshes history, Current and Best statistics without changing other solves', async () => {
+  await showHistory([historySolve(1, 2000, 10), historySolve(2, 1000, 10)]);
+  await click('View');
+  await click('Delete');
+  expect(erase).toHaveBeenCalledWith('2');
+  expect(container.querySelector('[aria-label="Solve replay"]')).toBeNull();
+  expect(historyNumbers()).toEqual([1]);
+  expect(container.querySelector('[aria-label="View current Single"]')!.textContent).toBe('2.00');
+  expect(container.querySelector('[aria-label="View best Single"]')!.textContent).toBe('2.00');
+  expect(recovered.map(solve => solve.id)).toEqual(['1']);
+});
+
+test('deletion waits for queued saves and prevents late over-turn updates or celebrations resurrecting the solve', async () => {
+  jest.useFakeTimers({ doNotFake: ['performance'] });
+  let finishSave!: () => void;
+  save.mockImplementationOnce(() => new Promise(resolve => { finishSave = resolve; }));
+  await finishFirst();
+  await click('View');
+  await click('Delete');
+  expect(erase).not.toHaveBeenCalled();
+  expect(historyNumbers()).toHaveLength(1);
+  await act(async () => finishSave());
+  expect(erase).toHaveBeenCalledTimes(1);
+  expect(historyNumbers()).toHaveLength(0);
+  const saves = save.mock.calls.length;
+  await act(async () => { move('R', 1000); jest.advanceTimersByTime(600); });
+  expect(save).toHaveBeenCalledTimes(saves);
+  expect(historyNumbers()).toHaveLength(0);
+  expect(container.querySelector('[aria-label="Dismiss personal best"]')).toBeNull();
+  expect(container.querySelector('[aria-label="Dismiss daily streak"]')).toBeNull();
+});
+
+test('deleting through Analyzer updates the mounted Timer and clears its open replay', async () => {
+  await showHistory([historySolve(1, 2000, 10)]);
+  await click('View current Single');
+  await act(async () => window.dispatchEvent(new CustomEvent('timer-solve-deleted', { detail: '1' })));
+  expect(historyNumbers()).toHaveLength(0);
+  expect(container.querySelector('[aria-label="Solve replay"]')).toBeNull();
+});
+
+test('retry replaces a pending random scramble, saves a separate attempt in retries, and restores the previous session for the next solve', async () => {
+  await chooseSession('Practice');
+  await finishFirst();
+  const original = structuredClone(save.mock.calls.at(-1)![0][0]);
+  await click('View');
+  await click('Retry');
+  expect(container.querySelector('[aria-label="Solve replay"]')).toBeNull();
+  const session = container.querySelector<HTMLInputElement>('input[maxlength="100"]')!;
+  expect(session.value).toBe('Retries');
+  expect(session.disabled).toBe(true);
+  await act(async () => resolveNext('F L2'));
+  expect(Array.from(container.querySelectorAll('.scramble .move'), element => element.textContent)).toEqual(['R', 'U2']);
+  await act(async () => { move('R', 2000); move('U2', 2100); move('U2', 2200); move("R'", 2800); });
+  const attempt = save.mock.calls.at(-1)![0][0];
+  expect(attempt).toMatchObject({ session: 'Retries', scramble: original.scramble, status: 'complete' });
+  expect(attempt.id).not.toBe(original.id);
+  expect(save.mock.calls.flatMap(([solves]) => solves).filter(solve => solve.id === original.id).at(-1)).toEqual(original);
+  expect(session.value).toBe('Practice');
+  expect(session.disabled).toBe(false);
+  expect(generate).toHaveBeenCalledTimes(3);
+  await act(async () => { move('B', 4000); move('R2', 4100); move('R2', 4200); move("B'", 4800); });
+  expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ session: 'Practice', status: 'complete', scramble: 'B R2' });
+});
+
+test.each([['R', 'R', "R'"], ['R R', 'R2', 'R2']])('a disconnected retry reuses %s without generating a random scramble and restores its session after a one-turn solve', async (scramble, setup, solution) => {
+  const original = { ...historySolve(1, 1000, 4, 'Practice'), scramble };
+  await showHistory([original]);
+  await chooseSession('Practice');
+  await click('View');
+  await click('Retry');
+  expect(container.textContent).toContain('Connect your cube to retry this scramble.');
+  await click('Connect cube');
+  expect(generate).not.toHaveBeenCalled();
+  await act(async () => move(setup, 100));
+  await act(async () => move(solution, 900));
+  expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ session: 'Retries', status: 'complete', scramble: setup });
+  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.value).toBe('Practice');
+  expect(original.session).toBe('Practice');
+});
+
+test.each(['Cancel retry', 'New scramble', 'Disconnect'])('%s cancels a prepared retry and restores the previous session without moving the original', async action => {
+  await showHistory([historySolve(1, 1000, 4, 'Practice')]);
+  await chooseSession('Practice');
+  await click('View');
+  await click('Retry');
+  await click('Connect cube');
+  await click(action);
+  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.value).toBe('Practice');
+  expect(container.textContent).not.toContain('Retry will be saved');
+  expect(save).not.toHaveBeenCalled();
+});
+
+test.each(['Abort solve', 'Disconnect', 'snapshot mismatch'])('%s saves an interrupted retry as DNF in retries and restores the previous session', async action => {
+  await showHistory([{ ...historySolve(1, 1000, 4, 'Practice'), scramble: 'R U2' }]);
+  await chooseSession('Practice');
+  await click('View');
+  await click('Retry');
+  await click('Connect cube');
+  await act(async () => { move('R', 100); move('U2', 200); move('U2', 300); });
+  if (action === 'snapshot mismatch') await act(async () => emit({ type: 'FACELETS', timestamp: 400, facelets: SOLVED }));
+  else await click(action);
+  expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ session: 'Retries', status: 'incomplete', scramble: 'R U2' });
+  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.value).toBe('Practice');
+  expect(container.textContent).not.toContain('Retry will be saved');
+});
+
+test('failed retry setup restores the previous session and leaves the original unchanged', async () => {
+  await showHistory([historySolve(1, 1000, 4, 'Practice')]);
+  await chooseSession('Practice');
+  await click('Connect cube');
+  await act(async () => move('R', 100));
+  jest.mocked(cube.solution).mockRejectedValueOnce(new Error('Cannot prepare this cube'));
+  await click('View');
+  await click('Retry');
+  expect(container.textContent).toContain('Cannot prepare this cube');
+  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.value).toBe('Practice');
+  expect(save).not.toHaveBeenCalled();
+});
+
+test('a late over-turn update to an older retries solve does not complete the new retry', async () => {
+  await chooseSession('Retries');
+  await finishFirst();
+  const original = save.mock.calls.at(-1)![0][0];
+  await click('View');
+  await click('Retry');
+  await act(async () => move('R', 1000));
+  expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ id: original.id, penaltyReason: 'over-turn' });
+  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.disabled).toBe(true);
+  expect(container.textContent).toContain('Retry will be saved');
+  await act(async () => resolveNext('F L2'));
+  await act(async () => { move('U2', 2000); move('U2', 2100); move("R'", 2800); });
+  expect(save.mock.calls.at(-1)![0][0].id).not.toBe(original.id);
+  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.disabled).toBe(false);
+  expect(container.textContent).not.toContain('Retry will be saved');
+});
+
+test('Analyzer retry navigation preserves the mounted Timer session and handles each address only once', async () => {
+  await act(async () => root.unmount());
+  recovered = [historySolve(1, 1000, 4)];
+  root = createRoot(container);
+  const show = async (address: string) => act(async () => root.render(createElement(PageLocation.Provider, { value: address }, createElement(App))));
+  await show('/smartcubeanalyzer/');
+  await chooseSession('Practice');
+  await show('/timer/?retry=1');
+  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.value).toBe('Retries');
+  await click('Connect cube');
+  await act(async () => { move('R', 100); move("R'", 900); });
+  expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ session: 'Retries', status: 'complete', scramble: 'R' });
+  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.value).toBe('Practice');
+  await show('/timer/?retry=1');
+  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.value).toBe('Practice');
+});
 
 test('Connect cube places a decorative Bluetooth icon before its unchanged label', async () => {
   const button = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Connect cube')!;
@@ -132,7 +313,7 @@ test('new Timer replay links work on an already mounted connected Timer without 
   const show = async (address: string) => act(async () => root.render(createElement(PageLocation.Provider, { value: address }, createElement(App))));
   await show('/timer/?solve=1');
   expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe('1');
-  await click('Close replay');
+  await click('Close');
   await show('/timer/?solve=1');
   expect(container.querySelector('[aria-label="Solve replay"]')).toBeNull();
   await click('Connect cube');
@@ -266,6 +447,23 @@ test('new PB celebrations wait for the penalty window and stay until dismissed w
   expect(container.querySelector('[aria-label="Personal best"]')).toBeNull();
 });
 
+test('the retries session keeps current times and history but never shows records or PB celebrations', async () => {
+  await timedApp();
+  await chooseSession('Retries');
+  await finishFirst();
+  await act(async () => jest.advanceTimersByTime(501));
+  expect(container.querySelector('[aria-label="Personal best"]')).toBeNull();
+  expect(container.querySelector('[aria-label="View current Single"]')?.textContent).toBe('0.60');
+  expect(container.querySelector('[aria-label="View best Single"]')).toBeNull();
+  expect(container.querySelectorAll('[aria-label="Solve history"] tbody tr')).toHaveLength(1);
+  await act(async () => resolveNext('F L2'));
+  await chooseSession('Practice');
+  await act(async () => { move('F', 2000); move('L2', 2100); move('L2', 2200); move("F'", 2800); });
+  await act(async () => jest.advanceTimersByTime(501));
+  expect(container.querySelector('[aria-label="Personal best"]')?.textContent).toContain('New personal best!');
+  expect(container.querySelector('[aria-label="View best Single"]')?.textContent).toBe('0.60');
+});
+
 test('simultaneous PBs have separate clickable notifications and dismissal does not open details', async () => {
   const previous = [12000, 14000, 16000, 18000, 20000].map((duration, i) => historySolve(5 - i, duration, 2));
   await timedApp(previous);
@@ -277,7 +475,7 @@ test('simultaneous PBs have separate clickable notifications and dismissal does 
   expect(celebrations[1].textContent).toContain('Ao5: 14.00s');
   await click('View PB Single');
   expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe(save.mock.calls.at(-1)![0][0].id);
-  await click('Close replay');
+  await click('Close');
   await click('Dismiss personal best');
   expect(container.querySelector('[aria-label="Solve replay"]')).toBeNull();
   expect(container.querySelector('[aria-label="Personal best"]')?.textContent).toContain('Ao5:');
@@ -293,7 +491,7 @@ test('simultaneous PBs have separate clickable notifications and dismissal does 
   expect(container.querySelector('.average-dialog')?.textContent).not.toMatch(/sorted by|excludes the/i);
   await click('View average solve 6');
   expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe(save.mock.calls.at(-1)![0][0].id);
-  await click('Close replay');
+  await click('Close');
   expect(container.querySelector<HTMLDialogElement>('.average-dialog')?.open).toBe(true);
   await act(async () => container.querySelector('.average-dialog')!.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true })));
   expect(container.querySelector('.average-dialog')).toBeNull();
@@ -502,7 +700,7 @@ test('current and best singles open their exact replays across session, penalty,
     await click(`View ${kind} Single`);
     expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe(solve.id);
     expect(container.querySelector('.average-dialog')).toBeNull();
-    await click('Close replay');
+    await click('Close');
     expect(container.querySelector('[aria-label="Solve replay"]')).toBeNull();
   }
 });
@@ -515,7 +713,7 @@ test.each([false, true])('single replay links include a current DNF when all att
   for (const [kind, solve] of [['current', current], ['best', allDnf ? current : previous]] as const) {
     await click(`View ${kind} Single`);
     expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe(solve.id);
-    await click('Close replay');
+    await click('Close');
   }
 });
 
@@ -537,7 +735,7 @@ test.each([5, 12, 100, 1000])('current and best Ao%s open their exact windows wi
     }));
     await click(`View average solve ${start + 1}`);
     expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe(solves[start].id);
-    await click('Close replay');
+    await click('Close');
     await click('Close average');
     expect(container.querySelector('.average-dialog')).toBeNull();
   }
@@ -618,7 +816,7 @@ test('average columns sort numeric metrics and preserve real numbers, penalties,
   expect(numbers()).toEqual([5, 4, 3, 2, 1]);
   await click('View average solve 2');
   expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe('2');
-  await click('Close replay');
+  await click('Close');
   await sort('Solve');
   expect(numbers()).toEqual([1, 2, 3, 4, 5]);
   await sort('Solve');
@@ -1209,6 +1407,75 @@ test('keeps inspection recorded but hidden from the main timer', async () => {
   expect(container.querySelector('[aria-label="Inspection time"]')).toBeNull();
   expect(container.querySelector('[aria-label="Solve time"]')?.textContent).toBe('0.40');
   expect(save.mock.calls.flatMap(([solves]) => solves).at(-1)?.inspection).toBe(1300);
+});
+
+test('inspection preference persists and counts up from scramble completion before applying +2', async () => {
+  await click('Options');
+  const option = () => container.querySelector<HTMLInputElement>('[aria-describedby="inspection-help"]')!;
+  expect(option().checked).toBe(false);
+  await act(async () => option().click());
+  expect(localStorage.getItem('timer-inspection')).toBe('true');
+  await showHistory([]);
+  expect(option().checked).toBe(true);
+  await click('Connect cube');
+  await act(async () => { move('R', 100); move('U2', 200); });
+  expect(container.querySelector('[aria-label="Inspection time"]')?.textContent).toBe('0.00');
+  await act(async () => {
+    jest.mocked(performance.now).mockReturnValue(15200);
+    emit({ type: 'BATTERY', timestamp: 15200, batteryLevel: 80 });
+  });
+  expect(container.querySelector('[aria-label="Inspection time"]')?.textContent).toBe('15.00');
+  expect(container.querySelector('[aria-label="Inspection status"]')?.textContent).toBe('Inspection: +2');
+  await act(async () => move('U2', 16200));
+  expect(option().disabled).toBe(true);
+  expect(container.querySelector('[aria-label="Inspection time"]')).toBeNull();
+  await act(async () => move("R'", 16800));
+  expect(container.querySelector('[aria-label="Solve time"]')?.textContent).toBe('2.60');
+  expect(container.querySelector('.timer-display .solve-penalty')?.textContent).toBe('+2');
+  expect(save.mock.calls.flatMap(([solves]) => solves).at(-1)).toMatchObject({ duration: 600, inspection: 16000, penalty: 2000, penaltyReason: 'inspection' });
+});
+
+test('inspection shows DNF at 17 seconds and persists an inspection DNF after physical completion', async () => {
+  await act(async () => container.querySelector<HTMLInputElement>('[aria-describedby="inspection-help"]')!.click());
+  await click('Connect cube');
+  await act(async () => { move('R', 100); move('U2', 200); });
+  await act(async () => {
+    jest.mocked(performance.now).mockReturnValue(17200);
+    emit({ type: 'BATTERY', timestamp: 17200, batteryLevel: 80 });
+  });
+  expect(container.querySelector('[aria-label="Inspection status"]')?.textContent).toBe('Inspection: DNF');
+  await act(async () => { move('U2', 17200); move("R'", 17800); });
+  expect(container.querySelector('.timer-display .solve-penalty')?.textContent).toBe('DNF');
+  expect(container.querySelector('[aria-label="View current Single"]')?.textContent).toBe('DNF');
+  expect(save.mock.calls.flatMap(([solves]) => solves).at(-1)).toMatchObject({ status: 'incomplete', dnfReason: 'inspection', inspection: 17000, duration: 600 });
+  expect(generate).toHaveBeenCalledTimes(2);
+});
+
+test('manual edits persist, update the displayed result and statistics, and do not create PB notifications', async () => {
+  jest.useFakeTimers({ doNotFake: ['performance'] });
+  await finishFirst();
+  await click('View');
+  await click('Toggle manual +2');
+  expect(container.querySelector('[aria-label="Solve time"]')?.textContent).toBe('2.60');
+  expect(container.querySelector('[aria-label="View current Single"]')?.textContent).toBe('2.60');
+  expect(container.querySelector('[aria-label="Solve history"] tbody tr')?.textContent).toContain('+2');
+  await click('Toggle manual DNF');
+  expect(container.querySelector('.timer-display .solve-penalty')?.textContent).toBe('DNF');
+  const saved = save.mock.calls.flatMap(([solves]) => solves).at(-1)!;
+  expect(saved).toMatchObject({ status: 'incomplete', dnfReason: 'manual', penalty: 2000, penaltyReason: 'manual' });
+  await showHistory([saved]);
+  expect(container.querySelector('[aria-label="View current Single"]')?.textContent).toBe('DNF');
+  await click('View');
+  await click('Toggle manual DNF');
+  expect(container.querySelector('[aria-label="View current Single"]')?.textContent).toBe('2.60');
+  await click('Toggle manual +2');
+  expect(container.querySelector('[aria-label="View current Single"]')?.textContent).toBe('0.60');
+  const restored = save.mock.calls.flatMap(([solves]) => solves).at(-1)!;
+  expect(restored).toMatchObject({ status: 'complete', duration: 600 });
+  expect(restored.penalty).toBeUndefined();
+  expect(restored.dnfReason).toBeUndefined();
+  await act(async () => jest.advanceTimersByTime(1000));
+  expect(container.querySelector('[aria-label="Personal best"]')).toBeNull();
 });
 
 test('hides scramble moves only during solving, without removing their layout container', async () => {

@@ -2,9 +2,9 @@ import { CSSProperties } from 'react';
 import { OverlayTrigger, ProgressBar, Tooltip } from 'react-bootstrap';
 import { ChartCard } from '../Helpers/ChartHelpers';
 import { SEGMENT_COLORS } from '../Helpers/ChartColors';
-import { MISTAKES, mistakeKey, mistakeLabel, MistakeSummary } from '../Helpers/MistakeAnalysis';
+import { MISTAKES, mistakeKey, mistakeLabel, Mistake, MistakeSummary } from '../Helpers/MistakeAnalysis';
 
-export function MistakeChart({ summary }: { summary: MistakeSummary }) {
+export function MistakeChart({ summary, select }: { summary: MistakeSummary; select?: (mistake: Mistake) => void }) {
     const maxCount = Math.max(0, ...summary.counts.map(row => row.count));
     return <ChartCard label="Mistakes" title={`Mistakes in the last ${summary.sampleCount.toLocaleString()} ${summary.sampleCount === 1 ? 'solve' : 'solves'}`} scrollable>
         <div role="list" aria-label="Mistake counts">
@@ -12,7 +12,9 @@ export function MistakeChart({ summary }: { summary: MistakeSummary }) {
                 <div className="d-flex justify-content-between gap-2 small"><OverlayTrigger placement="top" overlay={<Tooltip id={`mistake-${mistakeKey(row)}`}>{MISTAKES[row.kind].rule}</Tooltip>}>
                     <button type="button" className="btn btn-link p-0 border-0 text-body text-start text-decoration-none" style={{ fontSize: 'inherit' }} aria-label={`About ${mistakeLabel(row)}`}>{mistakeLabel(row)} ⓘ</button>
                 </OverlayTrigger><strong className="text-nowrap">{row.count}</strong></div>
-                <ProgressBar now={maxCount ? row.count / maxCount * 100 : 0} style={{ height: 12, '--bs-progress-bar-bg': SEGMENT_COLORS.execution } as CSSProperties} aria-hidden="true" />
+                <button type="button" className="d-block w-100 p-0 border-0 bg-transparent" disabled={!row.count || !select} aria-label={`View solves with ${mistakeLabel(row)}`} onClick={() => select?.(row)}>
+                    <ProgressBar now={maxCount ? row.count / maxCount * 100 : 0} style={{ height: 12, '--bs-progress-bar-bg': SEGMENT_COLORS.execution } as CSSProperties} aria-hidden="true" />
+                </button>
             </div>)}
         </div>
         <details className="small"><summary>How mistakes are detected</summary>

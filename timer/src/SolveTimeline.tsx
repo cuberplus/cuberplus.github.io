@@ -4,8 +4,8 @@ import type { Cube } from './puzzle';
 import { analyzeCFOP, CFOP_STEPS, cfopTiming } from './cfop';
 import { formatTime } from './storage';
 
-// Analyzer's Cross/OLL/PLL hues, with a shared violet family for F2L.
-const colors = ['rgb(100, 200, 255)', 'rgb(156, 115, 220)', 'rgb(171, 136, 228)', 'rgb(185, 157, 236)', 'rgb(201, 180, 245)', 'rgb(255, 230, 150)', 'rgb(80, 220, 220)'];
+// Analyzer's Cross/OLL/PLL hues, with the same dark purple for every F2L pair.
+const colors = ['rgb(100, 200, 255)', 'rgb(156, 115, 220)', 'rgb(156, 115, 220)', 'rgb(156, 115, 220)', 'rgb(156, 115, 220)', 'rgb(255, 230, 150)', 'rgb(80, 220, 220)'];
 type Annotation = { name: string; key: string; i: number; timing: ReturnType<typeof cfopTiming> | null; done: boolean };
 export function SolveTimeline({ cube, solve, elapsed, precision }: { cube: Cube; solve: Solve; elapsed: number; precision: 2 | 3 }) {
   const trail = useRef<HTMLDivElement>(null), [width, setWidth] = useState(1000);
@@ -58,7 +58,7 @@ export function SolveTimeline({ cube, solve, elapsed, precision }: { cube: Cube;
     {annotations(major)}
     <div className="solve-trail" ref={trail}>
       {segments.map(({ name, i, phase, start, end }) => <span key={`${i}-${phase}`} className={`trail-segment ${phase}`} data-step={i} data-phase={phase} data-start={start} data-end={end} role="img" aria-label={`${name} ${phase}: ${formatTime(end - start, precision)}s`} title={`${name} ${phase}: ${formatTime(end - start, precision)}s`} style={{ left: `${start / scale * 100}%`, width: `${(end - start) / scale * 100}%`, backgroundColor: colors[i] }} />)}
-      <span className="trail-tip" aria-hidden="true" style={{ left: `${time / scale * 100}%` }} />
+      {solve.status === 'active' && <span className="trail-tip" aria-hidden="true" style={{ left: `${time / scale * 100}%` }} />}
     </div>
     {annotations([1, 2, 3, 4].map(annotation), true)}
     <div className="d-flex justify-content-between small text-secondary"><span>0s</span><span>{formatTime(scale, precision)}s</span></div>

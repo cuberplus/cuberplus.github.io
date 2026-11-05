@@ -3,7 +3,7 @@ import Navigation, { Footer } from '@cuberplus/navigation';
 import { COLORS, Color, EDGES, HEX } from '../cube/cube';
 import { GenerationEvent, WorksheetRow } from '../cube/generation';
 import {
-  DEFAULT_SETTINGS, MODE_LABELS, Mode, PairRelation, Settings, pairLabel, validateSettings,
+  DEFAULT_SETTINGS, MODE_LABELS, Metric, Mode, PairRelation, Settings, pairLabel, solutionLength, validateSettings,
 } from '../cube/solver';
 import { createSolverWorker } from '../cube/workerClient';
 import CubeNet from './CubeNet';
@@ -101,7 +101,7 @@ function App() {
   });
   const availablePairs = pairOptions(settings.cross);
   const sorted = rows.slice().sort((a, b) =>
-    (ascending ? 1 : -1) * (a.moves.length - b.moves.length) || a.id - b.id);
+    (ascending ? 1 : -1) * (solutionLength(a.moves, batchSettings.metric) - solutionLength(b.moves, batchSettings.metric)) || a.id - b.id);
   const visible = BUILT_INS.filter(([key]) => selected.includes(key));
   const printStyle: React.CSSProperties & { '--print-columns': number } = {
     '--print-columns': Math.max(6, visible.length + custom.length),
@@ -118,7 +118,7 @@ function App() {
     switch (key) {
       case 'scramble': return <span className="algorithm">{row.scramble}</span>;
       case 'visualization': return <CubeNet algorithm={row.scramble} />;
-      case 'turns': return <span className="turn-count">{row.moves.length}<small>HTM</small></span>;
+      case 'turns': return <span className="turn-count">{solutionLength(row.moves, batchSettings.metric)}<small>{batchSettings.metric}</small></span>;
       case 'solution': return <span className="algorithm solution">{row.algorithm || 'Already solved'}</span>;
       case 'cross': return <span className="color-tag"><i style={{ backgroundColor: HEX[COLORS.indexOf(row.cross)] }} />{row.cross}</span>;
       case 'pairs': return row.pairs.length
@@ -175,13 +175,18 @@ function App() {
                     <option value="diagonal">Diagonal pairs</option>
                   </select>
                 </>}
-                <div className="label-row"><label htmlFor="minimum">Solution length</label><span>HTM</span></div>
+                <label htmlFor="metric">Move metric</label>
+                <select id="metric" value={settings.metric} onChange={e => update('metric', e.target.value as Metric)}>
+                  <option value="HTM">HTM (half-turn metric)</option>
+                  <option value="QTM">QTM (quarter-turn metric)</option>
+                </select>
+                <div className="label-row"><label htmlFor="minimum">Solution length</label><span>{settings.metric}</span></div>
                 <div className="range-inputs">
                   <div><input id="minimum" aria-label="Minimum turns" type="number" min="0" max={settings.maximum} required value={settings.minimum} onChange={e => update('minimum', e.target.valueAsNumber)} /><span>min</span></div>
                   <span className="range-dash">—</span>
                   <div><input id="maximum" aria-label="Maximum turns" type="number" min={settings.minimum} max="20" required value={settings.maximum} onChange={e => update('maximum', e.target.valueAsNumber)} /><span>max</span></div>
                 </div>
-                <p className="field-hint">Aim for an even mix of shortest-solution lengths in this inclusive range. A half turn counts as one move.</p>
+                <p className="field-hint">Aim for an even mix of shortest-solution lengths in this inclusive range. A half turn counts as {settings.metric === 'HTM' ? 'one move' : 'two moves'}.</p>
                 <label htmlFor="count">Number of scrambles</label>
                 <input id="count" type="number" min="1" required value={settings.count} onChange={e => update('count', e.target.valueAsNumber)} />
                 <button className="primary-button" type="submit">Generate worksheet <span aria-hidden="true">↗</span></button>
@@ -196,7 +201,7 @@ function App() {
           <section className="worksheet-panel" aria-labelledby="worksheet-title">
             <div className="worksheet-heading">
               <div><div className="panel-heading"><span className="section-number">02</span><h2 id="worksheet-title">Your practice sheet</h2></div>
-                <p>{MODE_LABELS[batchSettings.mode]}<span className="separator">/</span>{batchSettings.cross === 'any' ? 'Color neutral' : `${batchSettings.cross} base`}<span className="separator">/</span>{batchSettings.minimum}–{batchSettings.maximum} HTM</p></div>
+                <p>{MODE_LABELS[batchSettings.mode]}<span className="separator">/</span>{batchSettings.cross === 'any' ? 'Color neutral' : `${batchSettings.cross} base`}<span className="separator">/</span>{batchSettings.minimum}–{batchSettings.maximum} {batchSettings.metric}</p></div>
               <button className="print-button" disabled={!rows.length} onClick={() => window.print()}><span aria-hidden="true">▤</span> Print sheet</button>
             </div>
             <div className="sheet-toolbar">

@@ -25,6 +25,7 @@ import DataGrid, { CellClickArgs, Column, RenderCellProps, SortColumn } from 're
 import 'chartjs-adapter-moment';
 import { createChartWorker } from '../Workers/createChartWorker';
 import { MistakeChart } from './MistakeChart';
+import { Mistake, mistakeKey, mistakeLabel, mistakeWindow } from '../Helpers/MistakeAnalysis';
 import { AverageModal } from './AverageModal';
 import { splitIntoChunks } from '../Helpers/MathHelpers';
 import { fastestByDay } from '../Helpers/ChartDataBuilders';
@@ -233,6 +234,11 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
         this.setState({ average: { solves, numbers: solves.map(solve => numbers.get(solve)!), percentage, title: title && `${title} (${solves.length} solves)` } });
     }
 
+    openMistakes(mistake: Mistake) {
+        this.selectSolves(mistakeWindow(this.props.solves, this.props.windowSize)
+            .filter(solve => solve.mistakes?.some(item => mistakeKey(item) === mistakeKey(mistake))), 0, mistakeLabel(mistake));
+    }
+
     openAverage(key: keyof ChartDataBundle, point?: ActiveElement) {
         const data = this.state.chartData?.[key], p = this.props;
         if (!point || !data || !('datasets' in data)) return;
@@ -325,7 +331,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
         plot('histogram', "Count of Solves by How Long They Took", "This chart shows how many solves you have done in 10s, 11s, 12s, etc...", ChartType.Bar, 'Time (s)', 'Count');
         plot('runningTps', "Average Turns Per Second", "This chart shows your average turns per second. 'TPS During Execution' only counts your TPS while actively turning the cube");
         plot('runningTurns', "Average Turns", "This chart shows your average number of turns, in quarter turn metric", ChartType.Line, 'Solve Number', 'Turns');
-        charts.push(<MistakeChart key="mistakes" summary={c.mistakes} />);
+        charts.push(<MistakeChart key="mistakes" summary={c.mistakes} select={mistake => this.openMistakes(mistake)} />);
         plot('runningEfficiency', "Solve Efficiency", "This chart shows move efficiency ratio (after cancelling redundant same-face moves; 100% = no wasted moves), OLL/PLL success rates, and a combined solve efficiency (move efficiency minus failure rates).", ChartType.Line, 'Solve Number', 'Percentage');
         charts.push(buildChartHtml(<SortableGrid rows={c.bestSolvesData} columns={BEST_SOLVES_COLS} className="clickable-grid" onCellClick={({ row }) => this.openSolveSource(row)} />, `Top ${Const.FastestSolvesCount} Fastest Solves`, `This shows your ${Const.FastestSolvesCount} fastest solves, given the filters`));
         plot('runningStdDev', "Average Standard Deviation", "This chart shows your running average's standard deviation");

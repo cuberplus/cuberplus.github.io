@@ -7,13 +7,14 @@ export interface Turn {
   localTimestamp: number | null; cubeTimestamp: number | null;
 }
 export interface RecordedTurn extends Turn { elapsed: number }
+export type PenaltyReason = 'over-turn' | 'inspection' | 'manual';
 export interface Solve {
   version: 1; id: string; session: string; createdAt: string; device: string;
   scramble: string; startFacelets: string; duration: number;
   inspection?: number;
-  penalty?: 2000;
-  penaltyReason?: 'over-turn';
-  dnfReason?: 'solve interrupted' | 'solve aborted';
+  penalty?: number;
+  penaltyReason?: string;
+  dnfReason?: 'solve interrupted' | 'solve aborted' | 'inspection' | 'manual';
   status: 'active' | 'complete' | 'incomplete';
   reason: string; timingBasis: 'host' | 'device-fit';
   moves: RecordedTurn[];
@@ -22,6 +23,15 @@ export interface Solve {
 export const solveTime = (solve: Solve): number => solve.duration + (solve.status === 'complete' ? solve.penalty ?? 0 : 0);
 export const getDnfReason = (solve: Solve): NonNullable<Solve['dnfReason']> =>
   solve.dnfReason ?? (solve.reason === 'Solve aborted by user.' ? 'solve aborted' : 'solve interrupted');
+export const getPenaltyReasons = (solve: Solve): string[] => solve.penalty ? (solve.penaltyReason ?? 'over-turn').split(', ') : [];
+export function setPenalty(solve: Solve, reason: PenaltyReason, enabled = true): Solve {
+  const reasons = new Set(getPenaltyReasons(solve));
+  if (enabled) reasons.add(reason); else reasons.delete(reason);
+  solve.penalty = reasons.size ? reasons.size * 2000 : undefined;
+  solve.penaltyReason = [...reasons].join(', ') || undefined;
+  return solve;
+}
+export const inspectionPenalty = (milliseconds: number): 0 | 2000 | 'DNF' => milliseconds >= 17000 ? 'DNF' : milliseconds >= 15000 ? 2000 : 0;
 
 // GAN and MoYu history windows use circular 8-bit turn counters.
 const serialDistance = (next: number, previous: number): number => (next - previous) & 0xff;
@@ -50,6 +60,7 @@ export class TimerEngine {
   message = 'Connect your cube to begin.'; device = ''; session = 'Default';
   active: Solve | null = null; result: Solve | null = null;
   overTurnPenaltyEnabled = true;
+  inspectionPenaltyEnabled = false;
   lastSerial: number | undefined;
   private checkpoints: KPattern[] = []; private partial: string[] = [];
   private guidanceStart = 0; private partialAllowed = false;
@@ -153,6 +164,9 @@ export class TimerEngine {
         inspection: this.inspectionElapsed(turn.hostTime),
         duration: 0, status: 'active', reason: '', timingBasis: 'host', moves: [],
       };
+      const penalty = this.inspectionPenaltyEnabled ? inspectionPenalty(this.active.inspection!) : 0;
+      if (penalty === 'DNF') this.active.dnfReason = 'inspection';
+      else if (penalty) setPenalty(this.active, 'inspection');
       this.inspectionStarted = null;
       this.phase = 'solving';
     }
@@ -162,11 +176,11 @@ export class TimerEngine {
       this.active.moves.push({ ...turn, elapsed: Math.max(0, turn.hostTime - this.started) });
       this.active.duration = this.active.moves[this.active.moves.length - 1].elapsed;
       if (this.cube.isSolved(this.pattern)) {
-        Object.assign(this.active, finalizeTiming(this.active.moves), { status: 'complete' });
+        Object.assign(this.active, finalizeTiming(this.active.moves), { status: this.active.dnfReason === 'inspection' ? 'incomplete' : 'complete' });
         this.result = this.active;
         this.active = null;
         this.phase = 'finished'; this.pendingResult = true; this.finishedAt = turn.hostTime;
-        this.message = 'Solved! Your full move timeline is recorded.';
+        this.message = this.result.dnfReason === 'inspection' ? 'DNF: inspection reached 17 seconds. Your full move timeline is recorded.' : 'Solved! Your full move timeline is recorded.';
         this.record(this.result);
       } else this.record(this.active);
     } else if (this.phase === 'scrambling' || this.phase === 'recovering') this.guide(turn.move, turn.hostTime);
@@ -181,8 +195,7 @@ export class TimerEngine {
     if (delay < 0) return;
     this.finishedAt = null;
     if (delay <= 500 && this.overTurnPenaltyEnabled) {
-      this.result.penalty = 2000;
-      this.result.penaltyReason = 'over-turn';
+      setPenalty(this.result, 'over-turn');
       this.record(this.result);
       this.changed();
     }
@@ -230,7 +243,7 @@ export class TimerEngine {
   }
   interrupt(reason: string, dnfReason: NonNullable<Solve['dnfReason']> = 'solve interrupted'): void {
     if (!this.active) return;
-    Object.assign(this.active, { status: 'incomplete', reason, dnfReason });
+    Object.assign(this.active, { status: 'incomplete', reason, dnfReason: this.active.dnfReason ?? dnfReason });
     this.result = this.active;
     this.record(this.active);
     this.active = null;
