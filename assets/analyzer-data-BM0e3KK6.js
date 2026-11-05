@@ -1,0 +1,1 @@
+import{r as o,u as r,l as s}from"./storage-CZdPFfJM.js";import"./cubing-core-BlVCN5VW.js";import"./MistakeAnalysis-5ZYe3Jmh.js";import"./index-C5LDRMrh.js";import"./cube-DoBmB9j7.js";async function c(){const a=await o();return a.some(t=>t.status!=="active")?r(a,await s()):""}export{c as readTimerData};
