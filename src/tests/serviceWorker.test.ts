@@ -35,7 +35,7 @@ test('installation precaches the full build without skipping a waiting update', 
   await app.fire('message', { data: 'SKIP_WAITING' });
   expect(app.scope.skipWaiting).toHaveBeenCalledTimes(1);
 });
-test.each(['/', '/timer/', '/timer/index.html', '/smartcubeanalyzer/', '/scrambler/'])('offline navigation to %s returns the cached single-app shell', async path => {
+test.each(['/', '/timer/', '/timer/index.html', '/smartcubeanalyzer/', '/scrambler/', '/database/', '/database/index.html'])('offline navigation to %s returns the cached single-app shell', async path => {
   const app = worker();
   app.entries.set('/index.html', new Response('offline shell'));
   app.fetch.mockRejectedValue(new Error('Offline'));

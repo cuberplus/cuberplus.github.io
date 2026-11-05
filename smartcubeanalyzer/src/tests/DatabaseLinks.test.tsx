@@ -5,17 +5,11 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { RenderCellProps } from 'react-data-grid';
 import { algoCols } from '../Components/ChartPanel';
-import { speedCubeDbUrl } from '../Helpers/ChartHelpers';
+import { databaseCaseUrl } from '../Helpers/ChartHelpers';
 import { Const } from '../Helpers/Constants';
 import { AlgoPracticeRow, StepName } from '../Helpers/Types';
 
-/**
- * The Algorithm Practice grid links each case to its SpeedCubeDB page. The slugs
- * below were taken from speedcubedb.com's own OLL and PLL index pages, so these
- * tests fail if our case values ever drift away from the ones the site serves.
- */
-
-const SPEEDCUBEDB_PLL_SLUGS = [
+const DATABASE_PLL_IDS = [
     'Aa', 'Ab', 'E', 'F', 'Ga', 'Gb', 'Gc', 'Gd', 'H', 'Ja', 'Jb',
     'Na', 'Nb', 'Ra', 'Rb', 'T', 'Ua', 'Ub', 'V', 'Y', 'Z',
 ];
@@ -34,74 +28,74 @@ function renderCase(step: StepName, caseName: string): HTMLElement {
     return container;
 }
 
-describe('speedCubeDbUrl', () => {
-    test('every OLL case links to its numbered SpeedCubeDB page', () => {
+describe('databaseCaseUrl', () => {
+    test('every OLL case links to its numbered database entry', () => {
         const ollNumbers = Const.OllCases.filter(c => c.value !== 'Solved');
         expect(ollNumbers).toHaveLength(57);
         for (const c of ollNumbers) {
-            expect(speedCubeDbUrl(StepName.OLL, c.value))
-                .toBe(`https://speedcubedb.com/a/3x3/OLL/OLL_${c.value}`);
+            expect(databaseCaseUrl(StepName.OLL, c.value))
+                .toBe(`/database/#OLL-${c.value}`);
         }
     });
 
     test('every PLL case links to its perm page', () => {
         const perms = Const.PllCases.filter(c => c.value !== 'Solved');
         for (const c of perms) {
-            expect(speedCubeDbUrl(StepName.PLL, c.value))
-                .toBe(`https://speedcubedb.com/a/3x3/PLL/${c.value}`);
+            expect(databaseCaseUrl(StepName.PLL, c.value))
+                .toBe(`/database/#PLL-${c.value}`);
         }
     });
 
-    test('our PLL case values match the slugs SpeedCubeDB actually publishes', () => {
+    test('our PLL case values match the database case IDs', () => {
         const ours = Const.PllCases.filter(c => c.value !== 'Solved').map(c => c.value).sort();
-        expect(ours).toEqual([...SPEEDCUBEDB_PLL_SLUGS].sort());
+        expect(ours).toEqual([...DATABASE_PLL_IDS].sort());
     });
 
     test('a skipped step has no algorithm page to link to', () => {
-        expect(speedCubeDbUrl(StepName.OLL, 'Solved')).toBeNull();
-        expect(speedCubeDbUrl(StepName.PLL, 'Solved')).toBeNull();
+        expect(databaseCaseUrl(StepName.OLL, 'Solved')).toBeNull();
+        expect(databaseCaseUrl(StepName.PLL, 'Solved')).toBeNull();
     });
 
     test('steps other than OLL and PLL are not linked', () => {
-        expect(speedCubeDbUrl(StepName.Cross, '1')).toBeNull();
-        expect(speedCubeDbUrl(StepName.F2L_1, 'T')).toBeNull();
+        expect(databaseCaseUrl(StepName.Cross, '1')).toBeNull();
+        expect(databaseCaseUrl(StepName.F2L_1, 'T')).toBeNull();
     });
 
     test('an unrecognised case is not linked rather than guessed at', () => {
-        expect(speedCubeDbUrl(StepName.OLL, '58')).toBeNull();
-        expect(speedCubeDbUrl(StepName.OLL, '')).toBeNull();
-        expect(speedCubeDbUrl(StepName.PLL, 'Qq')).toBeNull();
+        expect(databaseCaseUrl(StepName.OLL, '58')).toBeNull();
+        expect(databaseCaseUrl(StepName.OLL, '')).toBeNull();
+        expect(databaseCaseUrl(StepName.PLL, 'Qq')).toBeNull();
     });
 
     test('a case cannot be used to point the link somewhere else', () => {
         // Cases originate in user-supplied CSVs, so they are matched against the
         // known list rather than substituted into the URL.
-        expect(speedCubeDbUrl(StepName.PLL, '../../evil')).toBeNull();
-        expect(speedCubeDbUrl(StepName.OLL, '1/../../evil')).toBeNull();
-        expect(speedCubeDbUrl(StepName.PLL, 'T"onmouseover="alert(1)')).toBeNull();
-        expect(speedCubeDbUrl(StepName.OLL, 'javascript:alert(1)')).toBeNull();
+        expect(databaseCaseUrl(StepName.PLL, '../../evil')).toBeNull();
+        expect(databaseCaseUrl(StepName.OLL, '1/../../evil')).toBeNull();
+        expect(databaseCaseUrl(StepName.PLL, 'T"onmouseover="alert(1)')).toBeNull();
+        expect(databaseCaseUrl(StepName.OLL, 'javascript:alert(1)')).toBeNull();
     });
 
     test('OLL and PLL never collide on the same URL', () => {
         const urls = [
-            ...Const.OllCases.map(c => speedCubeDbUrl(StepName.OLL, c.value)),
-            ...Const.PllCases.map(c => speedCubeDbUrl(StepName.PLL, c.value)),
+            ...Const.OllCases.map(c => databaseCaseUrl(StepName.OLL, c.value)),
+            ...Const.PllCases.map(c => databaseCaseUrl(StepName.PLL, c.value)),
         ].filter((u): u is string => u !== null);
         expect(new Set(urls).size).toBe(urls.length);
     });
 });
 
 describe('Algorithm Practice case cells', () => {
-    test('a known OLL case renders as a link to SpeedCubeDB', () => {
+    test('a known OLL case renders as a link to the database', () => {
         renderCase(StepName.OLL, '21');
         const link = screen.getByRole('link', { name: '21' });
-        expect(link.getAttribute('href')).toBe('https://speedcubedb.com/a/3x3/OLL/OLL_21');
+        expect(link.getAttribute('href')).toBe('/database/#OLL-21');
     });
 
-    test('a known PLL case renders as a link to SpeedCubeDB', () => {
+    test('a known PLL case renders as a link to the database', () => {
         renderCase(StepName.PLL, 'Ga');
         const link = screen.getByRole('link', { name: 'Ga' });
-        expect(link.getAttribute('href')).toBe('https://speedcubedb.com/a/3x3/PLL/Ga');
+        expect(link.getAttribute('href')).toBe('/database/#PLL-Ga');
     });
 
     test('links open in a new tab without handing it control of this one', () => {

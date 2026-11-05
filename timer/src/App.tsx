@@ -10,6 +10,7 @@ import { CubeView } from './CubeView';
 import { Replay } from './Replay';
 import { SolveTimeline } from './SolveTimeline';
 import { SolveMistakes } from './SolveMistakes';
+import { FavoriteOptions } from './FavoriteOptions';
 import { useScreenWakeLock } from './useScreenWakeLock';
 
 const errorText = (error: Error): string => error.message || 'The operation failed.';
@@ -431,6 +432,7 @@ export default function App() {
       <p id="inspection-help" className="small text-secondary mt-2 mb-0">Count up after scrambling. Starting at 15 seconds adds +2; starting at 17 seconds or later is DNF. +2 penalties stack.</p>
       <label className="form-check mt-3"><input type="checkbox" className="form-check-input" checked={overTurnPenalty} aria-describedby="over-turn-penalty-help" onChange={event => changeOverTurnPenalty(event.target.checked)} /><span className="form-check-label">Extra-turn +2 penalty</span></label>
       <p id="over-turn-penalty-help" className="small text-secondary mt-2 mb-0">Apply +2 for an extra turn within 0.5 seconds after finishing.</p>
+      <FavoriteOptions cube={cube} history={history} />
       <label className="form-check mt-3"><input type="checkbox" className="form-check-input" checked={showEveryLongPb} aria-describedby="long-pb-notifications-help" onChange={event => changeLongPbNotifications(event.target.checked)} /><span className="form-check-label">Notify for every Ao100/Ao1000 PB</span></label>
       <p id="long-pb-notifications-help" className="small text-secondary mt-2 mb-0">When off, show each of these PB notifications at most once per day.</p>
       <details className="mt-3">

@@ -8,6 +8,8 @@ import { readSolves, saveSolves } from '../storage';
 import type { Solve } from '../engine';
 import { inverse, loadCube } from '../puzzle';
 import { analyzeCFOP, cfopFrame, CFOP_STEPS } from '../cfop';
+import { algorithms } from '../../../src/database/algorithms';
+import { favoriteId, FAVORITES_KEY, MISTAKES_KEY, CATEGORIES_KEY } from '../../../src/database/favorites';
 
 await jest.unstable_mockModule('../CubeView', () => ({
   CubeView: ({ facelets, cross, rotation }: { facelets: string; cross: number | null; rotation: string }) => createElement('div', { 'data-facelets': facelets, 'data-cross': cross, 'data-rotation': rotation, 'aria-label': 'Replay cube' }),
@@ -20,6 +22,7 @@ const scramble = `${pll} ${oll} R U R' F U F' L U L' B U B' D`;
 let root: Root, container: HTMLDivElement;
 const close = jest.fn();
 beforeEach(() => {
+  localStorage.clear();
   jest.spyOn(window, 'confirm').mockReturnValue(true);
   Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: new IDBFactory() });
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true });
@@ -28,6 +31,32 @@ beforeEach(() => {
   Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; } });
   close.mockClear();
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+});
+
+test('non-favorite feedback outranks other mistakes and reacts to favorites and group settings', async () => {
+  const entry = algorithms.find(entry => entry.category === 'PLL' && entry.id === 'T')!;
+  const solution = `U U' ${entry.options[1]}`;
+  const solve = recording(solution.split(' ').reverse().map(inverse).join(' '), solution);
+  const favorite = favoriteId(entry, entry.algorithm);
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify([favorite]));
+  await draw(solve);
+  const feedback = () => container.querySelector('[aria-label="Solve mistakes"]')!;
+  expect(feedback().textContent).not.toContain('Non-favorite algorithm');
+  async function preference(key: string, value: string) {
+    localStorage.setItem(key, value);
+    await act(async () => window.dispatchEvent(new StorageEvent('storage', { key })));
+  }
+  await preference(MISTAKES_KEY, 'true');
+  expect(feedback().querySelector('p')!.textContent).toContain('Biggest mistake: PLL: Non-favorite algorithm (PLL T)');
+  expect(feedback().querySelector('li')!.textContent).toContain('Non-favorite algorithm');
+  expect(feedback().textContent).toContain('Single-move undo');
+  await preference(CATEGORIES_KEY, JSON.stringify({ F2L: true, OLL: true, PLL: false }));
+  expect(feedback().textContent).not.toContain('Non-favorite algorithm');
+  await preference(CATEGORIES_KEY, JSON.stringify({ F2L: true, OLL: true, PLL: true }));
+  expect(feedback().textContent).toContain('Non-favorite algorithm');
+  await preference(FAVORITES_KEY, JSON.stringify([favorite, favoriteId(entry, entry.options[1])]));
+  expect(feedback().textContent).not.toContain('Non-favorite algorithm');
+  expect(feedback().textContent).toContain('Single-move undo');
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); jest.useRealTimers(); jest.restoreAllMocks(); });
 
@@ -378,9 +407,9 @@ test('replay shows recognized F2L, OLL and PLL labels beside the step headings, 
   expect(container.querySelector('[aria-label="F2L Pair 4 case"]')!.textContent).toBe('F2L 1');
   expect(container.querySelector('[aria-label="OLL case"]')!.textContent).toBe('OLL 34');
   expect(container.querySelector('[aria-label="PLL case"]')!.textContent).toBe('T perm');
-  for (const [label, path] of [['F2L Pair 4', 'F2L/F2L_1'], ['OLL', 'OLL/OLL_34'], ['PLL', 'PLL/T']]) {
+  for (const [label, caseId] of [['F2L Pair 4', 'F2L-1'], ['OLL', 'OLL-34'], ['PLL', 'PLL-T']]) {
     const link = container.querySelector<HTMLAnchorElement>(`a[aria-label="${label} case"]`)!;
-    expect(link.getAttribute('href')).toBe(`https://speedcubedb.com/a/3x3/${path}`);
+    expect(link.getAttribute('href')).toBe(`/database/#${caseId}`);
     expect(link.target).toBe('_blank');
     expect(link.rel).toBe('noopener noreferrer');
   }

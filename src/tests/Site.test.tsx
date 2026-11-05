@@ -7,6 +7,7 @@ const lifecycle = { mounts: 0, unmounts: 0 };
 jest.mock('../Components/App', () => ({ __esModule: true, default: () => <><Navigation current="home" /><a href="/timer/?solve=one">Shared solve</a><a href="https://example.com/timer/">External</a></> }));
 jest.mock('../../smartcubeanalyzer/src/Components/App', () => ({ __esModule: true, default: () => <Navigation current="smartcubeanalyzer" /> }));
 jest.mock('../../scrambler/src/Components/App', () => ({ __esModule: true, default: () => <Navigation current="scrambler" /> }));
+jest.mock('../database/Database', () => ({ __esModule: true, default: () => <Navigation current="database" /> }));
 jest.mock('../../timer/src/App', () => ({ __esModule: true, default: function Timer() {
   const [solves, setSolves] = useState(0), dialog = useRef<HTMLDialogElement>(null);
   const { precision } = useContext(SettingsContext);
@@ -27,7 +28,7 @@ const nav = () => within(screen.getByRole('navigation', { name: 'CuberPlus' }));
 async function visit(name: string) { fireEvent.click(nav().getByRole('link', { name, exact: true })); await screen.findByRole('link', { name, current: 'page' }); }
 
 test('tool URLs accept existing index paths but reject other files and nested routes', () => {
-  expect(['/','/index.html','/timer','/timer/index.html','/smartcubeanalyzer/','/scrambler/'].map(toolAt)).toEqual(['home','home','timer','timer','smartcubeanalyzer','scrambler']);
+  expect(['/','/index.html','/timer','/timer/index.html','/smartcubeanalyzer/','/scrambler/','/database/','/database/index.html'].map(toolAt)).toEqual(['home','home','timer','timer','smartcubeanalyzer','scrambler','database','database']);
   expect(toolAt('/timer/help/mac-address.html')).toBeNull();
   expect(toolAt('/not-a-tool/')).toBeNull();
 });
@@ -41,10 +42,21 @@ test('tool navigation retains Timer state and lifecycle, closes hidden top-layer
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(lifecycle).toEqual({ mounts: 1, unmounts: 0 });
   await visit('Scrambler');
+  await visit('Database');
   await visit('Timer');
   expect(screen.getByRole('button', { name: 'Record 1' })).toBeDefined();
   expect(screen.getByRole('dialog')).toBeDefined();
   expect(lifecycle).toEqual({ mounts: 1, unmounts: 0 });
+});
+test('database appears immediately after Scrambler in navigation and swipe order', async () => {
+  history.replaceState(null, '', '/scrambler/');
+  render(<Site />);
+  const navigation = await screen.findByRole('navigation');
+  expect(within(navigation).getAllByRole('link').map(link => link.getAttribute('href')))
+    .toEqual(['/', '/timer/', '/smartcubeanalyzer/', '/scrambler/', '/database/', '/options/']);
+  swipe(navigation, -100);
+  await screen.findByRole('link', { name: 'Database', current: 'page' });
+  expect(location.pathname).toBe('/database/');
 });
 test('history navigation preserves query strings and retained page identity', async () => {
   render(<Site />);

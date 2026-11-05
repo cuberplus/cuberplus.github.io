@@ -23,8 +23,9 @@ const pll = new Map(Object.entries({
   '002331220113': 'Nb', '001210132323': 'Ra', '010102321233': 'Rb', '001230122313': 'T',
   '000121232313': 'Ua', '000131212323': 'Ub', '002321210133': 'V', '002311230123': 'Y', '010101232323': 'Z',
 }));
+export const CASE_IDS = { F2L: [...f2l.values()], OLL: [...oll.values()], PLL: [...pll.values()] };
 const aufs = ['', 'U', 'U2', "U'"], spins = ['', 'y', 'y2', "y'"];
-function normalized(cube: Cube, pattern: KPattern, rotation: string): KPattern {
+export function normalized(cube: Cube, pattern: KPattern, rotation: string): KPattern {
   const turned = pattern.applyAlg(rotation), centers = turned.patternData.CENTERS.pieces;
   // Cube.facelets keeps fixed centers; relabel rotated cubies and restore calibrated centers.
   return cube.parse([...cube.facelets(turned)].map((face, i) => i % 9 === 4 ? 'URFDLB'[Math.floor(i / 9)] :

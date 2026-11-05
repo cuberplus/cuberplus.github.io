@@ -16,7 +16,7 @@ import {
     PllCornerPermutation,
 } from "../Helpers/Types";
 import { Chart as ChartJS, CategoryScale, ActiveElement, ChartData, ChartEvent } from 'chart.js/auto';
-import { createOptions, buildChartHtml, speedCubeDbUrl, withCaseTooltip } from "../Helpers/ChartHelpers";
+import { createOptions, buildChartHtml, databaseCaseUrl, withCaseTooltip } from "../Helpers/ChartHelpers";
 import { Row, Spinner } from "react-bootstrap";
 import { ThemeContext } from "../contexts/ThemeContext";
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
@@ -79,7 +79,7 @@ export function algoCols(step: StepName): Column<AlgoPracticeRow>[] {
             key: 'case',
             name: 'Case',
             renderCell: ({ row }: RenderCellProps<AlgoPracticeRow>) => {
-                const url = speedCubeDbUrl(step, row.case);
+                const url = databaseCaseUrl(step, row.case);
                 return url === null ? row.case :
                     <a className="algo-case-link" href={url} target="_blank" rel="noopener noreferrer">{row.case}</a>;
             },
@@ -323,7 +323,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
 
         if (hasStepTimings && p.steps.length === 1 && (p.steps[0] === StepName.OLL || p.steps[0] === StepName.PLL) && c.caseData) {
             plot('caseData', "Average Recognition Time and Execution Time per Case", "This chart shows how long your execution/recognition took for any individual last layer algorithm, sorted by how long each took.", ChartType.Bar, 'Case');
-            charts.push(buildChartHtml(<SortableGrid rows={c.algoPracticeRows ?? []} columns={p.steps[0] === StepName.OLL ? ALGO_COLS_OLL : ALGO_COLS_PLL} onCellClick={({ row, column }) => { if (column.key !== 'case') this.selectSolves(p.solves.filter(solve => !solve.dnf).slice(-p.windowSize).filter(solve => getStep(solve, p.steps[0])?.case === row.case), 0, `${p.steps[0]} ${row.case}`); }} />, "Algorithm Practice", "Click statistics to view contributing solves, or a case to see its algorithms on SpeedCubeDB. 'Failed' means core move count exceeded mode and average time for that case. 'Avg Wasted' shows redundant same-face moves that could be cancelled."));
+            charts.push(buildChartHtml(<SortableGrid rows={c.algoPracticeRows ?? []} columns={p.steps[0] === StepName.OLL ? ALGO_COLS_OLL : ALGO_COLS_PLL} onCellClick={({ row, column }) => { if (column.key !== 'case') this.selectSolves(p.solves.filter(solve => !solve.dnf).slice(-p.windowSize).filter(solve => getStep(solve, p.steps[0])?.case === row.case), 0, `${p.steps[0]} ${row.case}`); }} />, "Algorithm Practice", "Click statistics to view contributing solves, or a case to see its algorithm in the database. 'Failed' means core move count exceeded mode and average time for that case. 'Avg Wasted' shows redundant same-face moves that could be cancelled."));
         }
 
         plot('runningAverage', "Average Time", `Rolling average chopping ${p.chopAverages === false ? 0 : p.chopPercentage ?? 5}% per end (rounded up, retaining at least one solve). Untrimmed DNFs create gaps. Best and worst valid averages are always plotted; solve numbers mark each window's end. Record averages always use standard 5% trimming.`);

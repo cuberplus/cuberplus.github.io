@@ -50,8 +50,10 @@ export default defineConfig({
         cpSync(resolve(root, app, 'public'), resolve(output, app), { recursive: true, filter: source => !/(?:manifest[^\\/]*|index\.html)$/.test(source) });
         writeFileSync(resolve(output, app, 'index.html'), shell);
       }
-      mkdirSync(resolve(output, 'options'), { recursive: true });
-      writeFileSync(resolve(output, 'options', 'index.html'), shell);
+      for (const page of ['database', 'options']) {
+        mkdirSync(resolve(output, page), { recursive: true });
+        writeFileSync(resolve(output, page, 'index.html'), shell);
+      }
       for (const size of [192, 512]) cpSync(resolve(root, 'timer', 'public', `icon-${size}.png`), resolve(output, `icon-${size}.png`));
       writeFileSync(resolve(output, '404.html'), shell);
       const assets = readdirSync(resolve(output, 'assets')).filter(file => !file.endsWith('.map')).map(file => `/assets/${file}`);

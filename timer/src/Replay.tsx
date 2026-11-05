@@ -45,7 +45,7 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
         pair: step > 0 && step < 5 ? f2lPair(pairs[step - 1], cross) : '',
         case: !cases[step] ? '' : cases[step] === 'Solved' ? 'Solved' : step === 6 ? `${cases[step]} perm` : `${step === 5 ? 'OLL' : 'F2L'} ${cases[step]}`,
         caseUrl: caseName && caseName !== 'Solved' && step > 0
-          ? `https://speedcubedb.com/a/3x3/${caseSet}/${caseSet === 'PLL' ? '' : `${caseSet}_`}${encodeURIComponent(caseName)}` : '',
+          ? `/database/#${caseSet}-${encodeURIComponent(caseName)}` : '',
         empty: step > ends.length ? 'Not reached' : ends[step] === undefined ? 'No moves recorded' : 'Skipped',
         groups: groups.map(group => ({ ...group, move: group.notation[0] + ['4', '', '2', "'"][(group.amount % 4 + 4) % 4] })),
       };

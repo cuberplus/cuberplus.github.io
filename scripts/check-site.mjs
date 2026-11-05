@@ -4,8 +4,8 @@ import { readFileSync } from 'node:fs';
 const APP_VERSION = readFileSync(new URL('../shared/navigation/index.tsx', import.meta.url), 'utf8').match(/APP_VERSION = '([^']+)'/)[1];
 const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : undefined });
 const base = process.env.SITE_URL ?? 'http://127.0.0.1:4173';
-const routes = ['/', '/timer/', '/smartcubeanalyzer/', '/scrambler/', '/options/'];
-const links = [['Home', '/'], ['Timer', '/timer/'], ['Smartcube Analyzer', '/smartcubeanalyzer/'], ['Scrambler', '/scrambler/'], ['Options', '/options/']];
+const routes = ['/', '/timer/', '/smartcubeanalyzer/', '/scrambler/', '/database/', '/options/'];
+const links = [['Home', '/'], ['Timer', '/timer/'], ['Smartcube Analyzer', '/smartcubeanalyzer/'], ['Scrambler', '/scrambler/'], ['Database', '/database/'], ['Options', '/options/']];
 const errors = [];
 function contrast(first, second) {
   const luminance = color => {
@@ -32,7 +32,7 @@ try {
       await page.goto(`${base}${route}`);
       const nav = page.getByRole('navigation', { name: 'CuberPlus', exact: true });
       await expect(nav).toBeVisible();
-      await expect(nav.getByRole('link')).toHaveCount(5);
+      await expect(nav.getByRole('link')).toHaveCount(6);
       for (const [name, href] of links) {
         const link = nav.getByRole('link', { name, exact: true });
         await expect(link).toBeVisible();
@@ -105,6 +105,32 @@ try {
     await page.getByRole('navigation', { name: 'CuberPlus', exact: true }).getByRole('link', { name, exact: true }).click();
     await expect(page).toHaveURL(`${base}${route}`);
   }
+  await page.goto(`${base}/database/`);
+  const groups = page.locator('.database-group');
+  await expect(groups).toHaveCount(4);
+  for (const [i, count] of [41, 54, 57, 21].entries()) {
+    const group = groups.nth(i);
+    await expect(group).not.toHaveAttribute('open');
+    await group.locator('summary').click();
+    await expect(group.getByRole('article')).toHaveCount(count);
+    await expect(group.getByRole('img')).toHaveCount(count);
+    await expect(group.getByRole('img').first()).toBeVisible();
+  }
+  await page.getByRole('button', { name: 'Favorite F2L 1 algorithm 1', exact: true }).click();
+  await page.reload();
+  await groups.first().locator('summary').click();
+  await expect(page.getByRole('button', { name: 'Unfavorite F2L 1 algorithm 1', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Unfavorite F2L 1 algorithm 1', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Favorite F2L 1 algorithm 1', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const image = await page.getByRole('img', { name: 'F2L 1 case', exact: true }).boundingBox();
+    const algorithm = await page.getByRole('article', { name: 'F2L 1', exact: true }).locator('.database-algorithm').first().boundingBox();
+    expect(image.x + image.width).toBeLessThan(algorithm.x);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  console.log('PASS algorithm database cases, images, responsive layout and persistent favorites');
   await page.goto(`${base}/timer/`);
   await page.getByRole('button', { name: 'Options', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();

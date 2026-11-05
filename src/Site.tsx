@@ -7,6 +7,7 @@ const pages = {
   timer: lazy(() => import('../timer/src/App')),
   smartcubeanalyzer: lazy(() => import('../smartcubeanalyzer/src/Components/App')),
   scrambler: lazy(() => import('../scrambler/src/Components/App')),
+  database: lazy(() => import('./database/Database')),
   options: lazy(() => import('./Options')),
 };
 export function toolAt(path: string): Tool | null {

@@ -8,26 +8,15 @@ import { Const } from "./Constants";
 /** The total is not one of the stacked segments, so it gets its own neutral marker. */
 const TOTAL_SQUARE = "\u25A0";
 
-/**
- * SpeedCubeDB documents each last-layer algorithm on its own page, slugged by
- * case: OLL uses "OLL_<n>" and PLL uses the perm letters ("Aa", "T", ...), which
- * are exactly the values held in Const.OllCases / Const.PllCases.
- *
- * The case is matched against those lists instead of being interpolated into the
- * URL directly, so a malformed case coming out of a CSV can never steer the link
- * somewhere unexpected. Returns null when there is no page to link to, which
- * covers "Solved" (a skipped step, not an algorithm) and any unknown case.
- */
-export function speedCubeDbUrl(step: StepName, caseName: string): string | null {
+/** Only known cases from user-supplied CSVs get database links; skipped steps do not. */
+export function databaseCaseUrl(step: StepName, caseName: string): string | null {
     const cases = step === StepName.OLL ? Const.OllCases
         : step === StepName.PLL ? Const.PllCases
         : null;
     if (cases === null || caseName === "Solved") return null;
     const known = cases.some(c => c.value === caseName);
     if (!known) return null;
-    return step === StepName.OLL
-        ? `https://speedcubedb.com/a/3x3/OLL/OLL_${caseName}`
-        : `https://speedcubedb.com/a/3x3/PLL/${caseName}`;
+    return `/database/#${step}-${caseName}`;
 }
 
 export function createTooltip(description: string) {

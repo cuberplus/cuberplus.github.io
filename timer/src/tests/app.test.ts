@@ -7,7 +7,7 @@ import { deserialize, serialize } from 'node:v8';
 import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
 import { getPenaltyReasons, setPenalty, type Solve } from '../engine';
 import { averageDetails, cubeastCSV, dailyStreak, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats, solveEndDate } from '../storage';
-import { loadCube, SOLVED, Cube, inverse, isMove, movesOf, locations, sameAxis, simplifyMoves } from '../puzzle';
+import { loadCube, SOLVED, Cube, inverse, isMove, movesOf, locations, sameAxis, simplifyMoves, crossRotation } from '../puzzle';
 import { PageLocation, SettingsProvider } from '@cuberplus/navigation';
 import Options from '../../../src/Options';
 
@@ -21,7 +21,7 @@ const erase = jest.fn<(id: string) => Promise<void>>().mockImplementation(async 
 let recovered: Solve[] = [];
 let emit: (event: SmartCubeEvent) => void;
 let physicalFacelets = SOLVED, physicalSerial: number | undefined;
-await jest.unstable_mockModule('../puzzle', () => ({ Cube, SOLVED, inverse, isMove, movesOf, locations, sameAxis, simplifyMoves, loadCube: async () => cube, generateScramble: generate }));
+await jest.unstable_mockModule('../puzzle', () => ({ Cube, SOLVED, inverse, isMove, movesOf, locations, sameAxis, simplifyMoves, crossRotation, loadCube: async () => cube, generateScramble: generate }));
 await jest.unstable_mockModule('../bluetooth', () => ({ BluetoothCube: class {
   connection: { deviceName: string } | null = null;
   async connect(_mac: string, events: typeof emit, ready: (device: { deviceName: string }) => void) {
@@ -64,6 +64,9 @@ beforeEach(async () => {
   localStorage.removeItem('timer-pb-daily-records');
   localStorage.removeItem('timer-show-every-long-pb');
   localStorage.removeItem('timer-hide-distracting-visuals');
+  localStorage.removeItem('timer-non-favorite-mistakes');
+  localStorage.removeItem('timer-non-favorite-categories');
+  localStorage.removeItem('cuberplus-database-favorites');
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true });
   Object.defineProperty(globalThis, 'structuredClone', { configurable: true, value: <T>(value: T): T => deserialize(serialize(value)) as T });
   Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => webcrypto.randomUUID() });

@@ -131,7 +131,7 @@ try {
   const offline = await context.newPage();
   offline.on('pageerror', error => errors.push(error.message));
   offline.on('requestfailed', request => { if (new URL(request.url()).origin === base) errors.push(`${request.url()}: ${request.failure()?.errorText}`); });
-  for (const [route, name] of [['/', 'Home'], ['/timer/', 'Timer'], ['/smartcubeanalyzer/', 'Smartcube Analyzer'], ['/scrambler/', 'Scrambler'], ['/options/', 'Options']]) {
+  for (const [route, name] of [['/', 'Home'], ['/timer/', 'Timer'], ['/smartcubeanalyzer/', 'Smartcube Analyzer'], ['/scrambler/', 'Scrambler'], ['/database/', 'Database'], ['/options/', 'Options']]) {
     await offline.goto(`${base}${route}`);
     await expect(offline.getByRole('link', { name, current: 'page', exact: true })).toBeVisible();
     if (name === 'Timer') await expect(offline.getByText('Try simulated cube', { exact: true })).toBeEnabled({ timeout: 60000 });
@@ -140,6 +140,10 @@ try {
       await expect(offline.getByRole('region', { name: 'Daily Fastest Solve', exact: true })).toBeVisible({ timeout: 60000 });
     }
     if (name === 'Scrambler') await expect(offline.getByRole('button', { name: 'Print sheet' })).toBeEnabled({ timeout: 120000 });
+    if (name === 'Database') {
+      await offline.locator('.database-group').first().locator('summary').click();
+      await expect(offline.getByRole('img', { name: 'F2L 1 case', exact: true })).toBeVisible();
+    }
   }
   console.log('PASS root-scoped PWA serves every route, local solve analysis and Scrambler generation offline');
   expect(errors).toEqual([]);
