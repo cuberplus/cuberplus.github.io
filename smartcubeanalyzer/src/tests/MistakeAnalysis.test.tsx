@@ -26,6 +26,23 @@ describe('specific mistake reasons', () => {
         expect(solve.isMistake).toBe(false);
     });
 
+    test('rolling step baselines use the first duplicate, fill missing steps, and refresh after edits', () => {
+        const solves = makeSolves(20).map(solve => ({ ...solve, steps: [makeStep(StepName.Cross, 1)] }));
+        const last = solves.at(-1)!;
+        last.steps.push(makeStep(StepName.Cross, 1000));
+        markMistakes(solves, 5);
+        expect(last.mistakes?.some(mistake => mistake.kind === 'slowStep')).toBe(false);
+        last.steps[0].time = 1000;
+        markMistakes(solves, 5);
+        expect(last.mistakes?.some(mistake => mistake.kind === 'slowStep')).toBe(true);
+        last.steps = [makeStep(StepName.F2L_1, 100)];
+        markMistakes(solves, 5);
+        expect(last.mistakes?.some(mistake => mistake.kind === 'slowStep')).toBe(true);
+        last.steps = [];
+        markMistakes(solves, 5);
+        expect(last.mistakes?.some(mistake => mistake.kind === 'slowStep')).toBe(false);
+    });
+
     test('uses strict, explicit cross and per-pair move thresholds and deduplicates pair mistakes', () => {
         expect(classify([
             makeStep(StepName.Cross, 2, { turns: 8 }),
@@ -88,6 +105,17 @@ describe('specific mistake reasons', () => {
         expect(analyzeMoveMistakes(['R', 'x', "R'"])).toEqual([]);
         expect(analyzeMoveMistakes(['R', '???', "R'"])).toEqual([]);
         expect(analyzeMoveMistakes(['Rw', "Rw'", 'M', "M'"]).map(m => m.kind)).toEqual(['singleUndo', 'singleUndo']);
+    });
+
+    test('reused wide tokens respect each AUF face and changed recordings', () => {
+        const tokens = ['Rw', "Rw'"];
+        expect(analyzeMoveMistakes(tokens, new Set(['r']))).toEqual([{ kind: 'singleUndo', auf: true }]);
+        expect(analyzeMoveMistakes(tokens)).toEqual([{ kind: 'singleUndo', auf: false }]);
+        tokens[1] = '???';
+        expect(analyzeMoveMistakes(tokens)).toEqual([]);
+        tokens[1] = "Rw'";
+        expect(analyzeMoveMistakes(tokens, new Set(['r']))).toEqual([{ kind: 'singleUndo', auf: true }]);
+        expect(analyzeMoveMistakes(['R' + '9'.repeat(400), "R'"])).toEqual([]);
     });
 
     test('distinguishes AUF/internal undos, attributes them to their step, and deduplicates each kind', () => {

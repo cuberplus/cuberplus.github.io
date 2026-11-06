@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, type RefObject } from 'react';
 
-export const APP_VERSION = '1.1.6';
+export const APP_VERSION = '1.1.7';
 export { SettingsContext, SettingsProvider } from './settings';
 export type Tool = 'home' | 'timer' | 'smartcubeanalyzer' | 'scrambler' | 'database' | 'options';
 export const PageVisible = createContext(true);

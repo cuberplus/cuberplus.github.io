@@ -103,6 +103,38 @@ test('OneDrive downloads preauthenticated content without leaking the Graph toke
   expect(request.mock.calls[2][1]?.headers).toBeUndefined();
   expect(mockPopup).toHaveBeenCalledTimes(1);
 });
+test('OneDrive retries full item metadata when the selected path response omits the download URL', async () => {
+  await api.connectProvider('microsoft');
+  request.mockResolvedValueOnce(json({ id: 'folder' }))
+    .mockResolvedValueOnce(json({ id: 'file', eTag: 'old-revision' }))
+    .mockResolvedValueOnce(json({ id: 'file', eTag: 'current-revision', '@microsoft.graph.downloadUrl': 'https://download.files.1drv.com/backup' }))
+    .mockResolvedValueOnce(new Response('existing-backup'));
+  const file = await api.readRemote('microsoft');
+  expect(file?.id).toBe('file');
+  expect(file?.revision).toBe('current-revision');
+  expect(await file?.content.text()).toBe('existing-backup');
+  expect(request.mock.calls[2][0]).toBe('https://graph.microsoft.com/v1.0/me/drive/items/file');
+  expect(request.mock.calls[2][1]?.headers).toEqual(request.mock.calls[1][1]?.headers);
+  expect(request.mock.calls[3][1]?.headers).toBeUndefined();
+  expect(mockPopup).toHaveBeenCalledTimes(1);
+});
+test('OneDrive does not treat an existing backup with no download URL as an empty cloud', async () => {
+  await api.connectProvider('microsoft');
+  request.mockResolvedValueOnce(json({ id: 'folder' }))
+    .mockResolvedValueOnce(json({ id: 'file', eTag: 'etag' }))
+    .mockResolvedValueOnce(json({ id: 'file', eTag: 'etag' }));
+  await expect(api.readRemote('microsoft')).rejects.toThrow('did not return a backup download address');
+  expect(request).toHaveBeenCalledTimes(3);
+  expect(request.mock.calls.every(([, options]) => !options?.method)).toBe(true);
+});
+test.each([403, 404])('OneDrive metadata retry preserves HTTP %s errors instead of allowing an overwrite', async status => {
+  await api.connectProvider('microsoft');
+  request.mockResolvedValueOnce(json({ id: 'folder' }))
+    .mockResolvedValueOnce(json({ id: 'file', eTag: 'etag' }))
+    .mockResolvedValueOnce(new Response(null, { status }));
+  await expect(api.readRemote('microsoft')).rejects.toMatchObject({ status });
+  expect(request).toHaveBeenCalledTimes(3);
+});
 test('OneDrive creates a conflict-protected upload session and sends ordered chunks without Graph credentials', async () => {
   await api.connectProvider('microsoft');
   request.mockResolvedValueOnce(json({ uploadUrl: 'https://upload.up.1drv.com/session' }))

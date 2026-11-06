@@ -68,17 +68,24 @@ export function getMistakeMap(values: number[], windowSize: number): boolean[] {
 export function markMistakes(solves: Solve[], windowSize: number): Solve[] {
     const valid = solves.filter(s => !s.isCorrupt && !s.dnf);
     const examples = new Map<string, number[]>();
-    for (const solve of valid) for (const { name, case: caseName, moves } of solve.steps) {
-        if ((name !== StepName.OLL && name !== StepName.PLL) || !caseName || caseName === 'Solved' || !moves) continue;
-        const key = `${solve.method}:${name}:${caseName}`;
-        if (!examples.has(key)) examples.set(key, []);
-        examples.get(key)!.push(moveFacts(moves, getAufMovesForSolve(solve)).core);
+    const stepTimes = new Map<StepName, number[]>();
+    for (const [i, solve] of valid.entries()) {
+        const seen = new Set<StepName>();
+        for (const { name, case: caseName, moves, time } of solve.steps) {
+            if (!seen.has(name)) {
+                if (!stepTimes.has(name)) stepTimes.set(name, new Array<number>(valid.length).fill(0));
+                stepTimes.get(name)![i] = time ?? 0; seen.add(name);
+            }
+            if ((name !== StepName.OLL && name !== StepName.PLL) || !caseName || caseName === 'Solved' || !moves) continue;
+            const key = `${solve.method}:${name}:${caseName}`;
+            if (!examples.has(key)) examples.set(key, []);
+            examples.get(key)!.push(moveFacts(moves, getAufMovesForSolve(solve)).core);
+        }
     }
     const thresholds = new Map<string, number>();
     examples.forEach((values, key) => { if (values.length >= 5) thresholds.set(key, typicalCaseMoves(values.sort((a, b) => a - b)) + 2); });
     const slowSolves = getMistakeMap(valid.map(s => s.time), windowSize);
-    const slowSteps = Array.from(new Set(valid.flatMap(s => s.steps.map(step => step.name)))).map(name =>
-        getMistakeMap(valid.map(s => s.steps.find(step => step.name === name)?.time ?? 0), windowSize));
+    const slowSteps = Array.from(stepTimes.values(), times => getMistakeMap(times, windowSize));
     valid.forEach((solve, i) => {
         const reasons = new Map<string, Mistake>();
         const add = (kind: MistakeKind, step?: StepName, auf?: boolean) => { const mistake = { kind, step, auf }; reasons.set(mistakeKey(mistake), mistake); };

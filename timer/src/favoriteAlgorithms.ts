@@ -83,8 +83,9 @@ function advancedCases(cube: Cube, before: KPattern) {
   }));
   const candidates: { entry: typeof images[number]; yaw: string }[] = [];
   for (const yaw of ['', 'y', 'y2', "y'"]) {
+    const oriented = normalized(cube, before, yaw);
     for (const auf of ['', 'U', 'U2', "U'"]) {
-      const start = cube.facelets(normalized(cube, before, yaw).applyAlg(auf));
+      const start = cube.facelets(oriented.applyAlg(auf));
       for (const entry of images) if (entry.visibleStickers.every(index => start[index] === entry.facelets[index]) &&
         !candidates.some(candidate => candidate.entry === entry && candidate.yaw === yaw)) candidates.push({ entry, yaw });
     }

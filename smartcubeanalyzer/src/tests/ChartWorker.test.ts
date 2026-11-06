@@ -65,6 +65,20 @@ describe('chartWorker message handling', () => {
         expectedKeys.forEach(key => expect(chartData).toHaveProperty(key));
     });
 
+    test('record tables and history both refresh after an in-place solve correction', () => {
+        const solves = makeSolves(5).map(solve => ({ ...solve, time: 12 }));
+        const before = run({ solves }).chartData;
+        solves[4].time = 9;
+        const after = run({ solves }).chartData;
+        expect(before.recordRows[0].time).toBe('12.000');
+        expect(after.recordRows[0].time).toBe('9.000');
+        expect(after.recordHistory.datasets[0].data.at(-1)).toMatchObject({ y: 9, endIndex: 5 });
+        solves[4].dnf = true;
+        const corrected = run({ solves }).chartData;
+        expect(corrected.recordRows[0].time).toBe('12.000');
+        expect(corrected.recordHistory.datasets[0].data.at(-1)).toMatchObject({ y: 12 });
+    });
+
     test('first-pair percentages respect DNFs, original solve numbers, method and palette', () => {
         const solves = ['Red/Green', 'Orange/Blue', 'Orange/Blue', 'Red/Green'].map((firstF2LPair, index) => makeSolve({ firstF2LPair, dnf: index === 1 }));
         const { chartData } = run({ solves, windowSize: 2 });

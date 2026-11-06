@@ -146,7 +146,11 @@ export async function readRemote(provider: Provider): Promise<RemoteFile | null>
   const folder = await appFolder();
   const response = await authorized(provider, `${graph}/items/${encodeURIComponent(folder.id)}:/${fileName}?$select=id,eTag,@microsoft.graph.downloadUrl`);
   if (response.status === 404) return null;
-  const item = await checked(response).json() as DriveItem;
+  let item = await checked(response).json() as DriveItem;
+  // Retry by ID without $select when the path response omits the download annotation.
+  if (!item['@microsoft.graph.downloadUrl']) {
+    item = await checked(await authorized(provider, `${graph}/items/${encodeURIComponent(item.id)}`)).json() as DriveItem;
+  }
   if (!item['@microsoft.graph.downloadUrl']) throw new Error('OneDrive did not return a backup download address.');
   // Preauthenticated transfer URLs must never receive our Graph access token.
   const content = await checked(await fetch(microsoftTransferUrl(item['@microsoft.graph.downloadUrl']), { cache: 'no-store' })).blob();

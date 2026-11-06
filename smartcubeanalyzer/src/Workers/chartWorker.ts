@@ -45,14 +45,14 @@ export function buildAllStreakRows(solves: Solve[], today = new Date()): StreakR
 // ── Records ──────────────────────────────────────────────────────────────────
 
 const RECORD_WINDOWS = [1, 5, 12, 100, 1000];
-const recordTimes = (solves: Solve[], window: number) => {
+const recordTimes = (solves: Solve[]) => {
     const times = solves.map(s => s.dnf ? Infinity : s.time);
-    return window === 1 ? times : calculateMovingAverageChopped(times, window);
+    return RECORD_WINDOWS.map(window => window === 1 ? times : calculateMovingAverageChopped(times, window));
 };
 
-export function buildRecordRows(solves: Solve[], precision = 3): RecordRow[] {
-    return RECORD_WINDOWS.map(window => {
-        const times = recordTimes(solves, window);
+export function buildRecordRows(solves: Solve[], precision = 3, records = recordTimes(solves)): RecordRow[] {
+    return RECORD_WINDOWS.map((window, i) => {
+        const times = records[i];
         const best = times.reduce((a, b) => Math.min(a, b), Infinity);
         return { recordType: window === 1 ? 'Single' : `Ao${window}`, time: !times.length ? '-' : best === Infinity ? 'DNF' : best.toFixed(precision) };
     });
@@ -68,12 +68,12 @@ function buildRecordDataset(dates: Date[], times: number[], window: number) {
     return records;
 }
 
-export function buildRecordHistory(solves: Solve[]) {
+export function buildRecordHistory(solves: Solve[], records = recordTimes(solves)) {
     const dates = solves.map(x => x.date);
     return {
-        datasets: RECORD_WINDOWS.map(window => ({
+        datasets: RECORD_WINDOWS.map((window, i) => ({
             label: window === 1 ? 'Record Single' : `Record Ao${window}`,
-            data: buildRecordDataset(dates.slice(window - 1), recordTimes(solves, window), window),
+            data: buildRecordDataset(dates.slice(window - 1), records[i], window),
         })),
     };
 }
@@ -262,6 +262,7 @@ export function computeBestSolvesData(solves: Solve[], precision = 3): FastestSo
 export function computeAllChartData(input: WorkerInput): ChartDataBundle {
     const { windowSize, pointsPerGraph, steps, goodTime, badTime, methodName, use4SegmentTiming, isDark } = input;
     const solves = input.solves.filter(s => !s.dnf);
+    const records = recordTimes(input.solves);
     const solveNumbers = input.solves.flatMap((solve, i) => solve.dnf ? [] : [i + 1]);
     const hasOll = steps.includes(StepName.OLL);
     const hasPll = steps.includes(StepName.PLL);
@@ -297,9 +298,9 @@ export function computeAllChartData(input: WorkerInput): ChartDataBundle {
             : null,
         dailyRecord: paint(buildDailyRecordData(solves)),
         streakRows: buildAllStreakRows(input.solves),
-        recordRows: buildRecordRows(input.solves, input.precision),
+        recordRows: buildRecordRows(input.solves, input.precision, records),
         goodBad: paintRolling(buildGoodBadData(solves, windowSize, pointsPerGraph, goodTime, badTime)),
-        recordHistory: applyPaletteToChartData(buildRecordHistory(input.solves), isDark),
+        recordHistory: applyPaletteToChartData(buildRecordHistory(input.solves, records), isDark),
         stepPercentages: paint(buildStepPercentages(solves, steps, windowSize), true),
         typicalCompare: paint(buildTypicalCompare(solves, windowSize)),
         bestSolvesData: computeBestSolvesData(solves, input.precision),

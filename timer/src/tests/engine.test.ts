@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { TimerEngine, finalizeTiming, setPenalty, solveTime, type RecordedTurn, type Solve } from '../engine';
-import { Cube, SOLVED, inverse, loadCube, movesOf, simplifyMoves } from '../puzzle';
+import { Cube, SOLVED, inverse, loadCube, locations, movesOf, simplifyMoves } from '../puzzle';
 
 let cube: Cube;
 beforeAll(async () => { cube = await loadCube(); });
@@ -97,6 +97,23 @@ test('rejects impossible cube parity, orientation and unsupported sizes', () => 
   expect(() => cube.parse(swapped.join(''))).toThrow('parity');
   expect(() => cube.parse('U'.repeat(24))).toThrow('3x3');
   expect(() => cube.parse('U'.repeat(54))).toThrow('3x3');
+});
+
+test('rejects mirrored corners even when centers and color counts are valid', () => {
+  const mirrored = SOLVED.split(''), corner = locations.CORNERS[0];
+  [mirrored[corner[1]], mirrored[corner[2]]] = [mirrored[corner[2]], mirrored[corner[1]]];
+  expect(() => cube.parse(mirrored.join(''))).toThrow('Invalid cube pieces');
+  expect(() => cube.parse(SOLVED.replace('U', '?'))).toThrow('3x3');
+});
+
+test('piece lookups preserve exact permutations and twists through varied legal states', () => {
+  let pattern = cube.solved(), seed = 41;
+  for (let i = 0; i < 200; i++) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    pattern = pattern.applyMove('URFDLB'[seed % 6] + ['', '2', "'"][(seed >>> 8) % 3]);
+    const restored = cube.parse(cube.facelets(pattern));
+    for (const orbit of ['EDGES', 'CORNERS']) expect(restored.patternData[orbit]).toEqual(pattern.patternData[orbit]);
+  }
 });
 
 test('double turns complete from either pair of quarter turns; scramble completion only arms', () => {

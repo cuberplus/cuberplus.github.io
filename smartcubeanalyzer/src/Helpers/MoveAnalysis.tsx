@@ -23,14 +23,18 @@ function parseMoveToken(token: string): ParsedToken | null {
 }
 
 export type MoveMistake = { kind: 'singleUndo' | 'sequenceUndo' | 'redundantTurns'; auf: boolean };
+const mistakeTokens = new Map<string, { face: string; count: number; turns: number } | null>();
 /** Maximal contiguous inverse sequences are one episode; rotations/unknown tokens are barriers. */
 export function analyzeMoveMistakes(tokens: string[], auf: Set<string> = AUF_MOVES): MoveMistake[] {
     const moves = tokens.map(token => {
+        const cached = mistakeTokens.get(token);
+        if (cached !== undefined) return cached;
         const match = /^([RLUDFBrludfbMES]w?)(\d+)?(')?$/.exec(token);
-        if (!match) return null;
-        const count = Number(match[2] ?? 1);
-        return Number.isFinite(count) ? { face: match[1].endsWith('w') ? match[1][0].toLowerCase() : match[1], count,
+        const count = Number(match?.[2] ?? 1);
+        const parsed = match && Number.isFinite(count) ? { face: match[1].endsWith('w') ? match[1][0].toLowerCase() : match[1], count,
             turns: (count % 4) * (match[3] ? 3 : 1) % 4 } : null;
+        mistakeTokens.set(token, parsed);
+        return parsed;
     });
     const face = auf.values().next().value;
     let prefix = 0, suffix = moves.length - 1;
@@ -104,7 +108,6 @@ export function coreMovesCount(movesString: string | string[], aufMoves: Set<str
     return count;
 }
 
-/** Returns median (p50) of sorted array. */
 function median(sorted: number[]): number {
     const mid = Math.floor(sorted.length / 2);
     return !sorted.length ? 0 : sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;

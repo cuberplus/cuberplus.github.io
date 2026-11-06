@@ -93,12 +93,13 @@ import {
 
 // Keep budgets close to observed timings with a small margin for run-to-run
 // variation. Override via the env vars below on slower machines.
-const PAGE_BUDGET_MS = Number(process.env.CHART_PERF_PAGE_BUDGET_MS ?? 4_800);
+const PAGE_BUDGET_MS = Number(process.env.CHART_PERF_PAGE_BUDGET_MS ?? 2_700);
 // The stage-by-stage run measures a little more work than the end-to-end one.
-const STAGE_TOTAL_BUDGET_MS = Number(process.env.CHART_PERF_STAGE_TOTAL_BUDGET_MS ?? 3_400);
+const STAGE_TOTAL_BUDGET_MS = Number(process.env.CHART_PERF_STAGE_TOTAL_BUDGET_MS ?? 2_900);
 const CHART_BUDGET_MS = Number(process.env.CHART_PERF_CHART_BUDGET_MS ?? 400);
-const PARSE_BUDGET_MS = Number(process.env.CHART_PERF_PARSE_BUDGET_MS ?? 2_500);
-const COMPUTE_BUDGET_MS = Number(process.env.CHART_PERF_COMPUTE_BUDGET_MS ?? 800);
+const PARSE_BUDGET_MS = Number(process.env.CHART_PERF_PARSE_BUDGET_MS ?? 1_400);
+const COMPUTE_BUDGET_MS = Number(process.env.CHART_PERF_COMPUTE_BUDGET_MS ?? 650);
+const FILTER_BUDGET_MS = Number(process.env.CHART_PERF_FILTER_BUDGET_MS ?? 450);
 
 const DEMO_CSV = join(__dirname, '..', '..', 'public', 'demo', 'demo-solves.csv');
 const WINDOW_SIZE = 1000;
@@ -275,6 +276,7 @@ describe('full site load time', () => {
                 FilterPanel.applyFiltersToSolves(parse.result, defaultFilters(), WINDOW_SIZE)
             );
             record('apply filters', filter.ms);
+            expect(filter.ms).toBeLessThan(FILTER_BUDGET_MS);
 
             const compress = time(() => FilterPanel.compressSolves(filter.result, ALL_CFOP_STEPS));
             record('compress solves', compress.ms);

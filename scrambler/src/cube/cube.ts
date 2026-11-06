@@ -10,6 +10,7 @@ export const CORNERS = [[0, 1, 2], [0, 2, 4], [0, 4, 5], [0, 5, 1],
 export const NORMALS = [[0, 1, 0], [1, 0, 0], [0, 0, 1],
   [0, -1, 0], [-1, 0, 0], [0, 0, -1]];
 export const MOVES = FACES.flatMap(face => [face, `${face}2`, `${face}'`]);
+const moveIndices = new Map(MOVES.map((move, index) => [move, index]));
 export interface Cube { edges: Uint8Array; corners: Uint8Array }
 export interface Rotation { faces: number[]; inverse: number[] }
 
@@ -59,8 +60,8 @@ export const CORNER_MOVES = makeMoves(CORNERS);
 export function parseAlgorithm(algorithm: string): number[] {
   if (!algorithm.trim()) return [];
   return algorithm.trim().split(/\s+/).map(token => {
-    const move = MOVES.indexOf(token);
-    if (move < 0) throw new Error(`Invalid move "${token}". Use U R F D L B, optionally followed by 2 or '.`);
+    const move = moveIndices.get(token);
+    if (move === undefined) throw new Error(`Invalid move "${token}". Use U R F D L B, optionally followed by 2 or '.`);
     return move;
   });
 }

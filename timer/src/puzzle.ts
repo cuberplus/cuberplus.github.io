@@ -6,6 +6,13 @@ import { locations } from '../../shared/cubeLocations';
 export { locations } from '../../shared/cubeLocations';
 
 export const SOLVED = 'UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB';
+const pieceLookup = { EDGES: new Map<string, [number, number]>(), CORNERS: new Map<string, [number, number]>() };
+for (const orbit of ['EDGES', 'CORNERS'] as const) locations[orbit].forEach((home, piece) => {
+  for (let twist = 0; twist < home.length; twist++) {
+    pieceLookup[orbit].set(home.map((_, sticker) =>
+      SOLVED[home[(sticker - twist + home.length) % home.length]]).join(''), [piece, twist]);
+  }
+});
 export const crossRotation = (cross: number | null): string => ['x2', 'z', "x'", '', "z'", 'x'][cross ?? 3];
 export const isMove = (move: string): boolean => /^[URFDLB](2|'|2')?$/.test(move);
 export const movesOf = (alg: string): string[] => alg.trim() ? alg.trim().split(/\s+/) : [];
@@ -47,20 +54,26 @@ export class Cube {
     return stickers.join('');
   }
   parse(facelets: string): KPattern {
-    if (facelets.length !== 54 || [...'URFDLB'].some((face, i) =>
-      facelets[i * 9 + 4] !== face || [...facelets].filter(c => c === face).length !== 9)) {
+    if (facelets.length !== 54) throw new Error('Expected a legal 3x3 state in the calibrated URFDLB frame.');
+    const counts = new Uint8Array(6);
+    for (const face of facelets) {
+      const color = 'URFDLB'.indexOf(face);
+      if (color < 0) throw new Error('Expected a legal 3x3 state in the calibrated URFDLB frame.');
+      counts[color]++;
+    }
+    if ([...'URFDLB'].some((face, i) =>
+      facelets[i * 9 + 4] !== face || counts[i] !== 9)) {
       throw new Error('Expected a legal 3x3 state in the calibrated URFDLB frame.');
     }
     const data: KPatternData = structuredClone(this.solved().patternData);
     for (const orbit of ['EDGES', 'CORNERS'] as const) {
       const size = locations[orbit][0].length;
       locations[orbit].forEach((indices, position) => {
-        const piece = locations[orbit].findIndex(home => home.some((_, twist) =>
-          indices.every((index, sticker) => facelets[index] === SOLVED[home[(sticker - twist + size) % size]])));
-        if (piece < 0) throw new Error('Invalid cube pieces.');
+        const found = pieceLookup[orbit].get(indices.map(index => facelets[index]).join(''));
+        if (!found) throw new Error('Invalid cube pieces.');
+        const [piece, twist] = found;
         data[orbit].pieces[position] = piece;
-        data[orbit].orientation[position] = Array.from({ length: size }, (_, twist) => twist).find(twist =>
-          indices.every((index, sticker) => facelets[index] === SOLVED[locations[orbit][piece][(sticker - twist + size) % size]]))!;
+        data[orbit].orientation[position] = twist;
       });
       if (new Set(data[orbit].pieces).size !== locations[orbit].length ||
           data[orbit].orientation.reduce((a, b) => a + b, 0) % size) throw new Error('Invalid cube orientation.');

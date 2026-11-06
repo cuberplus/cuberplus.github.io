@@ -191,26 +191,25 @@ function parseUtcDateTime(value: string): Date {
 
 // --- Shared helpers for Acubemy move parsing  ---
 
-function normalizeMovesString(raw: string | undefined | null): string {
-    // Strip surrounding quotes Acubemy may add around move strings.
-    return raw?.trim().replace(/^"(.*)"$/, "$1").trim() ?? "";
-}
-
 export function tokenizeMoves(raw: string | undefined | null): string[] {
-    const normalized = normalizeMovesString(raw);
+    const normalized = raw?.trim().replace(/^"(.*)"$/, "$1").trim() ?? "";
     return normalized ? normalized.split(/\s+/) : [];
 }
 
 const consolidatedMoves = new Map<string, string>();
+const consolidatedTokens = new Map<string, RegExpExecArray | null>();
 /** Merge sensor-split turns, but retain cancellations as evidence of actual undos. */
 export function consolidateMoves(raw: string): string {
     const cached = consolidatedMoves.get(raw);
     if (cached !== undefined) return cached;
     if (!/([RLUDFBrludfbMES]w?)(?:2'?|')?\s+\1(?:2'?|')?(?=\s|$|")/.test(raw)) { consolidatedMoves.set(raw, raw); return raw; }
     const result: string[] = [];
-    let previous: RegExpExecArray | null = null;
+    let previous: string[] | null = null;
     const amount = (suffix: string) => suffix.startsWith('2') ? 2 : suffix === "'" ? 3 : 1;
-    const tokens = tokenizeMoves(raw), parsed = tokens.map(token => /^([RLUDFBrludfbMES]w?)(2'?|'?)$/.exec(token));
+    const tokens = tokenizeMoves(raw), parsed = tokens.map(token => {
+        if (!consolidatedTokens.has(token)) consolidatedTokens.set(token, /^([RLUDFBrludfbMES]w?)(2'?|'?)$/.exec(token));
+        return consolidatedTokens.get(token) ?? null;
+    });
     const inverse = (left: number, right: number) => {
         const a = parsed[left], b = parsed[right];
         return a && b && a[1] === b[1] && (amount(a[2]) + amount(b[2])) % 4 === 0;
@@ -221,7 +220,7 @@ export function consolidateMoves(raw: string): string {
         const total: number = previous && move && previous[1] === move[1] ? (amount(previous[2]) + amount(move[2])) % 4 : 0;
         if (total) result[result.length - 1] = move![1] + ['', '', '2', "'"][total];
         else result.push(token);
-        previous = total ? /^([RLUDFBrludfbMES]w?)(2'?|'?)$/.exec(result[result.length - 1]) : previous?.[1] === move?.[1] ? null : move;
+        previous = total ? ['', move![1], ['', '', '2', "'"][total]] : previous?.[1] === move?.[1] ? null : move;
     }
     const value = result.join(' ');
     consolidatedMoves.set(raw, value);
@@ -250,12 +249,7 @@ export function stripRotationsFromMoveString(movesString: string | undefined | n
     return tokenizeMoves(movesString).filter((t) => !ROTATIONS.has(t.toLowerCase())).join(' ');
 }
 
-/**
- * A Cubeast row while it is being parsed. Move timings and the cumulative time are only
- * needed to derive real step timings, so they live here for the duration of one row
- * rather than on the Step itself - putting them on the Step and deleting them afterwards
- * drops every Step into V8's dictionary mode, which slows down all later chart work.
- */
+/** Keep transient timelines off Step: deleting Step fields puts V8 objects into slower dictionary mode. */
 interface RowScratch {
     moves: (MoveTiming[] | null)[];
     cumulativeSec: number[];
@@ -558,10 +552,7 @@ function parseAcubemyCsv(stringVal: string, splitter: string): Solve[] {
         if (!solutionTokens.length || !moveTimesRaw || !moveTimesRaw.trim()) {
             return { solutionNoRot: '', moveTimesNoRot: '' };
         }
-        const timeTokens = normalizeMovesString(moveTimesRaw)
-            .split(/\s+/)
-            .filter((t) => t.length > 0)
-            .map((t) => Number(t));
+        const timeTokens = tokenizeMoves(moveTimesRaw).map(Number);
         if (solutionTokens.length !== timeTokens.length) {
             return { solutionNoRot: '', moveTimesNoRot: '' };
         }
@@ -597,10 +588,7 @@ function parseAcubemyCsv(stringVal: string, splitter: string): Solve[] {
             return;
         }
 
-        const timeTokens = normalizeMovesString(moveTimesRaw)
-            .split(/\s+/)
-            .filter((t) => t.length > 0)
-            .map((t) => Number(t));
+        const timeTokens = tokenizeMoves(moveTimesRaw).map(Number);
 
         if (solutionTokens.length !== timeTokens.length || solutionTokens.length === 0) {
             return;
