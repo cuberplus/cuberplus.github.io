@@ -2,6 +2,7 @@ import { getDnfReason, getPenaltyReasons, solveTime, type Solve } from './engine
 import { Cube, isMove, movesOf } from './puzzle';
 import { analyzeCFOP, CFOP_STEPS, cfopFrame, cfopTiming, elapsedAt, f2lPair } from './cfop';
 import { movingAverages } from '../../shared/averages';
+import { calendarDay, streakWindows } from '../../shared/streaks';
 
 const database = (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
   const request = indexedDB.open('smart-cube-timer', 2);
@@ -87,6 +88,7 @@ export function validateBackup(json: string, cube: Cube): Solve[] {
   return solves.map(solve => {
     if (!solve || typeof solve !== 'object' || solve.version !== 1 ||
         !text(solve.id, 100) || !solve.id || ids.has(solve.id) || !text(solve.session, 100) ||
+        (solve.appVersion !== undefined && !text(solve.appVersion, 100)) ||
         !text(solve.device, 200) || !text(solve.createdAt, 100) || !Number.isFinite(Date.parse(solve.createdAt)) ||
         !text(solve.scramble) || !movesOf(solve.scramble).length || movesOf(solve.scramble).some(move => !isMove(move)) ||
         !text(solve.startFacelets, 54) || !text(solve.reason) ||
@@ -124,8 +126,8 @@ export function validateBackup(json: string, cube: Cube): Solve[] {
 
 export const backupJSON = (solves: Solve[]): string => JSON.stringify({
   format: 'timer-v2',
-  solves: solves.map(({ version, id, session, createdAt, device, scramble, startFacelets, duration, inspection, penalty, penaltyReason, dnfReason, status, reason, timingBasis, moves }): BackupSolve => ({
-    version, id, session, createdAt, device, scramble, startFacelets, duration, inspection, penalty, penaltyReason, dnfReason, status, reason, timingBasis,
+  solves: solves.map(({ version, appVersion, id, session, createdAt, device, scramble, startFacelets, duration, inspection, penalty, penaltyReason, dnfReason, status, reason, timingBasis, moves }): BackupSolve => ({
+    version, appVersion, id, session, createdAt, device, scramble, startFacelets, duration, inspection, penalty, penaltyReason, dnfReason, status, reason, timingBasis,
     moves: moves.map(({ move, elapsed, hostTime, localTimestamp, cubeTimestamp, serial }): BackupTurn =>
       serial === undefined ? [move, elapsed, hostTime, localTimestamp, cubeTimestamp] : [move, elapsed, hostTime, localTimestamp, cubeTimestamp, serial]),
   })),
@@ -195,16 +197,9 @@ export function personalBestNotifications(records: ReturnType<typeof newPersonal
 }
 export const solveEndDate = (solve: Solve): Date => new Date(Date.parse(solve.createdAt) + (solve.moves.at(-1)?.elapsed ?? solve.duration));
 export function dailyStreak(solves: Solve[], date = new Date()): { current: number; best: number; hasToday: boolean } {
-  // Compare local calendar dates without assuming every day lasts 24 hours.
-  const day = (date: Date) => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000;
-  const today = day(date), days = [...new Set(solves.filter(solve => solve.status !== 'active').map(solve => day(solveEndDate(solve))))]
-    .filter(value => value <= today).sort((a, b) => a - b);
-  let current = 0, best = 0, previous = -Infinity;
-  for (const value of days) {
-    current = value === previous + 1 ? current + 1 : 1;
-    best = Math.max(best, current); previous = value;
-  }
-  return { current: previous >= today - 1 ? current : 0, best, hasToday: previous === today };
+  const today = calendarDay(date), days = solves.filter(solve => solve.status !== 'active').map(solve => calendarDay(solveEndDate(solve)));
+  const { current, best } = streakWindows(days, today);
+  return { current: current.length, best: best.length, hasToday: days.includes(today) };
 }
 export const turns = (solve: Solve): number => solve.moves.reduce((n, move) => n + (move.move.includes('2') ? 2 : 1), 0);
 export const formatTime = (milliseconds: number, precision: 2 | 3 = 2): string => (milliseconds / 1000).toFixed(precision);
@@ -212,7 +207,7 @@ export const formatTime = (milliseconds: number, precision: 2 | 3 = 2): string =
 const cubeastColumns = 'id,date,dnf,time,solving_method,device_name,device_model,device_color_scheme,user,one_turn_away_two_second_penalty,inspection_two_second_penalty,inspection_time,timer_time,missing_turn,solution,timer,description,session_name,session_ruleset,scramble,scramble_provider,ruleset,share_views,share_likes,share_comments,analysis_version,solution_rotation,pickup_time,putdown_time,solving_time,slice_turns,face_turns,quarter_turns,turns_per_second,total_recognition_time,total_execution_time,turns_after_solution,steps_skipped'.split(',').concat(
   Array.from({ length: 9 }, (_, i) => 'name,moves,recorded_moves,skipped,has_turns,time,recognition_time,execution_time,cumulative_time,slice_turns,face_turns,quarter_turns,turns_per_second'.split(',').map(field => `step_${i}_${field}`)).flat(),
   Array.from({ length: 9 }, (_, i) => `step_${i}_case`),
-  'first_f2l_pair', 'manual_two_second_penalty', 'penalty_reason', 'dnf_reason',
+  'first_f2l_pair', 'manual_two_second_penalty', 'penalty_reason', 'dnf_reason', 'cuberplus_version', 'solve_end_date',
 );
 const csvCell = (value: string | number | boolean): string => /[",\r\n]/.test(String(value)) ? `"${String(value).replace(/"/g, '""')}"` : String(value);
 export function cubeastCSV(solves: Solve[], cube: Cube): string {
@@ -220,7 +215,8 @@ export function cubeastCSV(solves: Solve[], cube: Cube): string {
     const duration = solve.status === 'complete' ? Math.round(solve.duration) : '', penalties = getPenaltyReasons(solve);
     const analysis = analyzeCFOP(solve, cube), frame = cfopFrame(cube, analysis.cross ?? 3);
     const values: Record<string, string | number | boolean> = {
-      id: solve.id, date: new Date(solve.createdAt).toISOString().slice(0, 19).replace('T', ' ') + ' UTC',
+      id: solve.id, cuberplus_version: solve.appVersion ?? '', date: new Date(solve.createdAt).toISOString().slice(0, 19).replace('T', ' ') + ' UTC',
+      solve_end_date: solveEndDate(solve).toISOString(),
       dnf: solve.status !== 'complete', time: solve.status === 'complete' ? Math.round(solveTime(solve)) : '', timer_time: duration, solving_time: duration,
       one_turn_away_two_second_penalty: penalties.includes('over-turn'), inspection_two_second_penalty: penalties.includes('inspection'),
       manual_two_second_penalty: penalties.includes('manual'), penalty_reason: penalties.join(', '), dnf_reason: solve.status === 'incomplete' ? getDnfReason(solve) : '',

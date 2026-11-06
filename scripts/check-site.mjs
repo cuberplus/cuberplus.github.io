@@ -24,7 +24,7 @@ try {
   await expect(page.getByRole('combobox', { name: 'Theme', exact: true })).toHaveValue('aurora');
   await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#091e29');
   await page.getByRole('combobox', { name: 'Theme', exact: true }).selectOption('dark');
-  for (const width of [1440, 1024, 720, 390, 320]) {
+  for (const width of [1440, 1024, 721, 720, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     let reference;
     let footerReference;
@@ -67,6 +67,24 @@ try {
       const panel = page.locator('.tool-card, .settings-panel, .card, .timer-panel').first();
       await expect(panel).toHaveCSS('background-color', 'rgb(24, 31, 45)');
       await expect(panel).toHaveCSS('border-radius', '16px');
+      if (route === '/scrambler/') {
+        await expect(page.getByRole('spinbutton', { name: 'Minimum turns' })).toHaveValue('2');
+        await expect(page.getByRole('spinbutton', { name: 'Maximum turns' })).toHaveValue('20');
+        const fields = await page.locator('.range-inputs > div').evaluateAll(fields => fields.map(field => {
+          const input = field.querySelector('input'), label = field.querySelector('span'), style = getComputedStyle(input);
+          const canvas = document.createElement('canvas'), context = canvas.getContext('2d');
+          context.font = style.font;
+          return {
+            separated: label.getBoundingClientRect().bottom <= input.getBoundingClientRect().top,
+            available: input.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+            required: context.measureText(input.value).width,
+          };
+        }));
+        for (const field of fields) {
+          expect(field.separated).toBe(true);
+          expect(field.available).toBeGreaterThanOrEqual(field.required);
+        }
+      }
       const footer = page.getByRole('contentinfo');
       await expect(footer).toHaveCount(1);
       expect(await footer.textContent()).toBe(`CuberPlus ${APP_VERSION}`);
@@ -94,7 +112,9 @@ try {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(base);
   const cards = page.locator('.tool-card');
-  await expect(cards).toHaveCount(3);
+  await expect(cards).toHaveCount(4);
+  await expect(cards.last()).toHaveAttribute('href', '/database/');
+  await expect.poll(() => cards.last().getByRole('img').evaluate(image => image.complete && image.naturalWidth === 1440 && image.naturalHeight === 900)).toBe(true);
   await expect(cards.first()).toHaveAttribute('href', '/timer/');
   await expect(cards.first().getByRole('heading', { name: 'Timer', exact: true })).toBeVisible();
   expect(await cards.first().getByRole('img').evaluate(image => image.complete && image.naturalWidth === 1440 && image.naturalHeight === 900)).toBe(true);
@@ -115,13 +135,87 @@ try {
     await expect(group.getByRole('article')).toHaveCount(count);
     await expect(group.getByRole('img')).toHaveCount(count);
     await expect(group.getByRole('img').first()).toBeVisible();
+    expect(await group.getByRole('article').evaluateAll(cases => cases.every(entry => entry.querySelectorAll('.database-algorithm').length <= 3))).toBe(true);
   }
+  const firstCase = page.getByRole('article', { name: 'F2L 1', exact: true });
+  await expect(firstCase.locator('.database-algorithm')).toHaveCount(3);
+  await firstCase.getByRole('button', { name: 'Show all F2L 1 algorithms', exact: true }).click();
+  expect(await firstCase.locator('.database-algorithm').count()).toBeGreaterThan(3);
+  const fourth = firstCase.locator('.database-algorithm').nth(3), fourthAlgorithm = await fourth.locator('p').textContent();
+  await fourth.getByRole('button', { name: /^Favorite / }).click();
+  await expect(firstCase.locator('.database-algorithm p').first()).toHaveText(fourthAlgorithm);
+  await expect(firstCase.getByRole('button', { name: 'Show fewer F2L 1 algorithms', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await firstCase.getByRole('button', { name: 'Show fewer F2L 1 algorithms', exact: true }).click();
+  await expect(firstCase.locator('.database-algorithm')).toHaveCount(3);
+  await expect(firstCase.locator('.database-algorithm p').first()).toHaveText(fourthAlgorithm);
+  await page.reload();
+  await groups.first().locator('summary').click();
+  await expect(firstCase.locator('.database-algorithm p').first()).toHaveText(fourthAlgorithm);
+  await firstCase.locator('.database-algorithm').first().getByRole('button', { name: /^Unfavorite / }).click();
+  await page.getByRole('button', { name: 'Add your own algorithm', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Algorithm', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close add algorithm', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Algorithm', exact: true })).toHaveCount(0);
+  await expect(firstCase.getByRole('button', { name: /^Delete / })).toHaveCount(0);
+  const customAlgorithm = `U U' ${await firstCase.locator('.database-algorithm p').first().textContent()}`;
+  await page.getByRole('button', { name: 'Add your own algorithm', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Algorithm', exact: true }).fill(customAlgorithm);
+  await page.getByRole('button', { name: 'Add algorithm', exact: true }).click();
+  await expect(page.getByRole('status')).toHaveText('Algorithm added.', { timeout: 60000 });
+  await page.getByRole('button', { name: 'Close add algorithm', exact: true }).click();
+  const removeCustom = firstCase.getByRole('button', { name: /^Delete / });
+  const customRow = removeCustom.locator('..');
+  await customRow.getByRole('button', { name: /^Favorite / }).click();
+  await page.reload();
+  await groups.first().locator('summary').click();
+  await expect(removeCustom).toBeVisible();
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    const removeBox = await removeCustom.boundingBox();
+    const unlearnBox = await customRow.getByRole('button', { name: /^Unlearn / }).boundingBox();
+    const textBox = await customRow.locator('p').boundingBox();
+    expect(removeBox.x + removeBox.width).toBeLessThanOrEqual(unlearnBox.x);
+    expect(removeBox.y).toBe(unlearnBox.y);
+    if (width <= 540) expect(textBox.y).toBeGreaterThanOrEqual(removeBox.y + removeBox.height);
+    else expect(textBox.x + textBox.width).toBeLessThan(removeBox.x);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await removeCustom.click();
+  await expect(removeCustom).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cuberplus-custom-algorithms'))['F2L-1'])).toBeUndefined();
+  await page.reload();
+  await groups.first().locator('summary').click();
+  await expect(removeCustom).toHaveCount(0);
+  await expect(firstCase.locator('.database-algorithm')).toHaveCount(3);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const toolbar = page.getByRole('button', { name: 'Add your own algorithm', exact: true }).locator('..');
+  const toolbarHeight = (await toolbar.boundingBox()).height;
+  for (const [name, result] of [['Automatically find favorites', 'Added 0 favorites'], ['Learn algorithms from solves', 'Learned 0 algorithms']]) {
+    page.once('dialog', dialog => dialog.accept());
+    await page.getByRole('button', { name, exact: true }).click();
+    const notice = page.getByRole('complementary', { name: 'Algorithm notification', exact: true });
+    await expect(notice.getByRole('status')).toContainText(result, { timeout: 60000 });
+    await expect(notice).toHaveCount(1);
+    await expect(notice).toHaveCSS('position', 'fixed');
+    const box = await notice.boundingBox();
+    expect(box.y).toBe(16);
+    expect(1440 - box.x - box.width).toBeCloseTo(16, 0);
+    expect((await toolbar.boundingBox()).height).toBe(toolbarHeight);
+  }
+  await page.getByRole('button', { name: 'Dismiss algorithm notification', exact: true }).click();
+  await expect(page.getByRole('complementary', { name: 'Algorithm notification', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Favorite F2L 1 algorithm 1', exact: true }).click();
   await page.reload();
   await groups.first().locator('summary').click();
   await expect(page.getByRole('button', { name: 'Unfavorite F2L 1 algorithm 1', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Unfavorite F2L 1 algorithm 1', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Favorite F2L 1 algorithm 1', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  const cold = await browser.newContext(), coldPage = await cold.newPage(), requests = [];
+  coldPage.on('request', request => requests.push(request.url()));
+  await coldPage.goto(`${base}/database/#OLL-27`);
+  await expect(coldPage.locator('#OLL-27 svg.database-case-image')).toBeVisible();
+  expect(requests.some(url => /\/(?:puzzle-|cubing-core-|timer\/src\/puzzle|node_modules\/\.vite\/deps\/cubing)/.test(url))).toBe(false);
+  await cold.close();
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -134,6 +228,14 @@ try {
   await page.goto(`${base}/timer/`);
   await page.getByRole('button', { name: 'Options', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
+  const discover = page.getByRole('button', { name: 'Automatically find favorites', exact: true });
+  await expect(discover).toBeEnabled({ timeout: 60000 });
+  page.once('dialog', dialog => dialog.accept());
+  await discover.click();
+  const timerNotice = page.getByRole('complementary', { name: 'Algorithm notification', exact: true });
+  await expect(timerNotice.getByRole('status')).toContainText('Added 0 favorites', { timeout: 60000 });
+  await expect(timerNotice).toHaveCSS('position', 'fixed');
+  await timerNotice.getByRole('button', { name: 'Dismiss algorithm notification', exact: true }).click();
   await page.getByRole('button', { name: 'Close options', exact: true }).click();
   await page.goto(`${base}/options/`);
   await expect(page.getByRole('button', { name: 'Install app', exact: true })).toBeVisible();
@@ -190,7 +292,7 @@ try {
   await page.getByRole('button', { name: 'Demo Data', exact: true }).click();
   const filters = page.getByRole('button', { name: 'Open filters', exact: true });
   await expect(filters).toBeVisible({ timeout: 60000 });
-  await expect(page.locator('canvas').first()).toBeVisible();
+  await expect(page.locator('canvas').first()).toBeVisible({ timeout: 60000 });
   await expect(page.locator('.cuberplus-brand:visible')).toHaveCSS('font-size', '28px');
   expect(await filters.evaluate(element => element.closest('.cuberplus-header-controls') !== null)).toBe(true);
   await filters.click();
@@ -231,6 +333,13 @@ try {
     await expect(phone.getByRole('link', { name, current: 'page', exact: true })).toBeVisible();
     await expect(phone.getByRole('link', { name, current: 'page', exact: true })).toBeVisible();
   }
+  const cardImage = phone.locator('.tool-card img').first(), cardBox = await cardImage.boundingBox();
+  const y = Math.max(100, Math.min(700, cardBox.y + 60));
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 280, y }] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 190, y }] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 100, y }] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect(phone).toHaveURL(`${base}/timer/`);
   await mobile.close();
   expect(errors).toEqual([]);
   console.log('PASS global options/themes, mobile swipe navigation, Timer options, Analyzer charts/filters, and printable worksheets');

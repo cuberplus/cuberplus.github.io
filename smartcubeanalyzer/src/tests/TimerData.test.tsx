@@ -17,7 +17,7 @@ const csv = 'id,date,dnf,time,solving_method,solving_time,one_turn_away_two_seco
 
 beforeEach(() => { timerData.mockReset(); });
 
-test('chooses CSV files separately from loading their stats without reading Timer storage', async () => {
+test('choosing a CSV automatically loads its stats without a second button or Timer storage', async () => {
     const ref = React.createRef<FileInput>();
     render(<FileInput ref={ref} />);
     const input = screen.getByLabelText<HTMLInputElement>('CSV files');
@@ -29,12 +29,47 @@ test('chooses CSV files separately from loading their stats without reading Time
     const file = Object.assign(new File([], 'my-solves.csv', { type: 'text/csv' }), { text: () => Promise.resolve(csv) });
     fireEvent.change(input, { target: { files: [file] } });
     expect(choose.textContent).toContain('my-solves.csv');
-    expect(ref.current?.state.solves).toHaveLength(0);
-    fireEvent.click(screen.getByRole('button', { name: 'Display CSV Stats' }));
+    expect(screen.queryByRole('button', { name: 'Display CSV Stats' })).toBeNull();
     await waitFor(() => expect(ref.current?.state.solves).toHaveLength(2));
     expect(ref.current?.state.solves.every(solve => solve.source === 'cubeast')).toBe(true);
     expect(timerData).not.toHaveBeenCalled();
     expect(screen.queryByText(/Read saved Timer/)).toBeNull();
+});
+
+test('multiple CSV files load together, cancelling keeps the stats, and a later selection replaces them', async () => {
+    const ref = React.createRef<FileInput>();
+    render(<FileInput ref={ref} />);
+    const input = screen.getByLabelText<HTMLInputElement>('CSV files');
+    const first = Object.assign(new File([], 'first.csv'), { text: () => Promise.resolve(csv) });
+    const second = Object.assign(new File([], 'second.csv'), { text: () => Promise.resolve(csv.replace('new,', 'another,')) });
+    fireEvent.change(input, { target: { files: [first, second] } });
+    await waitFor(() => expect(ref.current?.state.solves).toHaveLength(4));
+    expect(screen.getByRole('button', { name: 'Choose CSV File' }).textContent).toContain('first.csv, second.csv');
+    fireEvent.change(input, { target: { files: [] } });
+    expect(ref.current?.state.solves).toHaveLength(4);
+    fireEvent.change(input, { target: { files: [first] } });
+    await waitFor(() => expect(ref.current?.state.solves).toHaveLength(2));
+    expect(timerData).not.toHaveBeenCalled();
+});
+
+test('CSV reading disables competing loads and reports errors without discarding previous stats', async () => {
+    const ref = React.createRef<FileInput>();
+    render(<FileInput ref={ref} />);
+    const input = screen.getByLabelText<HTMLInputElement>('CSV files');
+    let finish: (value: string) => void = () => {};
+    const file = Object.assign(new File([], 'solves.csv'), { text: () => new Promise<string>(resolve => { finish = resolve; }) });
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(screen.getByRole('button', { name: 'Choose CSV File' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Choose demo data' }).hasAttribute('disabled')).toBe(true);
+    expect(input.disabled).toBe(true);
+    await act(async () => finish(csv));
+    await waitFor(() => expect(ref.current?.state.solves).toHaveLength(2));
+    const bad = Object.assign(new File([], 'bad.csv'), { text: () => Promise.reject(new Error('File could not be read')) });
+    fireEvent.change(input, { target: { files: [bad] } });
+    expect((await screen.findByRole('alert')).textContent).toContain('File could not be read');
+    expect(ref.current?.state.solves).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Choose CSV File' }).hasAttribute('disabled')).toBe(false);
+    expect(input.disabled).toBe(false);
 });
 
 test('loads Timer attempts into the analysis pipeline with provenance, sessions, penalties and DNFs', async () => {

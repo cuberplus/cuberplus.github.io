@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { cpSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { extname, resolve, sep } from 'node:path';
-import { defineConfig, transformWithEsbuild } from 'vite';
+import { defineConfig, loadEnv, transformWithEsbuild } from 'vite';
 import react from '@vitejs/plugin-react';
 import type { Plugin } from 'postcss';
 
@@ -24,7 +24,11 @@ const scopeStyles: Plugin = {
   },
 };
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  define: {
+    __GOOGLE_CLIENT_ID__: JSON.stringify(loadEnv(mode, root).VITE_GOOGLE_CLIENT_ID ?? ''),
+    __MICROSOFT_CLIENT_ID__: JSON.stringify(loadEnv(mode, root).VITE_MICROSOFT_CLIENT_ID ?? ''),
+  },
   plugins: [react({ exclude: /[/\\](?:Helpers|cube)[/\\]/ }), {
     name: 'cuberplus-pages-and-offline',
     transformIndexHtml: {
@@ -73,9 +77,13 @@ export default defineConfig({
   build: {
     outDir: 'build', target: 'es2022', modulePreload: false,
     rollupOptions: {
-      // Cubing's solver worker must not share a chunk with the DOM entrypoint.
-      output: { manualChunks: { 'cubing-core': ['cubing/alg', 'cubing/kpuzzle', 'cubing/puzzles', 'cubing/scramble', 'cubing/search'] } },
+      input: { main: resolve(root, 'index.html'), auth: resolve(root, 'auth-callback.html') },
+      // Keep the solver worker DOM-free and the shared preload helper independent of the cube runtime.
+      output: {
+        manualChunks: id => id.includes('vite/preload-helper') ? 'preload-helper' :
+          /[/\\]cubing[/\\]dist[/\\]lib[/\\]cubing[/\\](alg|kpuzzle|puzzles|scramble|search)[/\\]index\.js$/.test(id) ? 'cubing-core' : undefined,
+      },
     },
   },
   worker: { format: 'es' },
-});
+}));

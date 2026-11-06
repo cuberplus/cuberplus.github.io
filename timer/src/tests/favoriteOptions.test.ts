@@ -9,6 +9,7 @@ import { loadCube } from '../puzzle';
 import { algorithmMatcher } from '../algorithmMatching';
 import type { Solve } from '../engine';
 import { deserialize, serialize } from 'node:v8';
+import { waitFor } from '@testing-library/react';
 
 const cube = await loadCube(), matcher = algorithmMatcher(cube);
 let root: Root, container: HTMLDivElement;
@@ -21,6 +22,7 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); jest.restoreAllMocks(); });
 const controls = () => Array.from(container.querySelectorAll<HTMLInputElement>('input'));
+const discoverButton = () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Automatically find favorites')!;
 const render = (history: Solve[] = []) => act(async () => root.render(createElement(FavoriteOptions, { cube, history })));
 
 test('three independent sub-options default on and retain choices across main toggles and remounts', async () => {
@@ -55,9 +57,10 @@ test('Automatically find favorites adds recorded matches and preserves existing 
     status: 'complete', reason: '', timingBasis: 'host', moves,
   };
   await render([solve]);
-  const button = container.querySelector<HTMLButtonElement>('button')!;
+  const button = discoverButton();
   expect(button.textContent).toBe('Automatically find favorites');
-  await act(async () => { button.click(); await new Promise(resolve => setTimeout(resolve, 50)); });
+  await act(async () => button.click());
+  await waitFor(() => expect(container.querySelector('[role="status"]')?.textContent).toContain('Added 1 favorite'));
   const favorites = JSON.parse(localStorage.getItem(FAVORITES_KEY)!) as string[];
   expect(favorites).toContain(favoriteId(entry, entry.options[1]));
   expect(favorites).toContain(favoriteId(existing, existing.algorithm));
@@ -71,18 +74,18 @@ test('cancelling automatic discovery leaves favorites unchanged', async () => {
   jest.mocked(window.confirm).mockReturnValue(false);
   localStorage.setItem(FAVORITES_KEY, '[]');
   await render();
-  await act(async () => container.querySelector<HTMLButtonElement>('button')!.click());
+  await act(async () => discoverButton().click());
   expect(localStorage.getItem(FAVORITES_KEY)).toBe('[]');
   expect(container.querySelector('[role="status"]')).toBeNull();
   expect(container.querySelector('[role="alert"]')).toBeNull();
-  expect(container.querySelector('button')!.disabled).toBe(false);
+  expect(discoverButton().disabled).toBe(false);
 });
 test('complete OLL and PLL favorites do not produce a missing-favorites warning', async () => {
   localStorage.setItem(FAVORITES_KEY, JSON.stringify(algorithms.filter(entry => entry.category === 'OLL' || entry.category === 'PLL')
     .map(entry => favoriteId(entry, entry.algorithm))));
   await render();
-  await act(async () => { container.querySelector<HTMLButtonElement>('button')!.click(); await new Promise(resolve => setTimeout(resolve, 20)); });
-  expect(container.querySelector('[role="status"]')!.textContent).toContain('Added 0 favorites');
+  await act(async () => discoverButton().click());
+  await waitFor(() => expect(container.querySelector('[role="status"]')?.textContent).toContain('Added 0 favorites'));
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
 test('blocked storage keeps settings usable for this visit', async () => {
@@ -91,4 +94,11 @@ test('blocked storage keeps settings usable for this visit', async () => {
   await act(async () => controls()[0].click());
   expect(controls()[0].checked).toBe(true);
   expect(container.querySelector('[role="alert"]')!.textContent).toContain('could not be saved');
+});
+test('category checkboxes occupy separate lines and discovery follows all checkboxes', async () => {
+  await render();
+  const fieldset = container.querySelector('fieldset')!;
+  expect(fieldset.classList.contains('flex-column')).toBe(true);
+  expect(controls().every(control => !!(control.compareDocumentPosition(discoverButton()) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  expect(container.querySelectorAll('p.text-secondary')).toHaveLength(0);
 });

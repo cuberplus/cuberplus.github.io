@@ -3,11 +3,23 @@ import { CASE_IDS, recognizeCase } from '../cases';
 import { type Cube, loadCube, SOLVED } from '../puzzle';
 import { caseStates } from './fixtures/cfop-cases';
 import { applyMoves, FACES, inverseMoves, parseAlgorithm, solvedCube, stickers } from '../../../scrambler/src/cube/cube';
+import caseImages from '../../../src/database/caseImages.json';
+import { validateUserAlgorithm } from '../favoriteAlgorithms';
 
 let cube: Cube;
 let images: ReturnType<typeof illustrateCases>;
 const options = algorithms.flatMap(entry => entry.options.map(algorithm => ({ ...entry, algorithm })));
 beforeAll(async () => { cube = await loadCube(); images = illustrateCases(cube); });
+test('precomputed case images remain identical to validated runtime illustrations', () => {
+  expect(caseImages).toEqual(Object.fromEntries(images.map(({ category, id, facelets, visibleStickers }) =>
+    [`${category}-${id}`, { facelets, visibleStickers }])));
+});
+test.each(['F2L', 'OLL', 'PLL'] as const)('manual %s algorithms reject the wrong case and accept valid alternatives', category => {
+  const entry = algorithms.find(entry => entry.category === category)!;
+  expect(validateUserAlgorithm(entry, `  ${entry.options[1]}  `, cube)).toBe(entry.options[1]);
+  expect(() => validateUserAlgorithm(entry, 'R', cube)).toThrow('does not match');
+  expect(() => validateUserAlgorithm(entry, `D ${entry.algorithm}`, cube)).toThrow('does not match');
+});
 const f2lIndices = [...Array(54).keys()].filter(i => i >= 27 && i < 36 || i >= 9 && Math.floor(i / 9) !== 3 && i % 9 >= 3);
 const target = (category: string, facelets: string) => category === 'PLL' ? facelets === SOLVED :
   f2lIndices.every(i => facelets[i] === SOLVED[i]) && (category !== 'OLL' || facelets.slice(0, 9) === 'U'.repeat(9));
@@ -49,6 +61,8 @@ test.each(options.filter(entry => entry.category !== 'AF2L'))('$category $id: $a
 });
 
 test.each(options.filter(entry => entry.category === 'AF2L'))('AF2L $id: $algorithm solves its canonical target pair and preserves the cross and occupied slots', entry => {
+  expect(validateUserAlgorithm(entry, entry.algorithm, cube)).toBe(entry.algorithm);
+  expect(() => validateUserAlgorithm(entry, 'R', cube)).toThrow('does not solve');
   const before = cube.parse(images.find(image => image.category === 'AF2L' && image.id === entry.id)!.facelets);
   expect(cube.equals(before, cube.solved().applyAlg(entry.setup!))).toBe(true);
   const raw = before.applyAlg(entry.algorithm), centers = raw.patternData.CENTERS.pieces;

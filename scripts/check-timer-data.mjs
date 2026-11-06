@@ -88,16 +88,15 @@ try {
   const demo = page.getByRole('button', { name: 'Demo Data', exact: true });
   const choose = page.getByRole('button', { name: 'Choose CSV File', exact: true });
   const displayCsv = page.getByRole('button', { name: 'Display CSV Stats', exact: true });
+  await expect(displayCsv).toHaveCount(0);
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
-    const boxes = await Promise.all([load, demo, choose, displayCsv].map(control => control.boundingBox()));
-    const [timerBox, demoBox, chooseBox, csvBox] = boxes;
+    const boxes = await Promise.all([load, demo, choose].map(control => control.boundingBox()));
+    const [timerBox, demoBox, chooseBox] = boxes;
     expect(boxes.every(box => box && box.x >= 0 && box.x + box.width <= width)).toBe(true);
     expect(timerBox.y).toBe(demoBox.y);
-    expect(chooseBox.y).toBe(csvBox.y);
     expect(chooseBox.y).toBeGreaterThanOrEqual(timerBox.y + timerBox.height);
     expect(demoBox.x).toBeGreaterThan(timerBox.x);
-    expect(csvBox.x).toBeGreaterThan(chooseBox.x);
     expect(await demo.evaluate(button => getComputedStyle(button).backgroundColor)).toBe('rgb(13, 110, 253)');
     expect(await load.evaluate(button => getComputedStyle(button).backgroundColor)).toBe('rgb(45, 128, 112)');
   }
@@ -108,14 +107,21 @@ try {
 
   const chooserEvent = page.waitForEvent('filechooser');
   await choose.click();
-  await (await chooserEvent).setFiles({
+  await (await chooserEvent).setFiles([{
     name: 'my-solves.csv', mimeType: 'text/csv',
     buffer: Buffer.from('id,date,dnf,time,solving_method\ncsv,2026-01-01 00:00:00 UTC,false,12000,CFOP'),
-  });
+  }, {
+    name: 'mixed-methods.csv', mimeType: 'text/csv',
+    buffer: Buffer.from('id,date,time,solving_method\nblank,2026-01-02 00:00:00 UTC,13000,\nunknown,2026-01-03 00:00:00 UTC,14000,Custom\nroux,2026-01-04 00:00:00 UTC,15000,Roux'),
+  }, {
+    name: 'acubemy.csv', mimeType: 'text/csv',
+    buffer: Buffer.from('solve_id,date,total_time,analysis_type\nacubemy,2026-01-05T00:00:00Z,16000,CFOP'),
+  }]);
   await expect(choose).toContainText('my-solves.csv');
-  await displayCsv.click();
   await expect(page.getByRole('button', { name: 'Open filters', exact: true })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open filters', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /^Showing 3 \/ 5 solves/ })).toBeVisible();
   expect(await database(page)).toEqual([]);
 
   await page.goto(`${base}/timer/`);
@@ -135,6 +141,8 @@ try {
   await page.waitForTimeout(1000);
   const [seed] = await database(page);
   expect(seed.status).toBe('complete');
+  expect(seed.appVersion).toMatch(/^\d+\.\d+\.\d+$/);
+  await expect(guided).toBeEnabled({ timeout: 30000 });
   const modalSamples = [10000, 2000, 12000, 3000, 4000].map((duration, i) => ({
     ...seed, id: i ? `shared-modal-${i}` : seed.id, duration, penalty: i === 1 ? 2000 : undefined,
     penaltyReason: i === 1 ? 'over-turn' : undefined,
@@ -310,10 +318,10 @@ try {
   await choose.click();
   await (await csvChooser).setFiles({
     name: 'numbered-solves.csv', mimeType: 'text/csv',
-    buffer: Buffer.from('id,date,dnf,time,solving_method,first_f2l_pair,step_0_name,step_0_slice_turns\n' + Array.from({ length: 80 }, (_, i) =>
-      `numbered-${i},${new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString().replace('T', ' ').replace('.000Z', ' UTC')},false,${12000 + i * 100},CFOP,${i % 2 ? 'Orange/Blue' : 'Red/Green'},Cross,${i % 2 ? 7 : 9}`).join('\n')),
+    buffer: Buffer.from('id,date,dnf,time,solving_method,solution_rotation,first_f2l_pair,step_0_name,step_0_slice_turns\n' + Array.from({ length: 80 }, (_, i) =>
+      `numbered-${i},${new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString().replace('T', ' ').replace('.000Z', ' UTC')},false,${12000 + i * 100},CFOP,DB,${i % 2 ? 'Orange/Blue' : 'Red/Green'},Cross,${i % 2 ? 7 : 9}`).join('\n')),
   });
-  await displayCsv.click();
+  await expect(choose).toContainText('numbered-solves.csv');
   await filters.click();
   await page.locator('#autoWindowSize').press('Space');
   await page.locator('#windowSize').fill('5');
@@ -390,8 +398,10 @@ try {
     }
     await penaltyPage.getByRole('button', { name: 'Options', exact: true }).click();
     await inspection.uncheck();
-    const session = penaltyPage.getByRole('textbox', { name: 'Session', exact: true });
-    await session.fill('Practice');
+    const session = penaltyPage.getByRole('combobox', { name: 'Session', exact: true }).first();
+    await session.selectOption({ label: '+ Create Session' });
+    await penaltyPage.getByRole('textbox', { name: 'New session name', exact: true }).fill('Practice');
+    await penaltyPage.getByRole('button', { name: 'Create', exact: true }).click();
     await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
     const original = (await database(penaltyPage)).find(solve => solve.id === seed.id);
     await dismissCelebrations(penaltyPage);
@@ -418,7 +428,7 @@ try {
     await penaltyPage.getByRole('button', { name: 'Options', exact: true }).click();
     await expect(session).toHaveValue('Practice');
     await expect(session).toBeEnabled();
-    await session.fill('Retries');
+    await session.selectOption('Retries');
     await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
     await penaltyPage.getByRole('table', { name: 'Solve history' }).getByRole('button', { name: 'View', exact: true }).click();
     replay = penaltyPage.getByRole('dialog', { name: 'Solve replay', exact: true });
@@ -433,7 +443,7 @@ try {
     expect(attempts.every(solve => solve.scramble === original.scramble && solve.status === 'complete')).toBe(true);
     await penaltyPage.goto(`${base}/timer/`);
     await penaltyPage.getByRole('button', { name: 'Options', exact: true }).click();
-    await session.fill('Retries');
+    await session.selectOption('Retries');
     await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
     await penaltyPage.getByRole('table', { name: 'Solve history' }).getByRole('button', { name: 'View', exact: true }).first().click();
     replay = penaltyPage.getByRole('dialog', { name: 'Solve replay', exact: true });
@@ -454,7 +464,7 @@ try {
     expect(await database(penaltyPage)).toEqual(beforeDelete.filter(solve => solve.id !== deletedId));
     await expect(penaltyPage.getByRole('table', { name: 'Solve history' }).locator('tbody tr')).toHaveCount(1);
     await penaltyPage.getByRole('button', { name: 'Options', exact: true }).click();
-    await session.fill('Default');
+    await session.selectOption('Default');
     await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
     await expect(penaltyPage.getByRole('table', { name: 'Solve history' }).locator('tbody tr')).toHaveCount(3);
     await penaltyPage.locator('.site-page--timer').getByRole('link', { name: 'Smartcube Analyzer', exact: true }).click();

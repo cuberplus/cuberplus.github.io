@@ -19,17 +19,21 @@ import { OllEdgeOrientation, PllCornerPermutation } from './Types';
 import { SEGMENT_COLORS } from './ChartColors';
 import { pairColors } from '../../../shared/f2l';
 import { COLORS, EDGES } from '../../../scrambler/src/cube/cube';
+import { calendarDay } from '../../../shared/streaks';
 
 type MovingCalcFn = (values: number[], windowSize: number) => number[];
 
 export function fastestByDay(solves: Solve[]): Map<string, Solve> {
     const days = new Map<string, Solve>();
     for (const solve of solves) {
-        const day = solve.date.toLocaleDateString('en-CA'), best = days.get(day);
-        if (!best || solve.time < best.time) days.set(day, solve);
+        const day = new Date(calendarDay(solve.endDate ?? solve.date) * 86400000).toISOString().slice(0, 10), best = days.get(day);
+        if (!best || best.dnf && !solve.dnf || !!best.dnf === !!solve.dnf && solve.time < best.time) days.set(day, solve);
     }
     return days;
 }
+export const streakSolves = (solves: Solve[], days: number[]): Solve[] =>
+    [...fastestByDay(solves).values()].filter(solve => days.includes(calendarDay(solve.endDate ?? solve.date)))
+        .sort((a, b) => a.date.getTime() - b.date.getTime());
 
 export function buildMovingLineChart(
     solves: Solve[],
@@ -188,13 +192,14 @@ export function buildRunningColorPercentages(
 }
 
 export function buildFirstPairPercentages(solves: Solve[], windowSize: number, pointsPerGraph: number): LabelledChart<'line'> {
-    const crosses = new Set(solves.map(solve => COLORS.indexOf(solve.crossColor as typeof COLORS[number])).filter(face => face >= 0));
-    const pairs = [...new Set([...EDGES.filter(edge => [...crosses].some(cross => !edge.includes(cross) && !edge.includes((cross + 3) % 6))).map(edge => pairColors(edge)),
-        ...solves.flatMap(solve => solve.firstF2LPair ? [solve.firstF2LPair] : [])])];
-    if (solves.some(solve => !solve.firstF2LPair)) pairs.push('Unknown');
+    const counts = [0, 0, 0];
+    solves.forEach(solve => { const face = COLORS.indexOf(solve.crossColor as typeof COLORS[number]); if (face >= 0) counts[face % 3]++; });
+    const cross = counts.indexOf(Math.max(...counts));
+    const pairs = counts[cross] ? EDGES.filter(edge => edge.every(face => face % 3 !== cross)).map(edge => pairColors(edge)) : [];
     return { labels: makeLabels(Math.max(0, solves.length - windowSize + 1), pointsPerGraph, windowSize), datasets: pairs.map(pair => ({
         label: pair.replace('/', ' / '),
-        data: reduceDataset(calculateMovingPercentage(solves, windowSize, solve => (solve.firstF2LPair || 'Unknown') === pair), pointsPerGraph),
+        data: reduceDataset(calculateMovingPercentage(solves, windowSize, solve => solve.firstF2LPair === pair &&
+            COLORS.indexOf(solve.crossColor as typeof COLORS[number]) % 3 === cross), pointsPerGraph),
     })) };
 }
 

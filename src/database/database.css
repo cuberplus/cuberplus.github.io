@@ -17,11 +17,16 @@
 }
 .database-case-image { width: 120px; height: 120px; flex: 0 0 120px; }
 .database-algorithms { flex: 1; min-width: 0; }
-.database-algorithm { position: relative; padding: 8px 48px 8px 0; min-height: 44px; }
+.database-algorithm { position: relative; padding: 8px 92px 8px 0; min-height: 44px; }
+.database-algorithm--custom { padding-right: 136px; }
 .database-algorithm + .database-algorithm { border-top: 1px solid var(--cp-border); }
 .database-algorithms h3 { margin: 0 0 8px; font-size: 1.25rem; color: var(--cp-muted); }
 .database-algorithm p { margin: 0; font-size: 1rem; font-weight: 600; line-height: 1.8; word-spacing: .15em; overflow-wrap: anywhere; }
-.database-star { position: absolute; top: 0; right: 0; width: 44px; height: 44px; padding: 10px; border: 0; border-radius: 8px; background: transparent; color: var(--cp-muted); }
+.database-star, .database-unlearn, .database-delete { position: absolute; top: 0; right: 0; width: 44px; height: 44px; padding: 10px; border: 0; border-radius: 8px; background: transparent; color: var(--cp-muted); }
+.database-unlearn { right: 44px; }
+.database-delete { right: 88px; }
+.database-unlearn svg, .database-delete svg { width: 24px; height: 24px; }
+.database-delete:hover, .database-unlearn:hover, .database-unlearn[aria-pressed="true"] { color: var(--bs-danger); background: var(--cp-subtle); }
 .database-star svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; }
 .database-star:hover { background: var(--cp-subtle); color: var(--cp-accent); }
 .database-star[aria-pressed="true"] { color: var(--cp-accent); }
@@ -34,4 +39,5 @@
   .database-case { gap: 12px; }
   .database-case-image { width: 90px; height: 90px; flex-basis: 90px; }
   .database-algorithm p { font-size: .95rem; word-spacing: normal; }
+  .database-algorithm--custom { padding: 44px 0 8px; }
 }

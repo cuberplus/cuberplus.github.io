@@ -9,7 +9,8 @@ import type { Solve } from '../engine';
 import { inverse, loadCube } from '../puzzle';
 import { analyzeCFOP, cfopFrame, CFOP_STEPS } from '../cfop';
 import { algorithms } from '../../../src/database/algorithms';
-import { favoriteId, FAVORITES_KEY, MISTAKES_KEY, CATEGORIES_KEY } from '../../../src/database/favorites';
+import { favoriteId, FAVORITES_KEY, MISTAKES_KEY, CATEGORIES_KEY, UNLEARN_KEY } from '../../../src/database/favorites';
+import { waitFor } from '@testing-library/react';
 
 await jest.unstable_mockModule('../CubeView', () => ({
   CubeView: ({ facelets, cross, rotation }: { facelets: string; cross: number | null; rotation: string }) => createElement('div', { 'data-facelets': facelets, 'data-cross': cross, 'data-rotation': rotation, 'aria-label': 'Replay cube' }),
@@ -45,6 +46,7 @@ test('non-favorite feedback outranks other mistakes and reacts to favorites and 
   async function preference(key: string, value: string) {
     localStorage.setItem(key, value);
     await act(async () => window.dispatchEvent(new StorageEvent('storage', { key })));
+    await feedbackReady();
   }
   await preference(MISTAKES_KEY, 'true');
   expect(feedback().querySelector('p')!.textContent).toContain('Biggest mistake: PLL: Non-favorite algorithm (PLL T)');
@@ -59,6 +61,25 @@ test('non-favorite feedback outranks other mistakes and reacts to favorites and 
   expect(feedback().textContent).toContain('Single-move undo');
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); jest.useRealTimers(); jest.restoreAllMocks(); });
+test('unlearned algorithm feedback appears with non-favorite tracking turned off', async () => {
+  const entry = algorithms.find(entry => entry.category === 'PLL' && entry.id === 'T')!;
+  localStorage.setItem(UNLEARN_KEY, JSON.stringify([favoriteId(entry, entry.algorithm)]));
+  const solution = entry.algorithm, solve = recording(solution.split(' ').reverse().map(inverse).join(' '), solution);
+  await draw(solve);
+  expect(container.querySelector('[aria-label="Solve mistakes"] p')!.textContent).toContain('Biggest mistake: Unlearn algorithm (PLL T)');
+  localStorage.setItem(UNLEARN_KEY, '[]');
+  await act(async () => window.dispatchEvent(new StorageEvent('storage', { key: UNLEARN_KEY })));
+  await feedbackReady();
+  expect(container.querySelector('[aria-label="Solve mistakes"]')!.textContent).not.toContain('Unlearn algorithm');
+});
+test('feedback yields before analysis and handles invalid recordings without an unhandled rejection', async () => {
+  jest.useFakeTimers();
+  const solve = { ...recording('R', "R'"), startFacelets: 'invalid' };
+  await act(async () => root.render(createElement(SolveMistakes, { cube, solve })));
+  expect(container.textContent).toContain('Analyzing solve mistakes');
+  await act(async () => jest.advanceTimersByTimeAsync(1));
+  expect(container.textContent).toContain('Solve mistakes could not be assessed.');
+});
 
 function recording(scramble: string, solution: string, status: Solve['status'] = 'complete'): Solve {
   const moves = solution.split(/\s+/).filter(Boolean).map((move, index) => ({
@@ -72,6 +93,10 @@ function recording(scramble: string, solution: string, status: Solve['status'] =
 }
 async function draw(solve: Solve, change?: (solve: Solve) => void) {
   await act(async () => root.render(createElement(Replay, { cube, solve, close, change, precision: 3 })));
+  await feedbackReady();
+}
+async function feedbackReady() {
+  await waitFor(() => expect(container.querySelector('[aria-label="Solve mistakes"]')?.textContent).not.toContain('Analyzing solve mistakes'));
 }
 async function click(text: string) {
   const button = Array.from(container.querySelectorAll('button')).find(button => button.textContent === text)!;
@@ -277,7 +302,10 @@ test('feedback recalculates cached timing when the engine adds a penalty to the 
   const history = Array.from({ length: 100 }, (_, i) => ({
     ...solve, id: `baseline-${i}`, createdAt: new Date(i * 1000).toISOString(),
   }));
-  const renderFeedback = () => act(async () => root.render(createElement(SolveMistakes, { cube, solve, history })));
+  const renderFeedback = async () => {
+    await act(async () => root.render(createElement(SolveMistakes, { cube, solve, history })));
+    await feedbackReady();
+  };
   await renderFeedback();
   expect(container.textContent).toContain('No clear mistakes detected.');
   solve.penalty = 2000;

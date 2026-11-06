@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type TouchEvent } from 'react';
 import { links, PageLocation, PageVisible, SettingsProvider, type Tool } from '@cuberplus/navigation';
 import { useInstall } from './pwa';
+import { CloudNotice } from './cloud/CloudOptions';
 
 const pages = {
   home: lazy(() => import('./Components/App')),
@@ -20,7 +21,8 @@ export default function Site() {
 }
 function Router() {
   useInstall();
-  const swipe = useRef<{ x: number; y: number; time: number } | null>(null);
+  const swipe = useRef<{ x: number; y: number; time: number; target: Element } | null>(null);
+  const swiped = useRef<{ target: Element; time: number } | null>(null);
   const [address, setAddress] = useState(() => location.pathname + location.search);
   const route = toolAt(address.split('?')[0]);
   const [visited, setVisited] = useState(() => route ? [route] : []);
@@ -34,6 +36,11 @@ function Router() {
     document.title = route === 'home' ? 'CuberPlus | Tools for better solves' : `CuberPlus - ${links.find(([id]) => id === route)?.[2] ?? 'Page not found'}`;
   }, [route]);
   function navigate(event: MouseEvent) {
+    const gesture = swiped.current;
+    swiped.current = null;
+    if (gesture && Date.now() - gesture.time < 500 && event.target instanceof Node && gesture.target.contains(event.target)) {
+      event.preventDefault(); return;
+    }
     const link = event.target instanceof Element ? event.target.closest('a') : null;
     if (!link || event.defaultPrevented || event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || link.target || link.hasAttribute('download')) return;
     const url = new URL(link.href);
@@ -48,13 +55,16 @@ function Router() {
   }
   function startSwipe(event: TouchEvent) {
     swipe.current = null;
+    swiped.current = null;
     if (event.touches.length !== 1 || !(event.target instanceof Element) || document.querySelector('dialog[open], .offcanvas.show, .modal.show')) return;
     for (let element: Element | null = event.target; element; element = element.parentElement) {
-      if (element.matches('a, button, input, select, textarea, summary, [contenteditable]:not([contenteditable="false"]), canvas, svg, twisty-player, [role="grid"], [role="slider"], [data-no-swipe]') ||
+      if (element.matches('button, input, select, textarea, summary, [contenteditable]:not([contenteditable="false"]), canvas, twisty-player, [role="grid"], [role="slider"], [data-no-swipe]') ||
         (element.scrollWidth > element.clientWidth && /auto|scroll/.test(getComputedStyle(element).overflowX))) return;
     }
     const touch = event.touches[0];
-    if (touch.clientX > 24 && touch.clientX < innerWidth - 24) swipe.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+    if (touch.clientX > 24 && touch.clientX < innerWidth - 24) swipe.current = {
+      x: touch.clientX, y: touch.clientY, time: Date.now(), target: event.target.closest('a') ?? event.target,
+    };
   }
   function endSwipe(event: TouchEvent) {
     const start = swipe.current, touch = event.changedTouches[0];
@@ -62,10 +72,15 @@ function Router() {
     if (!start || !touch || event.touches.length || !route || Date.now() - start.time > 700) return;
     const dx = touch.clientX - start.x, dy = touch.clientY - start.y;
     const next = links[links.findIndex(([id]) => id === route) + (dx < 0 ? 1 : -1)];
-    if (Math.abs(dx) >= 70 && Math.abs(dx) > Math.abs(dy) * 2 && next) go(next[1]);
+    if (Math.abs(dx) >= 70 && Math.abs(dx) > Math.abs(dy) * 2 && next) {
+      swiped.current = { target: start.target, time: Date.now() };
+      event.preventDefault();
+      go(next[1]);
+    }
   }
   return <PageLocation.Provider value={address}>
     <div onClick={navigate} onTouchStart={startSwipe} onTouchEnd={endSwipe} onTouchCancel={() => { swipe.current = null; }}>
+      <CloudNotice />
       {!route && <main><h1>Page not found</h1><a href="/">CuberPlus home</a></main>}
       {visited.map(tool => {
         const Page = pages[tool], visible = route === tool;

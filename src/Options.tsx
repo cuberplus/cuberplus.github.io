@@ -2,6 +2,7 @@ import { useContext } from 'react';
 import Navigation, { Footer, SettingsContext } from '@cuberplus/navigation';
 import { themeColors, type Theme } from '../shared/navigation/settings';
 import { InstallControl } from './pwa';
+import { CloudOptions } from './cloud/CloudOptions';
 
 export default function Options() {
   const { theme, setTheme, precision, setPrecision, error } = useContext(SettingsContext);
@@ -16,6 +17,7 @@ export default function Options() {
         <option value="2">Hundredths (0.00)</option><option value="3">Thousandths (0.000)</option>
       </select></label>
       <InstallControl />
+      <CloudOptions />
       {error && <p role="alert">{error}</p>}
     </section></main>
     <Footer />

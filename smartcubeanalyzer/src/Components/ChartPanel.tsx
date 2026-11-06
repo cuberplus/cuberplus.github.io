@@ -28,7 +28,7 @@ import { MistakeChart } from './MistakeChart';
 import { Mistake, mistakeKey, mistakeLabel, mistakeWindow } from '../Helpers/MistakeAnalysis';
 import { AverageModal } from './AverageModal';
 import { splitIntoChunks } from '../Helpers/MathHelpers';
-import { fastestByDay } from '../Helpers/ChartDataBuilders';
+import { fastestByDay, streakSolves } from '../Helpers/ChartDataBuilders';
 import type { WorkerOutput } from '../Workers/chartWorker';
 
 const TimerReplay = React.lazy(() => import('../../../timer/src/analyzer-replay'));
@@ -336,11 +336,11 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
         charts.push(buildChartHtml(<SortableGrid rows={c.bestSolvesData} columns={BEST_SOLVES_COLS} className="clickable-grid" onCellClick={({ row }) => this.openSolveSource(row)} />, `Top ${Const.FastestSolvesCount} Fastest Solves`, `This shows your ${Const.FastestSolvesCount} fastest solves, given the filters`));
         plot('runningStdDev', "Average Standard Deviation", "This chart shows your running average's standard deviation");
         plot('runningColorPercentages', "Percentage of Solves by Cross Color", "This chart shows what percentage of solves started with cross on White/Yellow/etc...", ChartType.Line, 'Solve Number', 'Percentage');
-        plot('runningFirstPairPercentages', "First F2L Pair", "Rolling percentage of solves starting with each F2L pair's two side colors. Unknown includes simultaneous pairs, skipped pairs with no identifiable order, and exports without usable recordings.", ChartType.Line, 'Solve Number', 'Percentage');
+        plot('runningFirstPairPercentages', "First F2L Pair", "The four F2L pairs for your most-used cross axis (opposite cross colors are combined). Percentages use all solves; unidentified pairs are not plotted.", ChartType.Line, 'Solve Number', 'Percentage');
         plot('inspection', "Average solve time by inspection time", "This chart shows your average, grouped up by how much inspection time (For example, the left bar is the 1/7 of your solves with the lowest inspection time, and the right bar is the 1/7 of your solves with the most inspection time)", ChartType.Bar, 'Inspection Time (s)', 'Solve Time (s)');
         if (hasStepTimings) plot('stepAverages', "Average Time by Step", "This chart shows what percentage of your solve each step takes");
         plot('runningInspection', "Average Inspection Time", "This chart shows how much inspection time you use on average");
-        charts.push(buildChartHtml(<SortableGrid rows={c.streakRows} columns={STREAK_COLS} onCellClick={({ row }) => this.selectSolves([...fastestByDay(p.solves.filter(solve => !solve.dnf)).values()].filter(solve => row.time === 'Overall' || solve.time < Number(row.time.slice(4))), 0, `Daily best - ${row.time}`)} />, "Longest Daily Streaks", "How many days in a row you've achieved solves of each time. Click to view qualifying daily best solves."));
+        charts.push(buildChartHtml(<SortableGrid rows={c.streakRows} columns={STREAK_COLS} onCellClick={({ row, column }) => this.selectSolves(streakSolves(p.solves, column.key === 'currentstreak' ? row.currentDays : row.bestDays), 0, `Daily best - ${row.time}`)} />, "Longest Daily Streaks", "Consecutive local calendar days. Current streaks include yesterday until today is over. Click Current or Longest to view each day's best solve in that streak; click a target to view its longest streak."));
         plot('dailyRecord', "Daily Fastest Solve", "This chart shows the fastest solve for each day, based on the selected filters", ChartType.Line, 'Date', 'Time (s)', true, true);
         charts.push(buildChartHtml(<SortableGrid rows={c.recordRows} columns={RECORD_COLS} onCellClick={({ row }) => {
             const datasetIndex = c.recordHistory.datasets.findIndex(dataset => dataset.label === `Record ${row.recordType}`), dataset = c.recordHistory.datasets[datasetIndex];

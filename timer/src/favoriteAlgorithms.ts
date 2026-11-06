@@ -1,21 +1,22 @@
-import { algorithms, illustrateCases } from '../../src/database/algorithms';
+import { casePattern, type AlgorithmCase } from '../../src/database/algorithms';
+import caseImages from '../../src/database/caseImages.json';
+import { getAlgorithms, readCustomAlgorithms, saveCustomAlgorithms } from '../../src/database/customAlgorithms';
 import { favoriteId, type FavoriteCategories } from '../../src/database/favorites';
 import type { KPattern } from 'cubing/kpuzzle';
 import { algorithmMatcher } from './algorithmMatching';
 import { normalized, recognizeCase } from './cases';
 import { analyzeCFOP, cfopFrame } from './cfop';
 import type { Solve } from './engine';
-import { crossRotation, type Cube } from './puzzle';
+import { crossRotation, simplifyMoves, type Cube } from './puzzle';
 
-export interface AlgorithmUse { step: number; caseKey: string; caseKeys: string[]; signature: string; matches: string[] }
-const observations = new WeakMap<Cube, WeakMap<Solve, AlgorithmUse[]>>();
-const advancedImages = new WeakMap<Cube, ReturnType<typeof illustrateCases>>();
+export interface AlgorithmUse { step: number; caseKey: string; caseKeys: string[]; signature: string; matches: string[]; algorithm: string }
+const observations = new WeakMap<Cube, WeakMap<Solve, { catalog: AlgorithmCase[]; uses: AlgorithmUse[] }>>();
 export function usedAlgorithms(solve: Solve, cube: Cube): AlgorithmUse[] {
-  if (solve.status !== 'complete') return [];
+  if (solve.status !== 'complete' || !solve.moves.length) return [];
   let cache = observations.get(cube);
   if (!cache) observations.set(cube, cache = new WeakMap());
-  const cached = cache.get(solve);
-  if (cached) return cached;
+  const algorithms = getAlgorithms(), cached = cache.get(solve);
+  if (cached?.catalog === algorithms) return cached.uses;
   const { cross, ends } = analyzeCFOP(solve, cube), matcher = algorithmMatcher(cube);
   if (cross === null) return [];
   const result: AlgorithmUse[] = [], frame = cfopFrame(cube, cross);
@@ -43,17 +44,18 @@ export function usedAlgorithms(solve: Solve, cube: Cube): AlgorithmUse[] {
               return solved(start, 'CORNERS', i) && solved(start, 'EDGES', edge) &&
                 (!solved(end, 'CORNERS', i) || !solved(end, 'EDGES', edge));
             })) continue;
-            const signature = matcher.signature(solve.moves.slice(from, endIndex).map(item => frame(item.move)).join(' '));
+            const algorithm = solve.moves.slice(from, endIndex).map(item => frame(item.move)).join(' ');
+            const signature = matcher.signature(algorithm);
             const matches = entry.options.filter(algorithm => matcher.signature(algorithm) === signature)
               .map(algorithm => favoriteId(entry, algorithm));
-            uses.push({ endIndex, caseKey: `AF2L-${entry.id}`, signature, matches });
+            uses.push({ endIndex, caseKey: `AF2L-${entry.id}`, signature, matches, algorithm });
           }
           return uses;
         });
         const selected = possible.find(use => use.matches.length) ?? possible[0];
         if (selected) {
           const aliases = possible.filter(use => use.endIndex === selected.endIndex);
-          result.push({ step, caseKey: selected.caseKey, signature: selected.signature,
+          result.push({ step, caseKey: selected.caseKey, signature: selected.signature, algorithm: selected.algorithm,
             caseKeys: [...new Set(aliases.map(use => use.caseKey))], matches: [...new Set(aliases.flatMap(use => use.matches))] });
           cursor = selected.endIndex;
           if (cursor < to) step--;
@@ -63,24 +65,22 @@ export function usedAlgorithms(solve: Solve, cube: Cube): AlgorithmUse[] {
       const recognized = recognizeCase(step, cube, cross, states[from], states[to]);
       const caseKey = recognized && recognized !== 'Solved' ? `${step < 5 ? 'F2L' : step === 5 ? 'OLL' : 'PLL'}-${recognized}` : '';
       if (caseKey) {
-        const signature = matcher.signature(solve.moves.slice(from, to).map(item => frame(item.move)).join(' '));
+        const algorithm = solve.moves.slice(from, to).map(item => frame(item.move)).join(' '), signature = matcher.signature(algorithm);
         const entry = algorithms.find(entry => `${entry.category}-${entry.id}` === caseKey);
         const matches = entry?.options.filter(algorithm => matcher.signature(algorithm) === signature)
           .map(algorithm => favoriteId(entry, algorithm)) ?? [];
-        result.push({ step, caseKey, caseKeys: [caseKey], signature, matches });
+        result.push({ step, caseKey, caseKeys: [caseKey], signature, matches, algorithm });
       }
       cursor = to;
     }
   }
-  cache.set(solve, result);
+  cache.set(solve, { catalog: algorithms, uses: result });
   return result;
 }
 function advancedCases(cube: Cube, before: KPattern) {
-  let images = advancedImages.get(cube);
-  if (!images) {
-    images = illustrateCases(cube).filter(entry => entry.category === 'AF2L');
-    advancedImages.set(cube, images);
-  }
+  const images = getAlgorithms().filter(entry => entry.category === 'AF2L').map(entry => ({
+    ...entry, ...caseImages[`AF2L-${entry.id}` as keyof typeof caseImages],
+  }));
   const candidates: { entry: typeof images[number]; yaw: string }[] = [];
   for (const yaw of ['', 'y', 'y2', "y'"]) {
     for (const auf of ['', 'U', 'U2', "U'"]) {
@@ -110,4 +110,73 @@ export async function discoverFavorites(history: Solve[], cube: Cube, favorites:
     if (i % 20 === 0) await new Promise(resolve => setTimeout(resolve, 0));
   }
   return found;
+}
+
+export function unlearnAlgorithms(solve: Solve, cube: Cube, unlearn: Set<string>): AlgorithmUse[] {
+  if (!unlearn.size) return [];
+  const matcher = algorithmMatcher(cube);
+  return usedAlgorithms(solve, cube).filter(use => [...unlearn].some(id =>
+    use.caseKeys.some(key => id.startsWith(`${key}:`)) && matcher.signature(id.slice(id.indexOf(':') + 1)) === use.signature));
+}
+
+export function comfortableAlgorithm(algorithm: string, cube: Cube): string {
+  const variants = ['', 'y', 'y2', "y'"].map(yaw =>
+    simplifyMoves(algorithm.split(/\s+/).filter(Boolean).map(cfopFrame(cube, yaw))));
+  const cost = (moves: string[]) => moves.filter(move => 'DLB'.includes(move[0])).length;
+  return variants.sort((a, b) => cost(a) - cost(b) || a.length - b.length || a.join(' ').localeCompare(b.join(' ')))[0].join(' ');
+}
+
+export async function learnAlgorithms(history: Solve[], cube: Cube): Promise<Set<string>> {
+  const matcher = algorithmMatcher(cube), counts = new Map<string, { count: number; use: AlgorithmUse }>();
+  const solves = [...new Map(history.filter(solve => solve.status === 'complete').map(solve => [solve.id, solve])).values()];
+  for (let i = 0; i < solves.length; i++) {
+    const seen = new Set<string>();
+    for (const use of usedAlgorithms(solves[i], cube)) {
+      if (use.step < 5 || use.matches.length || !use.signature) continue;
+      const key = `${use.caseKey}:${use.signature}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const previous = counts.get(key);
+      counts.set(key, { count: (previous?.count ?? 0) + 1, use });
+    }
+    if (i % 20 === 0) await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  const custom = readCustomAlgorithms(), found = new Set<string>();
+  for (const { count, use } of counts.values()) {
+    if (count < 5) continue;
+    const entry = getAlgorithms().find(entry => `${entry.category}-${entry.id}` === use.caseKey)!;
+    if (entry.options.some(algorithm => matcher.signature(algorithm) === use.signature)) continue;
+    const algorithm = comfortableAlgorithm(use.algorithm, cube);
+    custom[use.caseKey] = [...new Set([...(custom[use.caseKey] ?? []), algorithm])];
+    found.add(favoriteId(entry, algorithm));
+  }
+  if (found.size) saveCustomAlgorithms(custom);
+  return found;
+}
+
+export function validateUserAlgorithm(entry: AlgorithmCase, algorithm: string, cube: Cube): string {
+  const matcher = algorithmMatcher(cube);
+  const canonical = algorithm.trim().replace(/\s+/g, ' ');
+  if (!canonical || canonical.length > 1000) throw new Error('Enter an algorithm of at most 1,000 characters.');
+  if (entry.category === 'AF2L') {
+    const image = caseImages[`AF2L-${entry.id}` as keyof typeof caseImages];
+    const before = cube.parse(image.facelets), after = before.applyAlg(matcher.outerMoves(canonical).moves.join(' '));
+    const solved = (pattern: KPattern, orbit: string, index: number) =>
+      pattern.patternData[orbit].pieces[index] === index && !pattern.patternData[orbit].orientation[index];
+    const pair = (pattern: KPattern, corner: number) =>
+      solved(pattern, 'CORNERS', corner) && solved(pattern, 'EDGES', [8, 9, 11, 10][corner - 4]);
+    if (!pair(after, entry.pair!) || [4, 5, 6, 7].some(i =>
+      !solved(after, 'EDGES', i) || pair(before, i) && !pair(after, i))) {
+      throw new Error('This algorithm does not solve the selected Advanced F2L case.');
+    }
+  } else {
+    const before = casePattern(cube, canonical), { EDGES, CORNERS } = before.patternData;
+    const solved = (data: typeof EDGES, index: number) => data.pieces[index] === index && !data.orientation[index];
+    const intact = [4, 5, 6, 7].every(i => solved(EDGES, i)) && (entry.category === 'F2L' ||
+      [4, 5, 6, 7].every(i => solved(CORNERS, i) && solved(EDGES, i + 4))) &&
+      (entry.category !== 'PLL' || [...EDGES.orientation, ...CORNERS.orientation].every(value => !value));
+    if (!intact || recognizeCase(entry.category === 'OLL' ? 5 : entry.category === 'PLL' ? 6 : 1,
+      cube, 3, before, cube.solved()) !== entry.id) throw new Error('This algorithm does not match the selected case.');
+  }
+  return canonical;
 }

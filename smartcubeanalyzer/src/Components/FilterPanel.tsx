@@ -138,7 +138,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
 
     static markAllLuckiness(allSolves: Solve[]): Solve[] {
         for (const solve of allSolves) {
-            const numSteps = Const.MethodSteps[solve.method].length;
+            const numSteps = Const.MethodSteps[solve.method]?.length ?? 0;
             // A skipped step takes no time to execute. Only ever clears the flag,
             // so a solve already known not to be full step stays that way.
             if (solve.steps.some((step, i) => i < numSteps && step.executionTime === 0)) {
@@ -685,7 +685,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                     <Row className="mt-3">
                         <Alert show={this.state.showTestAlert} variant={"warning"}>
                             <Alert.Heading>Warning: Viewing Test Data</Alert.Heading>
-                            These are not your solves, these are the dev's personal solves, just to show off the capabilities of this website! To view your solves, click "Display My Stats!" for Timer data, or choose a CSV file and click "Display CSV Stats".
+                            These are not your solves, these are the dev's personal solves, just to show off the capabilities of this website! To view your solves, click "Display My Stats!" for Timer data, or choose a CSV file to automatically display its stats.
                             <div className="d-flex justify-content-end">
                                 <Button onClick={() => this.hideAlert()} variant="warning">
                                     Close

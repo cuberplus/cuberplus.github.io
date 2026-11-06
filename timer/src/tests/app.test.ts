@@ -67,6 +67,9 @@ beforeEach(async () => {
   localStorage.removeItem('timer-non-favorite-mistakes');
   localStorage.removeItem('timer-non-favorite-categories');
   localStorage.removeItem('cuberplus-database-favorites');
+  localStorage.removeItem('cuberplus-unlearn-algorithms');
+  localStorage.removeItem('timer-sessions');
+  ['cuberplus-cloud-auto-100', 'cuberplus-cloud-auto-pb', 'cuberplus-cloud-progress', 'cuberplus-cloud-provider'].forEach(key => localStorage.removeItem(key));
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true });
   Object.defineProperty(globalThis, 'structuredClone', { configurable: true, value: <T>(value: T): T => deserialize(serialize(value)) as T });
   Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => webcrypto.randomUUID() });
@@ -108,16 +111,49 @@ async function finishFirst() {
   expect(container.querySelector('.trail-duration[data-step="6"][data-status="done"]')).not.toBeNull();
 }
 
+test('automatic cloud counting waits for finished local saves and ignores later edits of the same solve', async () => {
+  jest.useFakeTimers({ doNotFake: ['performance'] });
+  localStorage.setItem('cuberplus-cloud-auto-100', 'true');
+  await finishFirst();
+  expect(localStorage.getItem('cuberplus-cloud-progress')).toBeNull();
+  await act(async () => { jest.advanceTimersByTime(501); });
+  const saved = JSON.parse(localStorage.getItem('cuberplus-cloud-progress')!) as { pending: string[] };
+  expect(saved.pending).toHaveLength(1);
+  expect(save.mock.calls.at(-1)![0][0].status).toBe('complete');
+  await click('View');
+  await click('Toggle manual +2');
+  await act(async () => { jest.advanceTimersByTime(1000); });
+  expect(JSON.parse(localStorage.getItem('cuberplus-cloud-progress')!)).toEqual(saved);
+});
+test('failed local saves do not count toward automatic cloud backups', async () => {
+  jest.useFakeTimers({ doNotFake: ['performance'] });
+  localStorage.setItem('cuberplus-cloud-auto-100', 'true');
+  save.mockRejectedValue(new Error('Local save failed'));
+  await finishFirst();
+  await act(async () => { jest.advanceTimersByTime(501); });
+  expect(localStorage.getItem('cuberplus-cloud-progress')).toBeNull();
+});
+
 test('shows biggest-mistake feedback after finishing and clears it during the next solve', async () => {
   await click('Connect cube');
   await act(async () => { move('R', 100); move('U2', 200); move('U', 300); move("U'", 500); move('U2', 700); move("R'", 900); });
   const feedback = container.querySelector('[aria-label="Solve mistakes"]')!;
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
   expect(feedback.textContent).toContain('Biggest mistake:');
   expect(feedback.textContent).toContain('undo');
   expect(feedback.querySelector('ul')).toBeNull();
   await act(async () => resolveNext('F L2'));
   await act(async () => { move('F', 1600); move('L2', 1800); move('L2', 2000); });
   expect(container.querySelector('[aria-label="Solve mistakes"]')).toBeNull();
+});
+test('the first solve advances to a usable next scramble without extra turns or waiting for feedback', async () => {
+  jest.useFakeTimers({ doNotFake: ['performance'] });
+  await finishFirst();
+  expect(container.querySelector('[aria-label="Solve mistakes"]')!.textContent).toContain('Analyzing solve mistakes');
+  await act(async () => resolveNext('F L2'));
+  expect(container.querySelector('[aria-label="Original scramble"]')!.textContent).toBe('FL2');
+  expect(container.querySelector<HTMLButtonElement>('[aria-label="New scramble"]')!.disabled).toBe(false);
+  expect(container.querySelector('[aria-label="Solve time"]')!.textContent).toBe('0.60');
 });
 
 async function showHistory(solves: Solve[]) {
@@ -137,12 +173,43 @@ function historyNumbers() {
   return Array.from(container.querySelectorAll('[aria-label="Solve history"] tbody tr')).map(row => Number(row.firstElementChild!.textContent));
 }
 async function chooseSession(value: string) {
-  const input = container.querySelector<HTMLInputElement>('input[maxlength="100"]')!;
+  const select = container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!;
+  const existing = Array.from(select.options).some(option => option.value === value);
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
+    select.value = existing ? value : select.options[select.options.length - 1].value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
   });
+  if (!existing) {
+    const picker = select.closest('.session-picker')!, input = picker.querySelector('input')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => picker.querySelector('button')!.click());
+  }
 }
+test('session dropdowns stay synchronized and empty created sessions survive remounting', async () => {
+  await chooseSession('Practice');
+  const selects = () => Array.from(container.querySelectorAll<HTMLSelectElement>('select[aria-label="Session"]'));
+  expect(selects().map(select => select.value)).toEqual(['Practice', 'Practice']);
+  expect(selects().every(select => select.options[0].value === 'Default')).toBe(true);
+  expect(JSON.parse(localStorage.getItem('timer-sessions')!)).toEqual(['Practice']);
+  await showHistory([]);
+  expect(selects().every(select => Array.from(select.options).some(option => option.value === 'Practice'))).toBe(true);
+  await chooseSession('__create__');
+  await chooseSession('Another');
+  expect(selects().map(select => select.value)).toEqual(['Another', 'Another']);
+  expect(container.querySelector('[aria-label="New session name"]')).toBeNull();
+});
+test('creating a session can be cancelled and whitespace names cannot be submitted', async () => {
+  const select = container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!;
+  await act(async () => { select.value = select.options[select.options.length - 1].value; select.dispatchEvent(new Event('change', { bubbles: true })); });
+  const picker = select.closest('.session-picker')!;
+  expect(picker.querySelector('button')!.disabled).toBe(true);
+  await click('Cancel');
+  expect(picker.querySelector('input')).toBeNull();
+  expect(select.value).toBe('Default');
+});
 
 test('deleting from replay refreshes history, Current and Best statistics without changing other solves', async () => {
   await showHistory([historySolve(1, 2000, 10), historySolve(2, 1000, 10)]);
@@ -191,7 +258,7 @@ test('retry replaces a pending random scramble, saves a separate attempt in retr
   await click('View');
   await click('Retry');
   expect(container.querySelector('[aria-label="Solve replay"]')).toBeNull();
-  const session = container.querySelector<HTMLInputElement>('input[maxlength="100"]')!;
+  const session = container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!;
   expect(session.value).toBe('Retries');
   expect(session.disabled).toBe(true);
   await act(async () => resolveNext('F L2'));
@@ -220,7 +287,7 @@ test.each([['R', 'R', "R'"], ['R R', 'R2', 'R2']])('a disconnected retry reuses 
   await act(async () => move(setup, 100));
   await act(async () => move(solution, 900));
   expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ session: 'Retries', status: 'complete', scramble: setup });
-  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.value).toBe('Practice');
+  expect(container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!.value).toBe('Practice');
   expect(original.session).toBe('Practice');
 });
 
@@ -231,7 +298,7 @@ test.each(['Cancel retry', 'New scramble', 'Disconnect'])('%s cancels a prepared
   await click('Retry');
   await click('Connect cube');
   await click(action);
-  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.value).toBe('Practice');
+  expect(container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!.value).toBe('Practice');
   expect(container.textContent).not.toContain('Retry will be saved');
   expect(save).not.toHaveBeenCalled();
 });
@@ -246,7 +313,7 @@ test.each(['Abort solve', 'Disconnect', 'snapshot mismatch'])('%s saves an inter
   if (action === 'snapshot mismatch') await act(async () => emit({ type: 'FACELETS', timestamp: 400, facelets: SOLVED }));
   else await click(action);
   expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ session: 'Retries', status: 'incomplete', scramble: 'R U2' });
-  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.value).toBe('Practice');
+  expect(container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!.value).toBe('Practice');
   expect(container.textContent).not.toContain('Retry will be saved');
 });
 
@@ -259,7 +326,7 @@ test('failed retry setup restores the previous session and leaves the original u
   await click('View');
   await click('Retry');
   expect(container.textContent).toContain('Cannot prepare this cube');
-  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.value).toBe('Practice');
+  expect(container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!.value).toBe('Practice');
   expect(save).not.toHaveBeenCalled();
 });
 
@@ -271,12 +338,12 @@ test('a late over-turn update to an older retries solve does not complete the ne
   await click('Retry');
   await act(async () => move('R', 1000));
   expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ id: original.id, penaltyReason: 'over-turn' });
-  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.disabled).toBe(true);
+  expect(container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!.disabled).toBe(true);
   expect(container.textContent).toContain('Retry will be saved');
   await act(async () => resolveNext('F L2'));
   await act(async () => { move('U2', 2000); move('U2', 2100); move("R'", 2800); });
   expect(save.mock.calls.at(-1)![0][0].id).not.toBe(original.id);
-  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.disabled).toBe(false);
+  expect(container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!.disabled).toBe(false);
   expect(container.textContent).not.toContain('Retry will be saved');
 });
 
@@ -288,13 +355,13 @@ test('Analyzer retry navigation preserves the mounted Timer session and handles 
   await show('/smartcubeanalyzer/');
   await chooseSession('Practice');
   await show('/timer/?retry=1');
-  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.value).toBe('Retries');
+  expect(container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!.value).toBe('Retries');
   await click('Connect cube');
   await act(async () => { move('R', 100); move("R'", 900); });
   expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ session: 'Retries', status: 'complete', scramble: 'R' });
-  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.value).toBe('Practice');
+  expect(container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!.value).toBe('Practice');
   await show('/timer/?retry=1');
-  expect(container.querySelector<HTMLInputElement>('input[maxlength="100"]')!.value).toBe('Practice');
+  expect(container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!.value).toBe('Practice');
 });
 
 test('Connect cube places a decorative Bluetooth icon before its unchanged label', async () => {
@@ -676,11 +743,7 @@ test('average PB notifications retain their original window after later solves a
   await act(async () => { move('F', 2000); move('L2', 2100); move('L2', 2200); move("F'", 2400); });
   await act(async () => jest.advanceTimersByTime(501));
   await click('Options');
-  const session = container.querySelector<HTMLInputElement>('input[maxlength="100"]')!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(session, 'Other');
-    session.dispatchEvent(new Event('input', { bubbles: true }));
-  });
+  await chooseSession('Other');
   await act(async () => container.querySelector<HTMLDialogElement>('.options-dialog')!.close());
   expect(container.querySelector('[aria-label="View current Ao5"]')).toBeNull();
   await click('View PB Ao5');
@@ -1648,10 +1711,10 @@ test('options change timer and CFOP precision immediately and remember the prefe
   expect(dialog.open).toBe(false);
   expect(container.querySelector('header select')).toBeNull();
   expect(container.textContent).not.toContain('Saved locally');
-  expect(container.querySelectorAll('input[maxlength="100"]')).toHaveLength(1);
-  expect(dialog.querySelector<HTMLInputElement>('input')?.value).toBe('Default');
+  expect(container.querySelectorAll('select[aria-label="Session"]')).toHaveLength(2);
+  expect(dialog.querySelector<HTMLSelectElement>('select[aria-label="Session"]')?.value).toBe('Default');
   await openSiteOptions();
-  expect(dialog.querySelector('select')).toBeNull();
+  expect(dialog.querySelectorAll('select')).toHaveLength(1);
   const precision = container.querySelector<HTMLSelectElement>('select[aria-label="Time precision"]')!;
   expect(precision.value).toBe('2');
   await act(async () => { precision.value = '3'; precision.dispatchEvent(new Event('change', { bubbles: true })); });
@@ -1672,8 +1735,9 @@ test('session summary shows current and best singles plus all four average sizes
   const records = container.querySelector('[aria-label="Session statistics"]')!.closest('section')!;
   const history = container.querySelector('[aria-label="Solve history"]')!.closest('section')!;
   expect(records).not.toBe(history);
-  expect(records.querySelector('h2')!.textContent).toBe('Current / records');
-  expect(history.querySelector('h2')!.textContent).toBe('Session history');
+  expect(records.querySelector('h2')).toBeNull();
+  expect(history.querySelector('h2')).toBeNull();
+  expect(history.querySelector('.session-picker label')!.textContent).toContain('Session:');
   expect(Array.from(history.querySelectorAll('thead th')).map(cell => cell.textContent)).toEqual(['Solve', 'Time', 'Turns', 'TPS', 'View']);
   expect(history.querySelectorAll('tbody tr:first-child td')).toHaveLength(5);
   expect(history.querySelector('tbody button')?.textContent).toBe('View');

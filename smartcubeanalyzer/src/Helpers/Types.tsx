@@ -127,6 +127,7 @@ export interface Solve {
     dnf?: boolean,
     crossColor: CrossColor,
     firstF2LPair?: string,
+    endDate?: Date,
     scramble: string,
     tps: number,
     // `null` means the source/CSV didn't report inspection time (e.g. Acubemy exports).
@@ -260,7 +261,7 @@ export interface ChartDataBundle {
     algoPracticeRows?: AlgoPracticeRow[];
 }
 
-export interface StreakRow { time: string; currentstreak: string; longeststreak: string; }
+export interface StreakRow { time: string; currentstreak: string; longeststreak: string; currentDays: number[]; bestDays: number[]; }
 
 export interface RecordRow { recordType: string; time: string; }
 

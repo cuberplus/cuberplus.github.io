@@ -5,6 +5,7 @@ import '@cuberplus/navigation/style.css';
 import timerScreenshot from '../Assets/Timer.png';
 import analyzerScreenshot from '../Assets/SmartcubeAnalyzer.png';
 import scramblerScreenshot from '../Assets/Scrambler.png';
+import databaseScreenshot from '../Assets/Database.png';
 
 const tools = [
   {
@@ -39,6 +40,17 @@ const tools = [
     description: 'Build a practice sheet around your next goal. Explore optimal Cross, X-Cross, XX-Cross, and 2x2 block solutions, then print and practice.',
     features: ['Optimal solutions', 'Print-ready worksheets'],
     action: 'Open scrambler',
+  },
+  {
+    id: 'database',
+    name: 'Algorithm Database',
+    category: 'Build your repertoire',
+    href: '/database/',
+    image: databaseScreenshot,
+    alt: 'Algorithm database in Dark theme showing F2L case diagrams, alternative algorithms, favorites, and unlearn controls.',
+    description: 'Explore F2L, Advanced F2L, OLL, and PLL algorithms. Save favorites, learn from your solves, and add your own algorithms.',
+    features: ['Personal algorithm favorites', 'Learn from your solves'],
+    action: 'Open database',
   },
 ];
 

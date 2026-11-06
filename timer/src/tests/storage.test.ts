@@ -5,6 +5,7 @@ import { parseCsv } from '../../../smartcubeanalyzer/src/Helpers/CsvParser';
 import { Cube, inverse, loadCube, SOLVED } from '../puzzle';
 import { average, averageDetails, backupJSON, cubeastCSV, dailyStreak, newPersonalBests, personalBestNotifications, readSolves, saveSolves, sessionStats, turns, validateBackup } from '../storage';
 import { readTimerData } from '../analyzer-data';
+import { APP_VERSION } from '@cuberplus/navigation';
 
 let cube: Cube;
 beforeAll(async () => { cube = await loadCube(); });
@@ -15,6 +16,20 @@ function sample(): Solve {
   ['R', 'U2', 'U2', "R'"].forEach((move, i) => timer.turn({ move, hostTime: i * 100, localTimestamp: i * 100, cubeTimestamp: null }));
   return timer.result!;
 }
+test('new solve versions and finish dates roundtrip through backup and CSV without inventing legacy versions', () => {
+  const solve = { ...sample(), createdAt: new Date(2026, 10, 4, 23, 59, 59, 950).toISOString() };
+  expect(solve.appVersion).toBe(APP_VERSION);
+  const [restored] = validateBackup(backupJSON([solve]), cube);
+  expect(restored.appVersion).toBe(APP_VERSION);
+  const csv = cubeastCSV([restored], cube), [header, row] = csv.trim().split('\r\n').map(line => line.split(','));
+  expect(row[header.indexOf('cuberplus_version')]).toBe(APP_VERSION);
+  expect(new Date(row[header.indexOf('solve_end_date')]).getDate()).toBe(5);
+  expect(parseCsv(csv, ',')[0].endDate?.getDate()).toBe(5);
+  delete solve.appVersion;
+  expect(validateBackup(backupJSON([solve]), cube)[0].appVersion).toBeUndefined();
+  const legacy = cubeastCSV([solve], cube).trim().split('\n')[1].split(',');
+  expect(legacy[header.indexOf('cuberplus_version')]).toBe('');
+});
 
 test('Analyzer reads a fresh, read-only snapshot using the existing analysis and excluding active solves', async () => {
   const previous = indexedDB;
@@ -534,11 +549,11 @@ test('Cubeast CSV matches the sample schema and records milliseconds, UTC dates,
   solve.moves[1].elapsed = 1234.56;
   solve.duration = 1234.56;
   const [header, line, trailing] = cubeastCSV([solve], cube).split('\r\n');
-  expect(header).toBe(`${cubeastHeader},first_f2l_pair,manual_two_second_penalty,penalty_reason,dnf_reason`);
+  expect(header).toBe(`${cubeastHeader},first_f2l_pair,manual_two_second_penalty,penalty_reason,dnf_reason,cuberplus_version,solve_end_date`);
   expect(trailing).toBe('');
   const columns = header.split(',');
   const cells = line.split(',');
-  expect(cells).toHaveLength(168);
+  expect(cells).toHaveLength(170);
   const row = Object.fromEntries(columns.map((column, i) => [column, cells[i]]));
   expect(row).toMatchObject({
     id: solve.id, date: '2026-10-31 15:22:52 UTC', dnf: 'false', time: '1235',
@@ -616,8 +631,8 @@ test('Cubeast CSV excludes active attempts, includes incomplete attempts as DNFs
   expect(first.split(',')[0]).toBe(complete.id);
   const columns = header.split(','), cells = second.split(',');
   const row = Object.fromEntries(columns.map((column, i) => [column, cells[i]]));
-  expect(cells).toHaveLength(168);
+  expect(cells).toHaveLength(170);
   expect(row).toMatchObject({ dnf: 'true', time: '', timer_time: '', solving_time: '', session_name: 'Other', description: 'Disconnected.' });
   expect(row.solution).toBe("U2[0] R'[100]");
-  expect(cubeastCSV([], cube)).toBe(cubeastHeader + ',first_f2l_pair,manual_two_second_penalty,penalty_reason,dnf_reason\r\n');
+  expect(cubeastCSV([], cube)).toBe(cubeastHeader + ',first_f2l_pair,manual_two_second_penalty,penalty_reason,dnf_reason,cuberplus_version,solve_end_date\r\n');
 });

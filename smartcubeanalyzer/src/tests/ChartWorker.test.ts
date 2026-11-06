@@ -7,6 +7,9 @@ import { makeCfopSteps, makeDailySolves, makeSolve, makeSolves, makeStep } from 
 // stay separate: the type-only import below is erased at compile time and would not run the module.
 import '../Workers/chartWorker';
 import type { ChartWorkerScope, WorkerInput, WorkerOutput } from '../Workers/chartWorker';
+import { buildAllStreakRows } from '../Workers/chartWorker';
+import { streakSolves } from '../Helpers/ChartDataBuilders';
+import { calendarDay } from '../../../shared/streaks';
 
 const workerGlobal = globalThis as ChartWorkerScope;
 
@@ -260,15 +263,13 @@ describe('chartWorker streaks', () => {
 
     test('marks the current streak with a flame when it is also the longest', () => {
         const solves = makeDailySolves(5, [8]);
-        const { chartData } = run({ solves });
-        const subTen = chartData.streakRows.find((r) => r.time === 'Sub-10')!;
+        const subTen = buildAllStreakRows(solves, solves.at(-1)!.date).find(r => r.time === 'Sub-10')!;
         expect(subTen.currentstreak).toBe('5 🔥');
     });
 
     test('breaks the streak on a day slower than the target', () => {
         const solves = makeDailySolves(5, [8, 8, 30, 8, 8]);
-        const { chartData } = run({ solves });
-        const subTen = chartData.streakRows.find((r) => r.time === 'Sub-10')!;
+        const subTen = buildAllStreakRows(solves, solves.at(-1)!.date).find(r => r.time === 'Sub-10')!;
         expect(subTen.longeststreak).toBe('2');
         expect(subTen.currentstreak).toBe('2 🔥');
     });
@@ -276,8 +277,7 @@ describe('chartWorker streaks', () => {
     test('breaks the streak when a day is skipped entirely', () => {
         const solves = makeDailySolves(3, [8]);
         const gap = makeSolve({ id: 'gap', date: new Date('2024-02-01T12:00:00Z'), time: 8 });
-        const { chartData } = run({ solves: [...solves, gap] });
-        const subTen = chartData.streakRows.find((r) => r.time === 'Sub-10')!;
+        const subTen = buildAllStreakRows([...solves, gap], gap.date).find(r => r.time === 'Sub-10')!;
         expect(subTen.longeststreak).toBe('3');
         expect(subTen.currentstreak).toBe('1');
     });
@@ -305,6 +305,42 @@ describe('chartWorker streaks', () => {
         const { chartData } = run({ solves });
         const subTen = chartData.streakRows.find((r) => r.time === 'Sub-10')!;
         expect(subTen.longeststreak).toBe('1');
+    });
+    test('current streak expires after a missed day, but includes yesterday until today ends', () => {
+        const solves = [1, 2, 3].map(day => makeSolve({ date: new Date(2026, 10, day, 12), time: 8 }));
+        const yesterday = buildAllStreakRows(solves, new Date(2026, 10, 4, 23)).find(row => row.time === 'Overall')!;
+        expect(yesterday.currentDays).toHaveLength(3);
+        const expired = buildAllStreakRows(solves, new Date(2026, 10, 5)).find(row => row.time === 'Overall')!;
+        expect(expired.currentstreak).toBe('0');
+        expect(expired.bestDays).toHaveLength(3);
+    });
+    test('overall streak includes DNF-only days and daily best prefers a successful solve', () => {
+        const solves = [
+            makeSolve({ id: 'one', date: new Date(2026, 10, 1, 12), time: 8 }),
+            makeSolve({ id: 'dnf', date: new Date(2026, 10, 2, 12), time: 0, dnf: true }),
+            makeSolve({ id: 'three-dnf', date: new Date(2026, 10, 3, 10), time: 0, dnf: true }),
+            makeSolve({ id: 'three-best', date: new Date(2026, 10, 3, 12), time: 9 }),
+        ];
+        const rows = buildAllStreakRows(solves, new Date(2026, 10, 3, 23));
+        const overall = rows.find(row => row.time === 'Overall')!;
+        expect(overall.currentstreak).toBe('3 🔥');
+        expect(rows.find(row => row.time === 'Sub-10')!.longeststreak).toBe('1');
+        expect(streakSolves(solves, overall.currentDays).map(solve => solve.id)).toEqual(['one', 'dnf', 'three-best']);
+    });
+    test('current and best drilldowns use only daily bests inside the selected window', () => {
+        const solves = [1, 2, 3, 5, 6].flatMap(day => [
+            makeSolve({ id: `slow-${day}`, date: new Date(2026, 10, day, 10), time: 9 }),
+            makeSolve({ id: `best-${day}`, date: new Date(2026, 10, day, 12), time: 8 }),
+        ]);
+        const row = buildAllStreakRows(solves, new Date(2026, 10, 6, 23)).find(row => row.time === 'Sub-10')!;
+        expect(streakSolves(solves, row.currentDays).map(solve => solve.id)).toEqual(['best-5', 'best-6']);
+        expect(streakSolves(solves, row.bestDays).map(solve => solve.id)).toEqual(['best-1', 'best-2', 'best-3']);
+    });
+    test('local finish dates and daylight-saving transitions count calendar days, not 24-hour durations', () => {
+        const solves = [6, 7, 8, 9].map(day => makeSolve({ date: new Date(2026, 2, day, 12), time: 8 }));
+        solves[0] = { ...solves[0], date: new Date(2026, 2, 5, 23, 59), endDate: new Date(2026, 2, 6, 0, 1) };
+        const row = buildAllStreakRows(solves, new Date(2026, 2, 9, 23)).find(row => row.time === 'Overall')!;
+        expect(row.currentDays).toEqual([6, 7, 8, 9].map(day => calendarDay(new Date(2026, 2, day))));
     });
 });
 

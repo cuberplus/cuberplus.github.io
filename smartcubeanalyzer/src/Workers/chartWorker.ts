@@ -5,7 +5,8 @@ import { analyzeStepMoves, computeCaseFailureStats, computeSolveEfficiency } fro
 import { getAufMovesForSolve } from '../Helpers/CsvParser';
 import { summarizeMistakes } from '../Helpers/MistakeAnalysis';
 import { Const } from '../Helpers/Constants';
-import { AlgoPracticeRow, CaseStats, ChartDataBundle, FastestSolve, LabelledChart, getStep, MethodName, RecordRow, Solve, StepName, StreakData, StreakRow } from '../Helpers/Types';
+import { AlgoPracticeRow, CaseStats, ChartDataBundle, FastestSolve, LabelledChart, getStep, MethodName, RecordRow, Solve, StepName, StreakRow } from '../Helpers/Types';
+import { calendarDay, streakWindows } from '../../../shared/streaks';
 
 export interface WorkerInput {
     requestId: number;
@@ -24,42 +25,19 @@ export interface WorkerInput {
 
 // ── Streak helpers ───────────────────────────────────────────────────────────
 
-function isPreviousDay(date1: Date, date2: Date): boolean {
-    const day1 = new Date(date1.getFullYear(), date1.getMonth(), date1.getDate());
-    const day2 = new Date(date2.getFullYear(), date2.getMonth(), date2.getDate());
-    return (day2.getTime() - day1.getTime()) / (1000 * 60 * 60 * 24) === 1;
-}
-
-function buildStreakData(fastestSolveEachDay: { [key: string]: number }, targetTime: number): StreakData {
-    const daysSorted = Object.keys(fastestSolveEachDay).sort();
-    let streak = 0;
-    let longestStreak = 0;
-    for (let i = 0; i < daysSorted.length; i++) {
-        if (i > 0 && !isPreviousDay(new Date(daysSorted[i - 1]), new Date(daysSorted[i]))) {
-            streak = 0;
-        }
-        if (fastestSolveEachDay[daysSorted[i]] < targetTime) {
-            streak++;
-            longestStreak = Math.max(longestStreak, streak);
-        } else {
-            streak = 0;
-        }
-    }
-    return { longestStreak, currentStreak: streak };
-}
-
-export function buildAllStreakRows(solves: Solve[]): StreakRow[] {
-    const fastestSolveEachDay = Object.fromEntries([...fastestByDay(solves)].map(([day, solve]) => [day, solve.time]));
+export function buildAllStreakRows(solves: Solve[], today = new Date()): StreakRow[] {
+    const daily = [...fastestByDay(solves).values()];
     const targets = [5, 10, 15, 20, 30, 10000] as const;
     const labels: { [k: number]: string } = { 5: 'Sub-5', 10: 'Sub-10', 15: 'Sub-15', 20: 'Sub-20', 30: 'Sub-30', 10000: 'Overall' };
     return targets.map(t => {
-        const s = buildStreakData(fastestSolveEachDay, t);
-        const longest = String(s.longestStreak);
-        const current = String(s.currentStreak);
+        const windows = streakWindows(daily.filter(solve => t === 10000 || !solve.dnf && solve.time < t)
+            .map(solve => calendarDay(solve.endDate ?? solve.date)), calendarDay(today));
+        const longest = String(windows.best.length), current = String(windows.current.length);
         return {
             time: labels[t],
             longeststreak: longest,
             currentstreak: longest === current && current !== '0' ? `${current} 🔥` : current,
+            currentDays: windows.current, bestDays: windows.best,
         };
     });
 }
@@ -318,7 +296,7 @@ export function computeAllChartData(input: WorkerInput): ChartDataBundle {
             ? paint(buildInspectionData(inspectionSolves, windowSize, input.precision))
             : null,
         dailyRecord: paint(buildDailyRecordData(solves)),
-        streakRows: buildAllStreakRows(solves),
+        streakRows: buildAllStreakRows(input.solves),
         recordRows: buildRecordRows(input.solves, input.precision),
         goodBad: paintRolling(buildGoodBadData(solves, windowSize, pointsPerGraph, goodTime, badTime)),
         recordHistory: applyPaletteToChartData(buildRecordHistory(input.solves), isDark),

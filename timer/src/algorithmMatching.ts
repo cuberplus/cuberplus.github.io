@@ -10,17 +10,20 @@ const stateKey = (pattern: KPattern) => JSON.stringify([
 ]);
 
 export class AlgorithmMatcher {
-  private decompositions = new Map<string, { moves: string[]; rotation: KTransformation }>();
+  private decompositions = new Map<string, string[]>();
+  private factors = new Map<string, { moves: string[]; rotation: KTransformation }>();
+  private rotations: KTransformation[];
   private signatures = new Map<string, string>();
   constructor(private cube: Cube) {
     // Factor each notation move into recorded outer turns and an unrecorded rotation.
     const turns = ['', '', '2', "'"];
-    for (const rotation of cubeRotations) for (const axis of axes) {
+    this.rotations = cubeRotations.map(rotation => cube.puzzle.algToTransformation(rotation));
+    for (const axis of axes) {
       for (let a = 0; a < 4; a++) for (let b = 0; b < 4; b++) {
         const moves = [a ? axis[0] + turns[a] : '', b ? axis[1] + turns[b] : ''].filter(Boolean);
-        const pattern = cube.solved().applyAlg(`${moves.join(' ')} ${rotation}`);
+        const pattern = cube.solved().applyAlg(moves.join(' '));
         const key = stateKey(pattern);
-        if (!this.decompositions.has(key)) this.decompositions.set(key, { moves, rotation: cube.puzzle.algToTransformation(rotation) });
+        if (!this.decompositions.has(key)) this.decompositions.set(key, moves);
       }
     }
   }
@@ -29,7 +32,14 @@ export class AlgorithmMatcher {
     const moves: string[] = [];
     for (const node of new Alg(algorithm).experimentalExpand()) {
       if (!(node instanceof Move)) continue;
-      const factor = this.decompositions.get(stateKey(this.cube.solved().applyMove(node)));
+      const notation = node.toString();
+      let factor = this.factors.get(notation);
+      if (!factor) {
+        const pattern = this.cube.solved().applyMove(node), centers = pattern.patternData.CENTERS.pieces;
+        const frame = this.rotations.find(rotation => rotation.transformationData.CENTERS.permutation.every((piece, i) => piece === centers[i]))!;
+        const outer = this.decompositions.get(stateKey(pattern.applyTransformation(frame.invert())));
+        if (outer) this.factors.set(notation, factor = { moves: outer, rotation: frame });
+      }
       if (!factor) throw new Error(`Unsupported algorithm move: ${node.toString()}`);
       const centers = this.cube.solved().applyTransformation(rotation).patternData.CENTERS.pieces;
       moves.push(...factor.moves.map(move => faces[centers[faces.indexOf(move[0])]] + move.slice(1)));

@@ -12,6 +12,9 @@ import { SolveTimeline } from './SolveTimeline';
 import { SolveMistakes } from './SolveMistakes';
 import { FavoriteOptions } from './FavoriteOptions';
 import { useScreenWakeLock } from './useScreenWakeLock';
+import { InfoTip } from './InfoTip';
+import { SessionPicker } from './SessionPicker';
+import { noteCloudSolve } from '../../src/cloud/backup';
 
 const errorText = (error: Error): string => error.message || 'The operation failed.';
 const historyColumns = [
@@ -59,6 +62,12 @@ export default function App() {
     } catch { return { timer: false, cube: false, progressBar: false }; }
   });
   const [session, setSession] = useState('Default');
+  const [createdSessions, setCreatedSessions] = useState<string[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('timer-sessions') ?? '[]') as string[];
+      return Array.isArray(saved) ? saved.filter(name => typeof name === 'string' && name.trim() && name.length <= 100) : [];
+    } catch { return []; }
+  });
   const [replay, setReplay] = useState<Solve | null>(null);
   const engine = useRef<TimerEngine | null>(null);
   const historyRef = useRef<Solve[]>([]);
@@ -87,6 +96,12 @@ export default function App() {
   showEveryLongPbRef.current = showEveryLongPb;
 
   function updateHistory(items: Solve[]) { historyRef.current = items; setHistory(items); }
+  function createSession(name: string) {
+    const next = [...new Set([...createdSessions, name])];
+    setCreatedSessions(next); setSession(name);
+    try { localStorage.setItem('timer-sessions', JSON.stringify(next)); }
+    catch { setError('Session created, but its name could not be saved in this browser.'); }
+  }
   function finishRetry() {
     if (!retry.current) return;
     sessionRef.current = retry.current.previousSession;
@@ -132,7 +147,13 @@ export default function App() {
             const { current, best } = dailyStreak(historyRef.current, date);
             setStreaks(items => [...items, { id: copy.id, current, best }]);
           }
-          const records = notificationRecords(newPersonalBests(candidate.previous, candidate.solve));
+          const personalBests = newPersonalBests(candidate.previous, candidate.solve);
+          if (!candidate.previous.some(item => item.id === copy.id && item.status !== 'active')) {
+            void writes.current.then(() => {
+              if (!failedSaves.current.has(copy.id) && !deletedSolves.current.has(copy.id)) return noteCloudSolve(candidate.solve, personalBests);
+            });
+          }
+          const records = notificationRecords(personalBests);
           if (records.length) {
             const solves = [candidate.solve, ...candidate.previous.filter(item => item.session === candidate.solve.session && item.id !== copy.id)
               .sort((a, b) => b.createdAt.localeCompare(a.createdAt))];
@@ -427,25 +448,25 @@ export default function App() {
         <h2 id="options-title" className="mb-0">Options</h2>
         <button className="btn-close btn-close-white" aria-label="Close options" onClick={() => optionsDialog.current?.close()} />
       </div>
-      <label className="d-block mb-3">Session<input className="form-control mt-2" maxLength={100} value={session} disabled={timer?.phase === 'solving' || !!retry.current} onChange={event => setSession(event.target.value)} /></label>
-      <label className="form-check mt-3"><input type="checkbox" className="form-check-input" checked={inspection} disabled={timer?.phase === 'solving'} aria-describedby="inspection-help" onChange={event => changeInspection(event.target.checked)} /><span className="form-check-label">15-second inspection</span></label>
-      <p id="inspection-help" className="small text-secondary mt-2 mb-0">Count up after scrambling. Starting at 15 seconds adds +2; starting at 17 seconds or later is DNF. +2 penalties stack.</p>
-      <label className="form-check mt-3"><input type="checkbox" className="form-check-input" checked={overTurnPenalty} aria-describedby="over-turn-penalty-help" onChange={event => changeOverTurnPenalty(event.target.checked)} /><span className="form-check-label">Extra-turn +2 penalty</span></label>
-      <p id="over-turn-penalty-help" className="small text-secondary mt-2 mb-0">Apply +2 for an extra turn within 0.5 seconds after finishing.</p>
+      <SessionPicker value={session} sessions={[...createdSessions, ...history.map(solve => solve.session)]} disabled={timer?.phase === 'solving' || !!retry.current} change={setSession} create={createSession} />
+      <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="inspection-help" checked={inspection} disabled={timer?.phase === 'solving'} onChange={event => changeInspection(event.target.checked)} /><span className="form-check-label">15-second inspection</span></label>
+        <InfoTip id="inspection-help">Count up after scrambling. Starting at 15 seconds adds +2; starting at 17 seconds or later is DNF. +2 penalties stack.</InfoTip></div>
+      <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="over-turn-penalty-help" checked={overTurnPenalty} onChange={event => changeOverTurnPenalty(event.target.checked)} /><span className="form-check-label">Extra-turn +2 penalty</span></label>
+        <InfoTip id="over-turn-penalty-help">Apply +2 for an extra turn within 0.5 seconds after finishing.</InfoTip></div>
       <FavoriteOptions cube={cube} history={history} />
-      <label className="form-check mt-3"><input type="checkbox" className="form-check-input" checked={showEveryLongPb} aria-describedby="long-pb-notifications-help" onChange={event => changeLongPbNotifications(event.target.checked)} /><span className="form-check-label">Notify for every Ao100/Ao1000 PB</span></label>
-      <p id="long-pb-notifications-help" className="small text-secondary mt-2 mb-0">When off, show each of these PB notifications at most once per day.</p>
+      <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="long-pb-notifications-help" checked={showEveryLongPb} onChange={event => changeLongPbNotifications(event.target.checked)} /><span className="form-check-label">Notify for every Ao100/Ao1000 PB</span></label>
+        <InfoTip id="long-pb-notifications-help">When off, show each of these PB notifications at most once per day.</InfoTip></div>
       <details className="mt-3">
         <summary className="visuals-summary d-flex align-items-center gap-2">
           <input type="checkbox" className="form-check-input m-0" aria-labelledby="hide-visuals-title" aria-describedby="hide-visuals-help" checked={allVisualsHidden} ref={element => { if (element) element.indeterminate = someVisualsHidden && !allVisualsHidden; }} onClick={event => event.stopPropagation()} onChange={event => changeHiddenVisuals({ timer: event.target.checked, cube: event.target.checked, progressBar: event.target.checked })} />
           <span id="hide-visuals-title">Hide distracting visuals</span>
         </summary>
-        <fieldset className="mt-3 ms-3" aria-describedby="hide-visuals-help">
+        <fieldset className="mt-3 ms-3">
           <legend className="visually-hidden">Visuals hidden while solving</legend>
           <label className="form-check"><input type="checkbox" className="form-check-input" checked={hiddenVisuals.timer} onChange={event => changeHiddenVisuals({ ...hiddenVisuals, timer: event.target.checked })} /><span className="form-check-label">Timer</span></label>
           <label className="form-check"><input type="checkbox" className="form-check-input" checked={hiddenVisuals.cube} onChange={event => changeHiddenVisuals({ ...hiddenVisuals, cube: event.target.checked })} /><span className="form-check-label">Cube</span></label>
           <label className="form-check"><input type="checkbox" className="form-check-input" checked={hiddenVisuals.progressBar} onChange={event => changeHiddenVisuals({ ...hiddenVisuals, progressBar: event.target.checked })} /><span className="form-check-label">Progress bar</span></label>
-          <p id="hide-visuals-help" className="small text-secondary mt-2 mb-0">Choose which visuals to hide while solving.</p>
+          <InfoTip id="hide-visuals-help">Choose which visuals to hide while solving.</InfoTip>
         </fieldset>
       </details>
       {!connected && <div className="mt-4">
@@ -516,7 +537,6 @@ export default function App() {
           </div>}
     </section>
     <section className="panel mt-3">
-      <h2>Current / records</h2>
       <div className="table-responsive">
         <table className="table table-sm" aria-label="Session statistics"><thead><tr><th scope="col">Metric</th><th scope="col">Current</th><th scope="col">Best</th></tr></thead>
           <tbody>{statistics.map(stat => <tr key={stat.name}><th scope="row">{stat.name}</th>
@@ -530,7 +550,7 @@ export default function App() {
       </div>
     </section>
     <section className="panel mt-3">
-      <div className="d-flex justify-content-between flex-wrap gap-2"><h2>Session history</h2><div className="d-flex gap-2">
+      <div className="d-flex justify-content-between flex-wrap gap-2"><SessionPicker value={session} sessions={[...createdSessions, ...history.map(solve => solve.session)]} disabled={!!solving || !!retry.current} change={setSession} create={createSession} /><div className="d-flex gap-2">
         <button className="btn btn-outline-secondary" onClick={() => exportHistory('csv')}>Export CSV</button>
         <button hidden className="btn btn-outline-secondary" onClick={() => exportHistory('json')}>Export JSON</button>
         <label hidden className={`btn btn-outline-secondary mb-0 ${timer?.phase === 'solving' ? 'disabled' : ''}`}>Import JSON<input type="file" className="visually-hidden" accept=".json,application/json" disabled={timer?.phase === 'solving'} onChange={event => { void importBackup(event.target.files?.[0]); event.target.value = ''; }} /></label>

@@ -22,22 +22,22 @@ test.each(['home', 'timer', 'smartcubeanalyzer', 'scrambler', 'database', 'optio
   },
 );
 
-test('the homepage offers Timer first, followed by Analyzer and Scrambler, with their correct live paths', () => {
+test('the homepage offers Timer first and the database last, with the correct live paths', () => {
   render(<App />);
   const tools = within(screen.getByRole('region', { name: 'Cubing tools' }));
   expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('CuberPlus');
   expect(tools.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual([
-    '/timer/', '/smartcubeanalyzer/', '/scrambler/',
+    '/timer/', '/smartcubeanalyzer/', '/scrambler/', '/database/',
   ]);
   expect(tools.getAllByRole('heading', { level: 2 }).map(heading => heading.textContent)).toEqual([
-    'Timer', 'Smartcube Analyzer', 'Scrambler', 'More coming soon',
+    'Timer', 'Smartcube Analyzer', 'Scrambler', 'Algorithm Database', 'More coming soon',
   ]);
   expect(screen.queryByText(/The CuberPlus toolkit|Two tools\. Better solves\.|Analyze your solve data/)).toBeNull();
 });
 
 test('each tool has an accessible screenshot, description, features, and a clear action', () => {
   render(<App />);
-  for (const name of ['Timer', 'Smartcube Analyzer', 'Scrambler']) {
+  for (const name of ['Timer', 'Smartcube Analyzer', 'Scrambler', 'Algorithm Database']) {
     const card = within(screen.getByRole('region', { name: 'Cubing tools' })).getByRole('link', { name });
     const image = within(card).getByRole('img');
     expect(image.getAttribute('alt')).toMatch(/showing/);
@@ -46,7 +46,7 @@ test('each tool has an accessible screenshot, description, features, and a clear
     expect(image.getAttribute('height')).toBe('900');
     expect(card.getAttribute('aria-describedby')).toBeTruthy();
     expect(within(card).getAllByRole('listitem')).toHaveLength(2);
-    expect(within(card).getByText(/^Open /).textContent).toMatch(/Open (timer|analyzer|scrambler)/);
+    expect(within(card).getByText(/^Open /).textContent).toMatch(/Open (timer|analyzer|scrambler|database)/);
   }
   expect(screen.queryByText('Analyzer preview shown with demo data.')).toBeNull();
 });

@@ -93,7 +93,10 @@ test('QTM is sent to the solver and used for worksheet counts and sorting withou
   const metric = screen.getByLabelText('Move metric');
   expect(metric).toHaveValue('HTM');
   fireEvent.change(metric, { target: { value: 'QTM' } });
-  expect(screen.getByText(/A half turn counts as two moves/)).toBeInTheDocument();
+  expect(screen.queryByText(/A half turn counts as two moves/)).not.toBeInTheDocument();
+  const range = screen.getByLabelText('Minimum turns').closest('.range-inputs')!;
+  expect(range).toContainElement(metric);
+  expect(screen.getByLabelText('Maximum turns').compareDocumentPosition(metric) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(container.querySelector('.turn-count small')).toHaveTextContent('HTM');
   fireEvent.click(screen.getByRole('button', { name: /Generate worksheet/ }));
   expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ metric: 'QTM' }));

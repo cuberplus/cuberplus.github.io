@@ -4,7 +4,7 @@ import Navigation, { SettingsContext, usePageDialog } from '@cuberplus/navigatio
 import Site, { toolAt } from '../Site';
 
 const lifecycle = { mounts: 0, unmounts: 0 };
-jest.mock('../Components/App', () => ({ __esModule: true, default: () => <><Navigation current="home" /><a href="/timer/?solve=one">Shared solve</a><a href="https://example.com/timer/">External</a></> }));
+jest.mock('../Components/App', () => ({ __esModule: true, default: () => <><Navigation current="home" /><a href="/timer/?solve=one">Shared solve<svg aria-hidden="true"><path /></svg></a><a href="https://example.com/timer/">External</a><input aria-label="Control" /></> }));
 jest.mock('../../smartcubeanalyzer/src/Components/App', () => ({ __esModule: true, default: () => <Navigation current="smartcubeanalyzer" /> }));
 jest.mock('../../scrambler/src/Components/App', () => ({ __esModule: true, default: () => <Navigation current="scrambler" /> }));
 jest.mock('../database/Database', () => ({ __esModule: true, default: () => <Navigation current="database" /> }));
@@ -186,11 +186,26 @@ test('scrolling, controls, edge gestures, multitouch and cancelled touches do no
   swipe(element, -100, 150);
   swipe(element, -20);
   swipe(element, 100, 0, 5);
-  swipe(nav().getByRole('link', { name: 'Timer', exact: true }), -100);
+  swipe(screen.getByRole('textbox', { name: 'Control' }), -100);
   fireEvent.touchStart(element, { touches: [{ clientX: 160, clientY: 300 }, { clientX: 180, clientY: 300 }] });
   fireEvent.touchEnd(element, { touches: [], changedTouches: [{ clientX: 50, clientY: 300 }] });
   fireEvent.touchStart(element, { touches: [{ clientX: 160, clientY: 300 }] });
   fireEvent.touchCancel(element);
   fireEvent.touchEnd(element, { touches: [], changedTouches: [{ clientX: 50, clientY: 300 }] });
   expect(location.pathname).toBe('/');
+});
+test('swiping a home card SVG changes tabs without following its link or losing ordinary taps', async () => {
+  render(<Site />);
+  const card = await screen.findByRole('link', { name: /Shared solve/ });
+  swipe(card.querySelector('path')!, -100);
+  await screen.findByRole('button', { name: 'Record 0' });
+  expect(location.pathname + location.search).toBe('/timer/');
+  fireEvent.click(card);
+  expect(location.pathname + location.search).toBe('/timer/');
+  await visit('Home');
+  const link = screen.getByRole('link', { name: /Shared solve/ });
+  swipe(link, -15);
+  fireEvent.click(link);
+  await screen.findByRole('button', { name: 'Record 0' });
+  expect(location.pathname + location.search).toBe('/timer/?solve=one');
 });

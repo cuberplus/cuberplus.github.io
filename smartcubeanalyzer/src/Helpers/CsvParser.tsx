@@ -280,13 +280,14 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
         "inspection_two_second_penalty": (obj, value, scratch) => { if (value.toLowerCase() === 'true') scratch.penaltyMs += 2000; },
         "manual_two_second_penalty": (obj, value, scratch) => { if (value.toLowerCase() === 'true') scratch.penaltyMs += 2000; },
         "date": (obj, value) => { obj.date = parseUtcDateTime(value); },
+        "solve_end_date": (obj, value) => { if (value) obj.endDate = new Date(value); },
         "solution_rotation": (obj, value) => {
             obj.crossColor = Const.crossMappings.get(value) ?? CrossColor.Unknown;
         },
         "solution": (_obj, value, scratch) => { scratch.solution = value; },
         "first_f2l_pair": (obj, value) => { obj.firstF2LPair = value; },
         "scramble": (obj, value) => { obj.scramble = value; },
-        "solving_method": (obj, value) => { obj.method = value as MethodName; },
+        "solving_method": (obj, value) => { if (value.trim()) obj.method = value.trim() as MethodName; },
         "turns_per_second": (obj, value) => { obj.tps = Number(value); },
         "total_recognition_time": (obj, value) => { obj.recognitionTime = Number(value) / 1000; },
         "inspection_time": (obj, value) => { obj.inspectionTime = value.trim() ? Number(value) / 1000 : null; },

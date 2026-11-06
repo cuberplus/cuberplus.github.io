@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@azure/msal-browser": "^5.28.0",
     "@cuberplus/navigation": "file:shared/navigation",
     "bootstrap": "^5.3.8",
     "chart.js": "^4.5.1",

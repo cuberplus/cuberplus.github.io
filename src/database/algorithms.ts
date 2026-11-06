@@ -1,5 +1,6 @@
 import type { KPattern } from 'cubing/kpuzzle';
-import { locations, type Cube } from '../../timer/src/puzzle';
+import type { Cube } from '../../timer/src/puzzle';
+import { locations } from '../../shared/cubeLocations';
 import alternatives from './alternatives.json';
 
 export type Category = 'F2L' | 'AF2L' | 'OLL' | 'PLL';

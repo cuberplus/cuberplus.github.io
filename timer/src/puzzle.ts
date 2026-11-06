@@ -2,6 +2,8 @@ import { KPattern, type KPatternData, type KPuzzle } from 'cubing/kpuzzle';
 import { puzzles } from 'cubing/puzzles';
 import { randomScrambleForEvent } from 'cubing/scramble';
 import { experimentalSolve3x3x3IgnoringCenters } from 'cubing/search';
+import { locations } from '../../shared/cubeLocations';
+export { locations } from '../../shared/cubeLocations';
 
 export const SOLVED = 'UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB';
 export const crossRotation = (cross: number | null): string => ['x2', 'z', "x'", '', "z'", 'x'][cross ?? 3];
@@ -29,11 +31,6 @@ export function simplifyMoves(moves: readonly string[]): string[] {
   return result;
 }
 
-// Facelet locations in cubing.js's Reid orbit order; centers are ULFRBD.
-export const locations = {
-  EDGES: [[7, 19], [5, 10], [1, 46], [3, 37], [28, 25], [32, 16], [34, 52], [30, 43], [23, 12], [21, 41], [48, 14], [50, 39]],
-  CORNERS: [[8, 9, 20], [2, 45, 11], [0, 36, 47], [6, 18, 38], [29, 26, 15], [27, 44, 24], [33, 53, 42], [35, 17, 51]],
-};
 const parity = (pieces: number[]): number => pieces.reduce((n, piece, i) => n + pieces.slice(i + 1).filter(other => other < piece).length, 0) % 2;
 
 export class Cube {

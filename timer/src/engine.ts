@@ -1,5 +1,6 @@
 import type { KPattern } from 'cubing/kpuzzle';
 import { Cube, inverse, isMove, movesOf, sameAxis, simplifyMoves } from './puzzle';
+import { APP_VERSION } from '@cuberplus/navigation';
 
 export type Phase = 'disconnected' | 'synchronizing' | 'scrambling' | 'ready' | 'solving' | 'finished' | 'recovery' | 'recovering';
 export interface Turn {
@@ -9,7 +10,7 @@ export interface Turn {
 export interface RecordedTurn extends Turn { elapsed: number }
 export type PenaltyReason = 'over-turn' | 'inspection' | 'manual';
 export interface Solve {
-  version: 1; id: string; session: string; createdAt: string; device: string;
+  version: 1; appVersion?: string; id: string; session: string; createdAt: string; device: string;
   scramble: string; startFacelets: string; duration: number;
   inspection?: number;
   penalty?: number;
@@ -159,7 +160,7 @@ export class TimerEngine {
       this.finishedAt = null;
       this.started = turn.hostTime;
       this.active = {
-        version: 1, id: crypto.randomUUID(), createdAt: new Date().toISOString(), session: this.session,
+        version: 1, appVersion: APP_VERSION, id: crypto.randomUUID(), createdAt: new Date().toISOString(), session: this.session,
         device: this.device, scramble: this.scramble, startFacelets: this.facelets,
         inspection: this.inspectionElapsed(turn.hostTime),
         duration: 0, status: 'active', reason: '', timingBasis: 'host', moves: [],

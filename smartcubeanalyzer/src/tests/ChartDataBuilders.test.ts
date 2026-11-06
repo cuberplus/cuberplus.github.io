@@ -74,19 +74,33 @@ function makeSolves(count: number, overrides: Partial<Solve> = {}): Solve[] {
 
 // ── buildRunningAverageData ───────────────────────────────────────────────────
 
-test('first-pair rolling percentages keep the full window denominator and an explicit unknown series', () => {
+test('first-pair rolling percentages keep the full denominator but show only four pairs', () => {
     const solves = ['Red/Green', 'Orange/Blue', undefined, 'Red/Green'].map(firstF2LPair => makeSolve({ firstF2LPair }));
     const chart = buildFirstPairPercentages(solves, 2, 500);
     expect(chart.labels).toEqual(['2', '3', '4']);
     const data = Object.fromEntries(chart.datasets.map(dataset => [dataset.label!, dataset.data]));
     expect(data['Red / Green']).toEqual([50, 0, 50]);
     expect(data['Orange / Blue']).toEqual([50, 50, 0]);
-    expect(data.Unknown).toEqual([0, 50, 50]);
+    expect(data.Unknown).toBeUndefined();
+    expect(chart.datasets).toHaveLength(4);
     expect(data['Red / Blue']).toEqual([0, 0, 0]);
-    for (let i = 0; i < 3; i++) expect(chart.datasets.reduce((sum, dataset) => sum + Number(dataset.data[i]), 0)).toBeCloseTo(100);
+    expect(chart.datasets.reduce((sum, dataset) => sum + Number(dataset.data[1]), 0)).toBe(50);
     const sampled = buildFirstPairPercentages(solves, 2, 2);
     expect(sampled.datasets.every(dataset => dataset.data.length === sampled.labels!.length)).toBe(true);
     expect(buildFirstPairPercentages([], 10, 500).datasets).toEqual([]);
+});
+test('opposite cross colors combine to select the dominant cross axis', () => {
+    const solves = [
+        makeSolve({ crossColor: CrossColor.White, firstF2LPair: 'Red/Green' }),
+        makeSolve({ crossColor: CrossColor.Yellow, firstF2LPair: 'Red/Blue' }),
+        makeSolve({ crossColor: CrossColor.Yellow, firstF2LPair: 'Orange/Green' }),
+        makeSolve({ crossColor: CrossColor.Red, firstF2LPair: 'White/Green' }),
+        makeSolve({ crossColor: CrossColor.Red, firstF2LPair: 'Yellow/Blue' }),
+    ];
+    const chart = buildFirstPairPercentages(solves, 1, 500);
+    expect(chart.datasets.map(dataset => dataset.label).sort()).toEqual(['Green / Orange', 'Orange / Blue', 'Red / Blue', 'Red / Green']);
+    expect(chart.datasets.every(dataset => !/White|Yellow/.test(dataset.label!))).toBe(true);
+    expect(buildFirstPairPercentages([makeSolve({ crossColor: CrossColor.Unknown })], 1, 500).datasets).toEqual([]);
 });
 
 describe('buildRunningAverageData', () => {

@@ -54,9 +54,10 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
         }
     }
 
-    showFileData() {
-        const files = (document.getElementById("uploaded_data") as HTMLInputElement).files;
-        if (files?.length) void this.loadData(() => Promise.all(Array.from(files, file => file.text().then(csv => parseCsv(csv, ',')))).then(results => results.flat()));
+    showFileData(files: File[]) {
+        if (!files.length) return;
+        this.setState({ csvFileNames: files.map(file => file.name).join(', ') });
+        void this.loadData(() => Promise.all(files.map(file => file.text().then(csv => parseCsv(csv, ',')))).then(results => results.flat()));
     }
 
     showTestData(file?: string) {
@@ -119,12 +120,11 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
                                             ))}
                                         </Dropdown.Menu>
                                     </Dropdown>
-                                    <Button variant="outline-secondary" aria-label="Choose CSV File" onClick={() => document.getElementById('uploaded_data')?.click()}>
+                                    <Button variant="outline-secondary" style={{ gridColumn: '1 / -1' }} aria-label="Choose CSV File" disabled={this.state.isParsing} onClick={() => document.getElementById('uploaded_data')?.click()}>
                                         Choose CSV File
                                         {this.state.csvFileNames && <span className="d-block small text-truncate">{this.state.csvFileNames}</span>}
                                     </Button>
-                                    <FormControl type="file" id="uploaded_data" aria-label="CSV files" className="d-none" accept=".csv" multiple onChange={event => this.setState({ csvFileNames: Array.from((event.currentTarget as HTMLInputElement).files ?? [], file => file.name).join(', ') })} />
-                                    <Button disabled={this.state.isParsing} onClick={() => this.showFileData()}>{this.state.isParsing ? "Parsing..." : "Display CSV Stats"}</Button>
+                                    <FormControl type="file" id="uploaded_data" aria-label="CSV files" className="d-none" disabled={this.state.isParsing} accept=".csv" multiple onChange={event => this.showFileData(Array.from((event.currentTarget as HTMLInputElement).files ?? []))} />
                                 </Form>
                                 {this.state.loadError && <Alert variant="warning" className="m-2 mt-0">{this.state.loadError}</Alert>}
                             </Card>

@@ -27,12 +27,13 @@ input:disabled, select:disabled { opacity: .65; cursor: not-allowed; }
 .field-hint { font-size: 10px; color: var(--muted); line-height: 1.65; margin: 8px 0 0; }
 .label-row { display: flex; justify-content: space-between; align-items: baseline; }
 .label-row > span { color: var(--muted); font-size: 9px; }
-.range-inputs { display: flex; align-items: center; gap: 9px; }
-.range-inputs > div { position: relative; flex: 1; }
-.range-inputs input { padding-right: 29px; appearance: textfield; -moz-appearance: textfield; }
+.range-inputs { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) 70px; align-items: end; gap: 6px; }
+.range-inputs > select { width: 100%; margin: 0; }
+.range-inputs > div { min-width: 0; }
+.range-inputs input { appearance: textfield; -moz-appearance: textfield; }
 .range-inputs input::-webkit-inner-spin-button { -webkit-appearance: none; }
-.range-inputs > div > span { position: absolute; right: 10px; top: 13px; font-size: 9px; color: var(--muted); pointer-events: none; }
-.range-dash { color: var(--muted); }
+.range-inputs > div > span { display: block; margin-bottom: 4px; font-size: 9px; color: var(--muted); }
+.range-dash { color: var(--muted); align-self: end; padding-bottom: 11px; }
 .primary-button { border: 1px solid var(--cp-primary-border); background: var(--cp-primary); color: #fff; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; padding: 13px; width: 100%; margin-top: 23px; font-size: 12px; font-weight: 600; }
 .primary-button:hover:not(:disabled) { background: var(--cp-primary-hover); }
 .primary-button span { font-size: 19px; line-height: 1; color: var(--accent); }

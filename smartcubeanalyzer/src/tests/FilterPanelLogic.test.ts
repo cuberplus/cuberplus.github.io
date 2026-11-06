@@ -2,6 +2,7 @@ import { describe, expect, test } from '@jest/globals';
 import { FilterPanel } from '../Components/FilterPanel';
 import { Const } from '../Helpers/Constants';
 import { markMistakes } from '../Helpers/MistakeAnalysis';
+import { parseCsv } from '../Helpers/CsvParser';
 import {
     CrossColor,
     Filters,
@@ -214,6 +215,13 @@ describe('markMistakes', () => {
 });
 
 describe('FilterPanel.markAllLuckiness', () => {
+    test('an unsupported method does not stop luckiness analysis for known methods', () => {
+        const [unknown] = parseCsv('id,date,time,solving_method\nunknown,2026-01-05,12000,Custom', ',');
+        const skipped = passingSolve({ steps: [makeStep(StepName.OLL, 0)] });
+        const marked = FilterPanel.markAllLuckiness([unknown, skipped]);
+        expect(marked[0].isFullStep).toBe(true);
+        expect(marked[1].isFullStep).toBe(false);
+    });
     test('returns an empty array for no solves', () => {
         expect(FilterPanel.markAllLuckiness([])).toEqual([]);
     });
@@ -233,6 +241,22 @@ describe('FilterPanel.markAllLuckiness', () => {
 });
 
 describe('FilterPanel.applyFiltersToSolves', () => {
+    test('mixed uploads with blank, padded and unsupported method labels reach the real state pipeline', () => {
+        const header = 'id,date,time,solving_method\n';
+        const files = [
+            `${header}valid,2026-01-05 00:00:00 UTC,12000,CFOP`,
+            `${header}blank,2026-01-05 00:00:00 UTC,13000,\npadded,2026-01-05 00:00:00 UTC,14000, CFOP \nunknown,2026-01-05 00:00:00 UTC,15000,Custom\nroux,2026-01-05 00:00:00 UTC,16000,Roux`,
+            'solve_id,date,total_time,analysis_type\nacubemy,2026-01-05T00:00:00Z,17000,CFOP',
+        ];
+        const solves = files.flatMap(file => parseCsv(file, ','));
+        const panel = new FilterPanel({ solves: [] });
+        const next = FilterPanel.getDerivedStateFromProps({
+            solves, suggestedMethod: { label: 'CFOP', value: MethodName.CFOP },
+        }, { ...panel.state, filters: permissiveFilters() });
+        expect(next.allSolves).toHaveLength(6);
+        expect(next.filteredSolves.map(solve => solve.id)).toEqual(['valid', 'blank', 'padded', 'acubemy-acubemy']);
+        expect(next.compressedSolves.map(solve => solve.time)).toEqual([12, 13, 14, 17]);
+    });
     test('returns only the solves that pass the filters', () => {
         const solves = [
             passingSolve({ id: 'keep', crossColor: CrossColor.White }),

@@ -175,18 +175,17 @@ function App() {
                     <option value="diagonal">Diagonal pairs</option>
                   </select>
                 </>}
-                <label htmlFor="metric">Move metric</label>
-                <select id="metric" value={settings.metric} onChange={e => update('metric', e.target.value as Metric)}>
-                  <option value="HTM">HTM (half-turn metric)</option>
-                  <option value="QTM">QTM (quarter-turn metric)</option>
-                </select>
-                <div className="label-row"><label htmlFor="minimum">Solution length</label><span>{settings.metric}</span></div>
+                <label htmlFor="minimum">Solution length</label>
                 <div className="range-inputs">
-                  <div><input id="minimum" aria-label="Minimum turns" type="number" min="0" max={settings.maximum} required value={settings.minimum} onChange={e => update('minimum', e.target.valueAsNumber)} /><span>min</span></div>
+                  <div><span aria-hidden="true">min</span><input id="minimum" aria-label="Minimum turns" type="number" min="0" max={settings.maximum} required value={settings.minimum} onChange={e => update('minimum', e.target.valueAsNumber)} /></div>
                   <span className="range-dash">—</span>
-                  <div><input id="maximum" aria-label="Maximum turns" type="number" min={settings.minimum} max="20" required value={settings.maximum} onChange={e => update('maximum', e.target.valueAsNumber)} /><span>max</span></div>
+                  <div><span aria-hidden="true">max</span><input id="maximum" aria-label="Maximum turns" type="number" min={settings.minimum} max="20" required value={settings.maximum} onChange={e => update('maximum', e.target.valueAsNumber)} /></div>
+                  <select id="metric" aria-label="Move metric" value={settings.metric} onChange={e => update('metric', e.target.value as Metric)}>
+                    <option value="HTM">HTM</option>
+                    <option value="QTM">QTM</option>
+                  </select>
                 </div>
-                <p className="field-hint">Aim for an even mix of shortest-solution lengths in this inclusive range. A half turn counts as {settings.metric === 'HTM' ? 'one move' : 'two moves'}.</p>
+                <p className="field-hint">Aim for an even mix of shortest-solution lengths in this inclusive range.</p>
                 <label htmlFor="count">Number of scrambles</label>
                 <input id="count" type="number" min="1" required value={settings.count} onChange={e => update('count', e.target.valueAsNumber)} />
                 <button className="primary-button" type="submit">Generate worksheet <span aria-hidden="true">↗</span></button>
