@@ -19,8 +19,8 @@ type GoogleOAuth = {
     error_callback: () => void;
   }) => { requestAccessToken: (options: { prompt: string }) => void };
 };
-type DriveItem = { id: string; eTag?: string; '@microsoft.graph.downloadUrl'?: string };
-export type RemoteFile = { id: string; revision: string | null; content: Blob };
+type DriveItem = { id: string; eTag?: string; size?: number; '@microsoft.graph.downloadUrl'?: string };
+export type RemoteFile = { id: string; revision: string | null; size?: number; content: Blob };
 export class CloudHttpError extends Error {
   constructor(public status: number) {
     super(status === 401 ? 'Cloud sign-in expired. Reconnect in Options; your backup is still pending.' :
@@ -126,8 +126,8 @@ async function authorized(provider: Provider, url: string, init: RequestInit = {
 const checked = (response: Response): Response => { if (!response.ok) throw new CloudHttpError(response.status); return response; };
 function microsoftTransferUrl(value: string): string {
   const url = new URL(value);
-  if (url.protocol !== 'https:' || !['.1drv.com', '.sharepoint.com', '.storage.live.com', '.onedrive.com'].some(domain => url.hostname.endsWith(domain))) {
-    throw new Error('OneDrive returned an unexpected transfer address.');
+  if (url.protocol !== 'https:' || !['.1drv.com', '.sharepoint.com', '.storage.live.com', '.onedrive.com', '.microsoftpersonalcontent.com'].some(domain => url.hostname.endsWith(domain))) {
+    throw new Error(`OneDrive returned an unexpected transfer address (${url.hostname}).`);
   }
   return url.href;
 }
@@ -154,7 +154,7 @@ export async function readRemote(provider: Provider): Promise<RemoteFile | null>
   if (!item['@microsoft.graph.downloadUrl']) throw new Error('OneDrive did not return a backup download address.');
   // Preauthenticated transfer URLs must never receive our Graph access token.
   const content = await checked(await fetch(microsoftTransferUrl(item['@microsoft.graph.downloadUrl']), { cache: 'no-store' })).blob();
-  return { id: item.id, revision: item.eTag ?? null, content };
+  return { id: item.id, revision: item.eTag ?? null, size: item.size, content };
 }
 export async function writeRemote(provider: Provider, content: Blob, previous: RemoteFile | null): Promise<void> {
   const conditional: Record<string, string> = previous?.revision ? { 'If-Match': previous.revision } : {};

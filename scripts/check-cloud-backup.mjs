@@ -27,6 +27,20 @@ const errors = [], cspErrors = [];
 try {
   const context = await browser.newContext();
   await context.addInitScript(() => localStorage.setItem('theme', 'dark'));
+  const transferUrl = 'https://my.microsoftpersonalcontent.com/personal/synthetic-transfer';
+  const transfers = [];
+  await context.route('https://my.microsoftpersonalcontent.com/**', async route => {
+    const request = route.request();
+    const headers = {
+      'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'content-range',
+      'Access-Control-Allow-Methods': 'GET,PUT,OPTIONS',
+    };
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    expect(request.headers().authorization).toBeUndefined();
+    transfers.push(request.method());
+    if (request.method() === 'PUT') expect(request.postData()).toBe('synthetic-bytes');
+    return route.fulfill({ status: request.method() === 'PUT' ? 201 : 200, headers, body: 'synthetic-bytes' });
+  });
   await context.route('https://accounts.google.com/gsi/client', route => route.fulfill({
     contentType: 'application/javascript',
     body: `window.google = { accounts: { oauth2: { initTokenClient: options => ({
@@ -64,6 +78,12 @@ try {
   page.on('pageerror', failure => errors.push(failure.message));
   page.on('console', event => { if (/Content Security Policy|violates.*directive/.test(event.text())) cspErrors.push(event.text()); });
   await page.goto(`${base}/options/`);
+  expect(await page.evaluate(async url => {
+    const download = await (await fetch(url)).text();
+    const upload = await fetch(url, { method: 'PUT', headers: { 'Content-Range': 'bytes 0-14/15' }, body: 'synthetic-bytes' });
+    return [download, upload.status];
+  }, transferUrl)).toEqual(['synthetic-bytes', 201]);
+  expect(transfers).toEqual(['GET', 'PUT']);
   await expect(page.getByRole('heading', { name: 'Cloud backup', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Connect Google Drive' })).toBeEnabled();
   await page.evaluate(async solves => {

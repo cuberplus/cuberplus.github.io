@@ -90,6 +90,44 @@ test('malformed backups do not write solves or settings on restore or overwrite 
   expect(await backupNow()).toBe(false);
   expect(writeRemote).not.toHaveBeenCalled();
 });
+test('a confirmed empty OneDrive file can be backed up using its existing ID and revision', async () => {
+  configureCloud('microsoft', false, false);
+  const empty = { id: 'empty-file', revision: 'empty-revision', size: 0, content: new Blob() };
+  jest.mocked(readRemote).mockResolvedValue(empty);
+  localStorage.setItem('theme', 'dark');
+  expect(await backupNow()).toBe(true);
+  const [provider, content, previous] = jest.mocked(writeRemote).mock.calls[0];
+  expect(provider).toBe('microsoft');
+  expect(previous).toBe(empty);
+  expect(await decodeCloudBackup(content)).toMatchObject({ solves: [local, same], settings: { theme: 'dark' } });
+  expect(mockSave).not.toHaveBeenCalled();
+});
+test('an empty placeholder changed by another device is reread and merged on conflict', async () => {
+  configureCloud('microsoft', false, false);
+  jest.mocked(readRemote).mockResolvedValueOnce({ id: 'file', revision: 'empty-revision', size: 0, content: new Blob() })
+    .mockResolvedValueOnce(await remote([cloud, { ...same, duration: 15000 }]));
+  jest.mocked(writeRemote).mockRejectedValueOnce(new CloudHttpError(412));
+  expect(await backupNow()).toBe(true);
+  expect(readRemote).toHaveBeenCalledTimes(2);
+  const [, content, previous] = jest.mocked(writeRemote).mock.calls[1];
+  expect(previous?.revision).toBe('etag');
+  expect((await decodeCloudBackup(content)).solves).toEqual([cloud, same, local]);
+});
+test('an unexpectedly empty download of a nonempty file is never overwritten', async () => {
+  configureCloud('microsoft', false, false);
+  jest.mocked(readRemote).mockResolvedValue({ id: 'file', revision: 'etag', size: 100, content: new Blob() });
+  expect(await backupNow()).toBe(false);
+  expect(writeRemote).not.toHaveBeenCalled();
+});
+test('restoring an empty cloud file reports the problem without modifying local data', async () => {
+  jest.mocked(readRemote).mockResolvedValue({ id: 'file', revision: 'etag', size: 0, content: new Blob() });
+  localStorage.setItem('theme', 'dark');
+  expect(await restoreNow()).toBe(false);
+  expect(cloudState().message).toContain('empty');
+  expect(localStorage.getItem('theme')).toBe('dark');
+  expect(mockSave).not.toHaveBeenCalled();
+  expect(writeRemote).not.toHaveBeenCalled();
+});
 test('failed local solve writes roll back restored settings', async () => {
   jest.mocked(readRemote).mockResolvedValue(await remote([cloud], { theme: 'light' }));
   localStorage.setItem('theme', 'dark');

@@ -107,6 +107,7 @@ export async function encodeCloudBackup(backup: CloudBackup): Promise<Blob> {
   return new Blob([await new Response(stream).arrayBuffer()], { type: 'application/gzip' });
 }
 export async function decodeCloudBackup(content: Blob): Promise<{ solves: Solve[]; settings: Settings }> {
+  if (!content.size) throw new Error('The cloud backup file is empty. Back up from a device with your solves before restoring. No local data was changed.');
   const text = await new Response(content.stream().pipeThrough(new DecompressionStream('gzip'))).text();
   const backup = JSON.parse(text) as CloudBackup;
   if (!backup || backup.format !== 'cuberplus-cloud-v1' || !Number.isFinite(Date.parse(backup.savedAt)) ||
@@ -131,7 +132,8 @@ async function backUp(provider: Provider): Promise<void> {
   // Retry a conditional-write conflict with a fresh cloud snapshot, never a blind overwrite.
   for (let attempt = 0; attempt < 3; attempt++) {
     const remote = await readRemote(provider);
-    const previous = remote ? await decodeCloudBackup(remote.content) : { solves: [], settings: {} };
+    // Empty placeholders still retain their ID and revision for the conditional upload.
+    const previous = remote && (remote.size !== 0 || remote.content.size !== 0) ? await decodeCloudBackup(remote.content) : { solves: [], settings: {} };
     const observed = progress();
     const local = (await readSolves()).filter(solve => solve.status !== 'active');
     const solves = dedupeById(previous.solves, local), savedAt = new Date().toISOString();

@@ -91,15 +91,20 @@ test('Microsoft sign-in uses MSAL with app-folder scope and the dedicated callba
   expect(mockClear).toHaveBeenCalledWith({ account: { homeAccountId: 'account' } });
   expect(api.isConnected('microsoft')).toBe(false);
 });
-test('OneDrive downloads preauthenticated content without leaking the Graph token', async () => {
+test.each([
+  'https://download.files.1drv.com/backup',
+  'https://my.microsoftpersonalcontent.com/personal/test/download.aspx?tempauth=synthetic-test-token',
+])('OneDrive downloads from %s without leaking the Graph token', async downloadUrl => {
   await api.connectProvider('microsoft');
   request.mockResolvedValueOnce(json({ id: 'folder' }))
-    .mockResolvedValueOnce(json({ id: 'file', eTag: 'etag', '@microsoft.graph.downloadUrl': 'https://download.files.1drv.com/backup' }))
+    .mockResolvedValueOnce(json({ id: 'file', eTag: 'etag', size: 9, '@microsoft.graph.downloadUrl': downloadUrl }))
     .mockResolvedValueOnce(new Response('gzip-data'));
   const file = await api.readRemote('microsoft');
   expect(file?.revision).toBe('etag');
+  expect(file?.size).toBe(9);
   expect(request.mock.calls[0][0]).toContain('/special/approot');
   expect(request.mock.calls[0][1]?.headers).toEqual({ Authorization: 'Bearer microsoft-test-token' });
+  expect(request.mock.calls[2][0]).toBe(downloadUrl);
   expect(request.mock.calls[2][1]?.headers).toBeUndefined();
   expect(mockPopup).toHaveBeenCalledTimes(1);
 });
@@ -135,16 +140,36 @@ test.each([403, 404])('OneDrive metadata retry preserves HTTP %s errors instead 
   await expect(api.readRemote('microsoft')).rejects.toMatchObject({ status });
   expect(request).toHaveBeenCalledTimes(3);
 });
-test('OneDrive creates a conflict-protected upload session and sends ordered chunks without Graph credentials', async () => {
+test.each([
+  'https://upload.up.1drv.com/session',
+  'https://my.microsoftpersonalcontent.com/personal/test/upload?tempauth=synthetic-test-token',
+])('OneDrive uploads ordered chunks to %s without Graph credentials', async uploadUrl => {
   await api.connectProvider('microsoft');
-  request.mockResolvedValueOnce(json({ uploadUrl: 'https://upload.up.1drv.com/session' }))
+  request.mockResolvedValueOnce(json({ uploadUrl }))
     .mockResolvedValueOnce(json({ nextExpectedRanges: ['10485760-'] }, 202))
     .mockResolvedValueOnce(json({ id: 'file' }, 201));
   const content = new Blob([new Uint8Array(10 * 1024 * 1024 + 17)]);
   await api.writeRemote('microsoft', content, { id: 'existing', revision: 'etag', content } as RemoteFile);
   expect(request.mock.calls[0][1]?.headers).toMatchObject({ 'If-Match': 'etag' });
+  expect(request.mock.calls[1][0]).toBe(uploadUrl);
+  expect(request.mock.calls[2][0]).toBe(uploadUrl);
   expect(request.mock.calls[1][1]?.headers).toEqual({ 'Content-Range': 'bytes 0-10485759/10485777' });
   expect(request.mock.calls[2][1]?.headers).toEqual({ 'Content-Range': 'bytes 10485760-10485776/10485777' });
+});
+test.each([
+  'https://my.microsoftpersonalcontent.com.example.com/private-path?tempauth=synthetic-test-token',
+  'https://evil-microsoftpersonalcontent.com/private-path?tempauth=synthetic-test-token',
+  'http://my.microsoftpersonalcontent.com/private-path?tempauth=synthetic-test-token',
+])('OneDrive rejects unsafe transfer URL %s without exposing its path or token', async url => {
+  await api.connectProvider('microsoft');
+  const failure = new Error(`OneDrive returned an unexpected transfer address (${new URL(url).hostname}).`);
+  request.mockResolvedValueOnce(json({ uploadUrl: url }));
+  await expect(api.writeRemote('microsoft', new Blob(['private-data']), { id: 'file', revision: 'etag', content: new Blob() })).rejects.toThrow(failure);
+  expect(request).toHaveBeenCalledTimes(1);
+  request.mockResolvedValueOnce(json({ id: 'folder' }))
+    .mockResolvedValueOnce(json({ id: 'file', '@microsoft.graph.downloadUrl': url }));
+  await expect(api.readRemote('microsoft')).rejects.toThrow(failure);
+  expect(request).toHaveBeenCalledTimes(3);
 });
 test('missing backups return null, while permission and quota errors never look like an empty cloud', async () => {
   await api.connectProvider('microsoft');
