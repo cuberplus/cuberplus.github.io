@@ -70,7 +70,6 @@ try {
     await expect(replay).toBeVisible();
   }
   await replay.getByRole('button', { name: 'Close replay' }).click();
-  await screenshot('Timer');
   await page.getByRole('button', { name: 'Options', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: 'Extra-turn +2 penalty', exact: true })).not.toBeChecked();
   const favorites = page.locator('summary').filter({ hasText: 'Mark non-favorite algs as mistakes' });
@@ -155,7 +154,6 @@ try {
     await header.click(); await expect(header).toHaveAttribute('aria-sort', 'ascending');
     await header.click(); await expect(header).toHaveAttribute('aria-sort', 'descending');
   }
-  await screenshot('SmartcubeAnalyzer');
   await page.goto(`${base}/database/#PLL-T`);
   const favorite = page.getByRole('button', { name: 'Favorite PLL T algorithm 1', exact: true });
   await favorite.click();
