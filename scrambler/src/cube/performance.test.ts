@@ -1,10 +1,11 @@
 /** @jest-environment node */
 import { applyMoves, parseAlgorithm, randomScramble, solvedCube } from './cube';
 import { WorksheetRow, generateWorksheet } from './generation';
-import { DEFAULT_SETTINGS, Solver, solutionLength } from './solver';
+import { DEFAULT_SETTINGS as APP_DEFAULT_SETTINGS, Solver, solutionLength } from './solver';
 import { bruteDistance, seededRandom, verifySolution } from './testHelpers';
 
 jest.setTimeout(60000);
+const DEFAULT_SETTINGS = { ...APP_DEFAULT_SETTINGS, metric: 'HTM' as const, minimum: 2, maximum: 20 };
 let solver: Solver;
 
 test('cold startup builds complete reusable databases within 15 seconds and 32 MiB of table buffers', () => {

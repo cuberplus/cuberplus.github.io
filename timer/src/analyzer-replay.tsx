@@ -1,6 +1,6 @@
 import { useContext, useEffect, useRef, useState } from 'react';
 import { Replay } from './Replay';
-import { readSolves } from './storage';
+import { readSolves, saveSolves } from './storage';
 import { loadCube } from './puzzle';
 import type { Cube } from './puzzle';
 import type { Solve } from './engine';
@@ -21,9 +21,18 @@ export default function AnalyzerReplay({ id, close }: { id: string; close: () =>
     }).catch(error => { if (!cancelled) setError(error instanceof Error ? error.message : 'Unable to load this solve.'); });
     return () => { cancelled = true; };
   }, [id]);
-  return data ? <Replay {...data} close={close} precision={precision} /> :
+  const change = (solve: Solve) => {
+    setError('');
+    void saveSolves([solve]).then(() => {
+      setData(current => current ? { ...current, solve, history: current.history.map(item => item.id === solve.id ? solve : item) } : null);
+      window.dispatchEvent(new Event('timer-solves-changed'));
+    }).catch(failure => setError(failure instanceof Error ? failure.message : 'Unable to save solve.'));
+  };
+  return data ? <Replay {...data} close={close} precision={precision} change={change} saveError={error} /> :
     <dialog ref={dialog} className="replay-dialog" aria-label="Solve replay" onCancel={event => { event.preventDefault(); close(); }}>
-      <p role={error ? 'alert' : 'status'}>{error || 'Loading solve replay…'}</p>
-      <button autoFocus className="btn btn-outline-secondary" onClick={close}>Close</button>
+      <div className="d-flex justify-content-between align-items-center">
+        <p role={error ? 'alert' : 'status'}>{error || 'Loading solve replay…'}</p>
+        <button autoFocus className="btn-close" aria-label="Close replay" onClick={close} />
+      </div>
     </dialog>;
 }

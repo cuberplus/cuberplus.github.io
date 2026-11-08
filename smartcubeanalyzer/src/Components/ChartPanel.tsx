@@ -141,10 +141,9 @@ export function SortableGrid<R>({ rows, columns, className, onCellClick }: Sorta
 
 const BEST_SOLVES_COLS = [
     { key: 'time', name: 'Time' },
+    { key: 'fullstep', name: 'Full Step' },
     { key: 'date', name: 'Date' },
     { key: 'scramble', name: 'Scramble' },
-    { key: 'id', name: 'ID' },
-    { key: 'fullstep', name: 'Full Step' },
 ];
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -221,7 +220,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
     }
 
     openSolveSource(row: Pick<FastestSolve, 'id' | 'source' | 'rawSourceId'>) {
-        if (row.source === 'timer') { this.setState({ replayId: row.id }); return; }
+        if (row.source === 'timer' || row.id.startsWith(`${row.source}:`)) { this.setState({ replayId: row.id }); return; }
         const url = row.source === 'acubemy' && row.rawSourceId
             ? "https://acubemy.com/shared/" + encodeURIComponent(row.rawSourceId)
             : "https://app.cubeast.com/log/solves/" + encodeURIComponent(row.id);

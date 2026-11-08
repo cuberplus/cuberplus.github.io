@@ -37,7 +37,7 @@ const COLOR_OPTIONS: Option<CrossColor>[] =
     [CrossColor.White, CrossColor.Yellow, CrossColor.Red, CrossColor.Orange, CrossColor.Blue, CrossColor.Green, CrossColor.Unknown]
         .map(x => ({ label: x, value: x }));
 
-const SOURCE_OPTIONS: Option<Solve['source']>[] = [{ label: 'Cubeast', value: 'cubeast' }, { label: 'Acubemy', value: 'acubemy' }, { label: 'Timer', value: 'timer' }];
+const SOURCE_OPTIONS: Option<Solve['source']>[] = [{ label: 'Cubeast', value: 'cubeast' }, { label: 'Acubemy', value: 'acubemy' }, { label: 'CuberPlus', value: 'timer' }];
 
 // Closing the test-data warning sticks across visits, the same way the theme toggle does.
 // The version is stored rather than a flag, so a release re-announces itself once.
@@ -604,7 +604,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                         SOURCE_OPTIONS,
                         this.state.chosenSources, this.sourcesChanged.bind(this),
                         "Source",
-                        "Choose which sources (Cubeast, Acubemy or Timer) to include in the analysis."
+                        "Choose which sources (Cubeast, Acubemy or CuberPlus) to include in the analysis."
                     )}
 
                     {this.autoFilter(

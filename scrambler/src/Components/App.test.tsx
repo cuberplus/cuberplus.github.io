@@ -58,9 +58,9 @@ test('the workspace starts below the header without a promotional intro', () => 
 test('initial generation requests 20 optimal X-Cross scrambles in a worker and keeps controls responsive', () => {
   render(<App />);
   expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
-    mode: 'xcross', count: 20, minimum: 2, maximum: 20,
+    mode: 'xcross', count: 20, minimum: 4, maximum: 8, metric: 'QTM',
   }));
-  expect(screen.getByLabelText('Minimum turns')).toHaveValue(2);
+  expect(screen.getByLabelText('Minimum turns')).toHaveValue(4);
   expect(screen.getByRole('button', { name: /Generate worksheet/ })).toBeDisabled();
   expect(screen.getByText('Columns')).toBeEnabled();
   expect(screen.getByRole('progressbar')).toHaveAttribute('max', '20');
@@ -91,6 +91,9 @@ test('QTM is sent to the solver and used for worksheet counts and sorting withou
   const { container } = render(<App />);
   addRows();
   const metric = screen.getByLabelText('Move metric');
+  fireEvent.change(metric, { target: { value: 'HTM' } });
+  fireEvent.click(screen.getByRole('button', { name: /Generate worksheet/ }));
+  addRows();
   expect(metric).toHaveValue('HTM');
   fireEvent.change(metric, { target: { value: 'QTM' } });
   expect(screen.queryByText(/A half turn counts as two moves/)).not.toBeInTheDocument();
@@ -107,7 +110,7 @@ test('QTM is sent to the solver and used for worksheet counts and sorting withou
   const rows = screen.getAllByRole('row').slice(1);
   expect(rows[0].querySelector('.turn-count')).toHaveTextContent('3QTM');
   expect(rows[1].querySelector('.turn-count')).toHaveTextContent('4QTM');
-  expect(container.querySelector('.worksheet-heading')).toHaveTextContent('2–20 QTM');
+  expect(container.querySelector('.worksheet-heading')).toHaveTextContent('4–8 QTM');
   fireEvent.change(metric, { target: { value: 'HTM' } });
   expect(rows[1].querySelector('.turn-count')).toHaveTextContent('4QTM');
 });

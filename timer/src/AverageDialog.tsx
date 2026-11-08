@@ -52,7 +52,7 @@ export function AverageDialog<T>({ rows, time, precision, view, close, title }: 
   return <dialog ref={dialog} className="panel average-dialog" aria-labelledby={heading} onCancel={event => { event.preventDefault(); dismiss(); }}>
     <div className="d-flex justify-content-between align-items-center gap-3 flex-wrap">
       <h2 id={heading}>{title ?? `Ao${rows.length}: ${format(time, precision)}`}</h2>
-      <button autoFocus className="btn btn-outline-secondary" onClick={dismiss}>Close {title ? 'solves' : 'average'}</button>
+      <button autoFocus className="btn-close" aria-label={`Close ${title ? 'solves' : 'average'}`} onClick={dismiss} />
     </div>
     <div className="table-responsive">
       <table className="table table-sm align-middle" aria-label={title ? 'Selected solves' : 'Average solves'}>

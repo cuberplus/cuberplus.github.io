@@ -19,6 +19,12 @@ import { DEMO_DATASETS, DEFAULT_DEMO_FILE } from '../Helpers/SampleData';
 import { parseCsv } from '../Helpers/CsvParser';
 
 const requested: string[] = [];
+jest.mock('../../../timer/src/analyzer-data', () => ({
+    readLocalAnalysis: jest.fn(async () => {
+        const { parseCsv } = jest.requireActual<typeof import('../Helpers/CsvParser')>('../Helpers/CsvParser');
+        return parseCsv('id,date,dnf,time,solving_method\nlocal,2024-01-01 00:00:00 UTC,false,10000,CFOP', ',');
+    }),
+}));
 
 beforeEach(() => {
     requested.length = 0;
@@ -38,14 +44,16 @@ beforeEach(() => {
     }) as typeof globalThis.fetch;
 });
 
-function openMenu() {
+async function openMenu() {
     render(React.createElement(FileInput));
+    await waitFor(() => expect(screen.getByLabelText('Choose demo data').hasAttribute('disabled')).toBe(false));
     fireEvent.click(screen.getByLabelText('Choose demo data'));
 }
 
-test('deleted Timer solves leave the loaded Analyzer data without removing other sources with the same ID', () => {
+test('deleted Timer solves leave the loaded Analyzer data without removing other sources with the same ID', async () => {
     const ref = React.createRef<FileInput>();
     const { unmount } = render(React.createElement(FileInput, { ref }));
+    await waitFor(() => expect(ref.current!.state.isParsing).toBe(false));
     const [sample] = parseCsv('id,date,dnf,time,solving_method\nsame,2024-01-01 00:00:00 UTC,false,10000,CFOP', ',');
     const keep = { ...sample, id: 'keep', source: 'timer' as const }, external = { ...sample, source: 'cubeast' as const };
     act(() => ref.current!.setState({ solves: [{ ...sample, source: 'timer' }, keep, external] }));
@@ -57,23 +65,24 @@ test('deleted Timer solves leave the loaded Analyzer data without removing other
 });
 
 describe('the demo data picker', () => {
-    test('the button is labelled Demo Data, on a single line', () => {
+    test('the button is labelled Demo Data, on a single line', async () => {
         render(React.createElement(FileInput));
+        await screen.findByText('Demo Data');
         const button = screen.getByText('Demo Data');
         expect(button).not.toBeNull();
         // A wrapped label looked broken on narrow screens.
         expect(button.classList.contains('text-nowrap')).toBe(true);
     });
 
-    test('clicking the button loads the original demo data', () => {
+    test('clicking the button loads the original demo data', async () => {
         render(React.createElement(FileInput));
-        fireEvent.click(screen.getByText('Demo Data'));
+        fireEvent.click(await screen.findByText('Demo Data'));
         expect(requested).toHaveLength(1);
         expect(requested[0].endsWith(DEFAULT_DEMO_FILE)).toBe(true);
     });
 
-    test('the menu lists every dataset, in registry order', () => {
-        openMenu();
+    test('the menu lists every dataset, in registry order', async () => {
+        await openMenu();
         const items = Array.from(document.querySelectorAll('.demo-data-menu .dropdown-item'));
         expect(items.map(i => i.firstChild?.textContent)).toEqual(DEMO_DATASETS.map(d => d.name));
     });
@@ -84,16 +93,16 @@ describe('the demo data picker', () => {
         expect(rest).toEqual([...rest].sort((a, b) => a.localeCompare(b)));
     });
 
-    test('each entry shows its description under the name', () => {
-        openMenu();
+    test('each entry shows its description under the name', async () => {
+        await openMenu();
         const items = Array.from(document.querySelectorAll('.demo-data-menu .dropdown-item'));
         expect(items).toHaveLength(DEMO_DATASETS.length);
         expect(items.map(i => i.querySelector('span.d-block')?.textContent))
             .toEqual(DEMO_DATASETS.map(d => d.description));
     });
 
-    test('descriptions are inline elements, keeping the item markup valid inside a link', () => {
-        openMenu();
+    test('descriptions are inline elements, keeping the item markup valid inside a link', async () => {
+        await openMenu();
         for (const item of Array.from(document.querySelectorAll('.demo-data-menu .dropdown-item'))) {
             expect(item.querySelector('div')).toBeNull();
             expect(item.querySelector('span.d-block')?.tagName).toBe('SPAN');
@@ -104,7 +113,7 @@ describe('the demo data picker', () => {
         // html and body both set `overflow-x: hidden`, which clips an absolutely
         // positioned menu. Popper's fixed strategy positions against the viewport
         // instead, and the stylesheet caps the height so a long list scrolls.
-        openMenu();
+        await openMenu();
         await waitFor(() => {
             const menu = document.querySelector('.demo-data-menu') as HTMLElement | null;
             expect(menu?.style.position).toBe('fixed');
@@ -120,8 +129,8 @@ describe('the demo data picker', () => {
         }
     });
 
-    test('picking an entry fetches that dataset', () => {
-        openMenu();
+    test('picking an entry fetches that dataset', async () => {
+        await openMenu();
         fireEvent.click(screen.getByText('Roux Small'));
         expect(requested).toHaveLength(1);
         expect(requested[0].endsWith('demo/roux-small.csv')).toBe(true);

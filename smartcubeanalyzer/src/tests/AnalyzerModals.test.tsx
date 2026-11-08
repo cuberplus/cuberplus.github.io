@@ -65,6 +65,22 @@ describe('Analyzer inline drill-down', () => {
         expect(instance.state.replayId).toBe('local/id?x=1');
         expect(open).not.toHaveBeenCalled();
     });
+    test.each(['cubeast', 'acubemy'] as const)('a persisted %s import opens native details instead of the source website', source => {
+        const instance = panel();
+        const open = jest.spyOn(window, 'open').mockReturnValue(null);
+        instance.openSolveSource({ source, id: `${source}:same` });
+        expect(instance.state.replayId).toBe(`${source}:same`);
+        expect(open).not.toHaveBeenCalled();
+    });
+    test('slow stage drill-down excludes other stages and preserves solve numbers', () => {
+        const solves = makeSolves(3).map((solve, i) => ({ ...solve,
+            mistakes: [{ kind: 'slowStep' as const, step: i === 1 ? StepName.PLL : StepName.F2L }],
+        }));
+        const instance = panel({ solves, windowSize: 3 });
+        instance.openMistakes({ kind: 'slowStep', step: StepName.F2L });
+        expect(instance.state.average!.solves).toEqual([solves[0], solves[2]]);
+        expect(instance.state.average!.numbers).toEqual([1, 3]);
+    });
 
     test('a sampled average selects the ending solve label, not the sampled array index', () => {
         const instance = panel();

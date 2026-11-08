@@ -30,7 +30,7 @@ input:disabled, select:disabled { opacity: .65; cursor: not-allowed; }
 .range-inputs { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) 70px; align-items: end; gap: 6px; }
 .range-inputs > select { width: 100%; margin: 0; }
 .range-inputs > div { min-width: 0; }
-.range-inputs input { appearance: textfield; -moz-appearance: textfield; }
+.range-inputs input { appearance: textfield; -moz-appearance: textfield; padding-inline: 6px; }
 .range-inputs input::-webkit-inner-spin-button { -webkit-appearance: none; }
 .range-inputs > div > span { display: block; margin-bottom: 4px; font-size: 9px; color: var(--muted); }
 .range-dash { color: var(--muted); align-self: end; padding-bottom: 11px; }

@@ -19,8 +19,8 @@ export interface Settings {
   count: number;
 }
 export const DEFAULT_SETTINGS: Settings = {
-  mode: 'xcross', metric: 'HTM', cross: 'any', pair: 'any', secondPair: 'any',
-  relation: 'any', minimum: 2, maximum: 20, count: 20,
+  mode: 'xcross', metric: 'QTM', cross: 'any', pair: 'any', secondPair: 'any',
+  relation: 'any', minimum: 4, maximum: 8, count: 20,
 };
 export const MODE_LABELS: Record<Mode, string> = {
   cross: 'Cross', xcross: 'X-Cross', block: '2×2×2 block', xxcross: 'XX-Cross',

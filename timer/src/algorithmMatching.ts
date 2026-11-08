@@ -27,9 +27,10 @@ export class AlgorithmMatcher {
       }
     }
   }
-  outerMoves(algorithm: string): { moves: string[]; rotation: KTransformation } {
+  outerMoves(algorithm: string, onMove?: (move: string, index: number) => void): { moves: string[]; rotation: KTransformation } {
     let rotation = this.cube.puzzle.identityTransformation();
     const moves: string[] = [];
+    let index = 0;
     for (const node of new Alg(algorithm).experimentalExpand()) {
       if (!(node instanceof Move)) continue;
       const notation = node.toString();
@@ -42,7 +43,10 @@ export class AlgorithmMatcher {
       }
       if (!factor) throw new Error(`Unsupported algorithm move: ${node.toString()}`);
       const centers = this.cube.solved().applyTransformation(rotation).patternData.CENTERS.pieces;
-      moves.push(...factor.moves.map(move => faces[centers[faces.indexOf(move[0])]] + move.slice(1)));
+      const outer = factor.moves.map(move => faces[centers[faces.indexOf(move[0])]] + move.slice(1));
+      moves.push(...outer);
+      if (onMove) for (const move of outer) onMove(move, index);
+      index++;
       rotation = rotation.applyTransformation(factor.rotation);
     }
     return { moves, rotation };

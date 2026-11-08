@@ -1,6 +1,7 @@
 import type { KPattern } from 'cubing/kpuzzle';
 import { Cube, inverse, isMove, movesOf, sameAxis, simplifyMoves } from './puzzle';
 import { APP_VERSION } from '@cuberplus/navigation';
+import type { Solve as AnalyzedSolve } from '../../smartcubeanalyzer/src/Helpers/Types';
 
 export type Phase = 'disconnected' | 'synchronizing' | 'scrambling' | 'ready' | 'solving' | 'finished' | 'recovery' | 'recovering';
 export interface Turn {
@@ -19,6 +20,7 @@ export interface Solve {
   status: 'active' | 'complete' | 'incomplete';
   reason: string; timingBasis: 'host' | 'device-fit';
   moves: RecordedTurn[];
+  imported?: Omit<AnalyzedSolve, 'date' | 'endDate'> & { date: string; endDate?: string };
 }
 
 export const solveTime = (solve: Solve): number => solve.duration + (solve.status === 'complete' ? solve.penalty ?? 0 : 0);

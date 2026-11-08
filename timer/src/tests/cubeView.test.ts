@@ -38,9 +38,9 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); jest.restoreAllMocks(); });
 
-async function draw(moves: string[], position = moves.length, animateSeeks = false, speed = 1, start = SOLVED, cross: number | null = null, rotation?: string) {
+async function draw(moves: string[], position = moves.length, animateSeeks = false, speed = 1, start = SOLVED, cross: number | null = null, rotation?: string, playback = false, seekVersion = 0) {
   const facelets = cube.facelets(cube.parse(start).applyAlg(moves.slice(0, position).join(' ')));
-  await act(async () => root.render(createElement(CubeView, { cube, facelets, moves, position, animateSeeks, speed, cross, rotation })));
+  await act(async () => root.render(createElement(CubeView, { cube, facelets, moves, position, animateSeeks, speed, cross, rotation, playback, seekVersion })));
 }
 function frame(milliseconds = 25) {
   clock += milliseconds;
@@ -89,6 +89,41 @@ test('replay animates single forward and backward moves, respects speed, and sna
   frame(); expect(timestamps.at(-1)).toBe(500);
   await draw(moves, 3);
   expect(timestamps.at(-1)).toBe(3000);
+  expect(frames.size).toBe(0);
+});
+
+test('replay turns finish in 80 ms and preserve immediate manual seeking', async () => {
+  const moves = ['R', 'U', 'F'];
+  await draw(moves, 0, false, 1, SOLVED, null, undefined, true);
+  await draw(moves, 1, false, 1, SOLVED, null, undefined, true);
+  frame(40); expect(timestamps.at(-1)).toBe(500);
+  frame(40); expect(timestamps.at(-1)).toBe(1000);
+  await draw(moves, 3, false, 1, SOLVED, null, undefined, true, 1);
+  expect(timestamps.at(-1)).toBe(3000);
+  expect(frames.size).toBe(0);
+  await draw(moves, 0, false, 1, SOLVED, null, undefined, true, 2);
+  expect(timestamps.at(-1)).toBe(0);
+  expect(frames.size).toBe(0);
+});
+
+test('dense playback accelerates queued turns without snapping or skipping a whole move', async () => {
+  const moves = ['R', 'R', 'L', 'U', 'F', 'D', 'B', 'U'];
+  await draw(moves, 0, false, 1, SOLVED, null, undefined, true);
+  await draw(moves, 4, false, 1, SOLVED, null, undefined, true);
+  expect(timestamps.at(-1)).toBe(0);
+  frame(16); expect(timestamps.at(-1)).toBe(800);
+  await draw(moves, 8, false, 1, SOLVED, null, undefined, true);
+  expect(timestamps.at(-1)).toBe(800);
+  const animated = [timestamps.at(-1)!];
+  for (let i = 0; i < 25 && frames.size; i++) {
+    frame(16);
+    animated.push(timestamps.at(-1)!);
+  }
+  expect(animated.at(-1)).toBe(8000);
+  for (let i = 1; i < animated.length; i++) {
+    expect(animated[i] - animated[i - 1]).toBeGreaterThan(0);
+    expect(animated[i] - animated[i - 1]).toBeLessThan(1000);
+  }
   expect(frames.size).toBe(0);
 });
 

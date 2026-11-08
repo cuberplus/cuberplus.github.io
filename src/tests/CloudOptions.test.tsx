@@ -21,28 +21,30 @@ test('cloud options expose both providers, manual actions and independent automa
   expect(configureCloud).toHaveBeenLastCalledWith('microsoft', false, false);
   fireEvent.click(screen.getByRole('checkbox', { name: /every 100 solves/ }));
   expect(configureCloud).toHaveBeenLastCalledWith('google', true, false);
-  fireEvent.click(screen.getByRole('checkbox', { name: /Single, Ao5, or Ao12/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: /Back up after a PB/ }));
   expect(configureCloud).toHaveBeenLastCalledWith('google', false, true);
   fireEvent.click(screen.getByRole('button', { name: 'Reconnect Google Drive' }));
   fireEvent.click(screen.getByRole('button', { name: 'Back up now' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Restore backup & reload' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Restore backup' }));
   fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
   expect(connectCloud).toHaveBeenCalledTimes(1);
   expect(backupNow).toHaveBeenCalledTimes(1);
   expect(restoreNow).toHaveBeenCalledTimes(1);
   expect(disconnectCloud).toHaveBeenCalledTimes(1);
 });
-test('missing deployment IDs disable cloud sign-in instead of presenting a broken OAuth flow', () => {
+test('missing deployment IDs disable cloud sign-in instead of presenting a broken OAuth flow', async () => {
   jest.mocked(cloudState).mockReturnValue({ ...initial, configured: false, connected: false });
   render(<CloudOptions />);
   expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Connect Google Drive' }).disabled).toBe(true);
   expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Back up now' }).disabled).toBe(true);
-  expect(screen.getByRole('status').textContent).toContain('not configured');
+  expect(screen.getByRole('status').textContent).toContain('Provider unavailable');
+  fireEvent.focus(screen.getByRole('status').querySelector('button')!);
+  expect((await screen.findByRole('tooltip')).textContent).toContain('not configured');
 });
 test('in-flight operations disable controls and pending counts are visible', () => {
   jest.mocked(cloudState).mockReturnValue({ ...initial, every100: true, busy: true, pending: 87 });
   render(<CloudOptions />);
-  for (const control of screen.getAllByRole<HTMLButtonElement>('button')) expect(control.disabled).toBe(true);
+  for (const control of screen.getAllByRole<HTMLButtonElement>('button').filter(button => !button.classList.contains('btn-link'))) expect(control.disabled).toBe(true);
   expect(screen.getByRole<HTMLSelectElement>('combobox').disabled).toBe(true);
   expect(screen.getByText('87 / 100 new solves since the last successful backup')).toBeDefined();
 });
@@ -53,4 +55,13 @@ test('automatic backup failures are dismissible and link to reconnection options
   expect(screen.getByRole('link', { name: 'Open backup options' }).getAttribute('href')).toBe('/options/');
   fireEvent.click(screen.getByRole('button', { name: 'Dismiss cloud backup notification' }));
   expect(dismissCloudMessage).toHaveBeenCalledTimes(1);
+});
+test('backup semantics tooltip follows the last successful backup, not Disconnect', () => {
+  render(<CloudOptions />);
+  const label = screen.getByText(/Last successful backup: Never/);
+  const tooltip = label.querySelector('button')!;
+  expect(tooltip).not.toBeNull();
+  fireEvent.focus(tooltip);
+  expect(screen.getByRole('tooltip').textContent).toContain('local data wins on backup');
+  expect(screen.getByRole('button', { name: 'Disconnect' }).parentElement!.contains(tooltip)).toBe(false);
 });

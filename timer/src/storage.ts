@@ -3,6 +3,7 @@ import { Cube, isMove, movesOf } from './puzzle';
 import { analyzeCFOP, CFOP_STEPS, cfopFrame, cfopTiming, elapsedAt, f2lPair } from './cfop';
 import { movingAverages } from '../../shared/averages';
 import { calendarDay, streakWindows } from '../../shared/streaks';
+import { validImported } from './csvImport';
 
 const database = (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
   const request = indexedDB.open('smart-cube-timer', 2);
@@ -90,7 +91,7 @@ export function validateBackup(json: string, cube: Cube): Solve[] {
         !text(solve.id, 100) || !solve.id || ids.has(solve.id) || !text(solve.session, 100) ||
         (solve.appVersion !== undefined && !text(solve.appVersion, 100)) ||
         !text(solve.device, 200) || !text(solve.createdAt, 100) || !Number.isFinite(Date.parse(solve.createdAt)) ||
-        !text(solve.scramble) || !movesOf(solve.scramble).length || movesOf(solve.scramble).some(move => !isMove(move)) ||
+        !text(solve.scramble) || (!solve.imported && (!movesOf(solve.scramble).length || movesOf(solve.scramble).some(move => !isMove(move)))) ||
         !text(solve.startFacelets, 54) || !text(solve.reason) ||
         !finite(solve.duration) || solve.duration < 0 ||
         (solve.inspection !== undefined && (!finite(solve.inspection) || solve.inspection < 0)) ||
@@ -105,6 +106,10 @@ export function validateBackup(json: string, cube: Cube): Solve[] {
     if (reasons.some(reason => !['over-turn', 'inspection', 'manual'].includes(reason)) || new Set(reasons).size !== reasons.length ||
         reasons.length * 2000 !== (solve.penalty ?? 0)) throw new Error('Invalid solve record in backup.');
     ids.add(solve.id);
+    if (solve.imported) {
+      if (!validImported(solve)) throw new Error('Invalid imported solve record in backup.');
+      if (!solve.moves.length) return { ...solve };
+    }
     const pattern = cube.parse(solve.startFacelets);
     if (!cube.equals(pattern, cube.solved().applyAlg(solve.scramble))) throw new Error('Solve start does not match its scramble.');
     solve.moves.forEach((move, i) => {
@@ -113,7 +118,8 @@ export function validateBackup(json: string, cube: Cube): Solve[] {
           (move.localTimestamp !== null && !finite(move.localTimestamp)) ||
           (move.cubeTimestamp !== null && !finite(move.cubeTimestamp)) ||
           (move.serial !== undefined && (!Number.isInteger(move.serial) || move.serial < 0)) ||
-          (i === 0 ? move.elapsed !== 0 : move.elapsed < solve.moves[i - 1].elapsed)) throw new Error('Invalid move timeline.');
+          (i === 0 ? !solve.imported && move.elapsed !== 0 : move.elapsed < solve.moves[i - 1].elapsed) ||
+          (solve.imported && move.elapsed > solve.duration + 1)) throw new Error('Invalid move timeline.');
     });
     if ((solve.status === 'complete' || solve.dnfReason === 'manual') && (!solve.moves.length || !cube.isSolved(pattern.applyAlg(solve.moves.map(move => move.move).join(' '))))) throw new Error('Completed solve does not end solved.');
     const restored: Solve = solve.status === 'active' ? { ...solve, status: 'incomplete', reason: 'Interrupted attempt recovered from backup.', dnfReason: solve.dnfReason ?? 'solve interrupted' } : { ...solve };
@@ -126,8 +132,8 @@ export function validateBackup(json: string, cube: Cube): Solve[] {
 
 export const backupJSON = (solves: Solve[]): string => JSON.stringify({
   format: 'timer-v2',
-  solves: solves.map(({ version, appVersion, id, session, createdAt, device, scramble, startFacelets, duration, inspection, penalty, penaltyReason, dnfReason, status, reason, timingBasis, moves }): BackupSolve => ({
-    version, appVersion, id, session, createdAt, device, scramble, startFacelets, duration, inspection, penalty, penaltyReason, dnfReason, status, reason, timingBasis,
+  solves: solves.map(({ version, appVersion, id, session, createdAt, device, scramble, startFacelets, duration, inspection, penalty, penaltyReason, dnfReason, status, reason, timingBasis, moves, imported }): BackupSolve => ({
+    version, appVersion, id, session, createdAt, device, scramble, startFacelets, duration, inspection, penalty, penaltyReason, dnfReason, status, reason, timingBasis, imported,
     moves: moves.map(({ move, elapsed, hostTime, localTimestamp, cubeTimestamp, serial }): BackupTurn =>
       serial === undefined ? [move, elapsed, hostTime, localTimestamp, cubeTimestamp] : [move, elapsed, hostTime, localTimestamp, cubeTimestamp, serial]),
   })),
@@ -195,19 +201,19 @@ export function personalBestNotifications(records: ReturnType<typeof newPersonal
     return true;
   });
 }
-export const solveEndDate = (solve: Solve): Date => new Date(Date.parse(solve.createdAt) + (solve.moves.at(-1)?.elapsed ?? solve.duration));
+export const solveEndDate = (solve: Solve): Date => new Date(solve.imported?.endDate ?? Date.parse(solve.createdAt) + (solve.moves.at(-1)?.elapsed ?? solve.duration));
 export function dailyStreak(solves: Solve[], date = new Date()): { current: number; best: number; hasToday: boolean } {
   const today = calendarDay(date), days = solves.filter(solve => solve.status !== 'active').map(solve => calendarDay(solveEndDate(solve)));
   const { current, best } = streakWindows(days, today);
   return { current: current.length, best: best.length, hasToday: days.includes(today) };
 }
-export const turns = (solve: Solve): number => solve.moves.reduce((n, move) => n + (move.move.includes('2') ? 2 : 1), 0);
+export const turns = (solve: Solve): number => solve.imported?.turns ?? solve.moves.reduce((n, move) => n + (move.move.includes('2') ? 2 : 1), 0);
 export const formatTime = (milliseconds: number, precision: 2 | 3 = 2): string => (milliseconds / 1000).toFixed(precision);
 
 const cubeastColumns = 'id,date,dnf,time,solving_method,device_name,device_model,device_color_scheme,user,one_turn_away_two_second_penalty,inspection_two_second_penalty,inspection_time,timer_time,missing_turn,solution,timer,description,session_name,session_ruleset,scramble,scramble_provider,ruleset,share_views,share_likes,share_comments,analysis_version,solution_rotation,pickup_time,putdown_time,solving_time,slice_turns,face_turns,quarter_turns,turns_per_second,total_recognition_time,total_execution_time,turns_after_solution,steps_skipped'.split(',').concat(
   Array.from({ length: 9 }, (_, i) => 'name,moves,recorded_moves,skipped,has_turns,time,recognition_time,execution_time,cumulative_time,slice_turns,face_turns,quarter_turns,turns_per_second'.split(',').map(field => `step_${i}_${field}`)).flat(),
   Array.from({ length: 9 }, (_, i) => `step_${i}_case`),
-  'first_f2l_pair', 'manual_two_second_penalty', 'penalty_reason', 'dnf_reason', 'cuberplus_version', 'solve_end_date',
+  'first_f2l_pair', 'manual_two_second_penalty', 'penalty_reason', 'dnf_reason', 'cuberplus_version', 'solve_end_date', 'cuberplus_source',
 );
 const csvCell = (value: string | number | boolean): string => /[",\r\n]/.test(String(value)) ? `"${String(value).replace(/"/g, '""')}"` : String(value);
 export function cubeastCSV(solves: Solve[], cube: Cube): string {
@@ -227,7 +233,20 @@ export function cubeastCSV(solves: Solve[], cube: Cube): string {
       timer: 'cube', solving_method: 'CFOP', solution_rotation: analysis.cross === null ? '' : ['DB', 'LU', 'BU', 'UF', 'RU', 'FU'][analysis.cross], description: solve.reason, slice_turns: solve.moves.length, face_turns: solve.moves.length,
       quarter_turns: turns(solve), turns_per_second: solve.duration > 0 ? (solve.moves.length * 1000 / solve.duration).toFixed(2) : '',
     };
-    CFOP_STEPS.forEach((name, i) => {
+    if (solve.imported) {
+      const data = solve.imported;
+      Object.assign(values, { id: data.rawSourceId || data.id, cuberplus_source: data.source, solving_method: data.method,
+        time: Math.round(solveTime(solve)), timer_time: Math.round(solve.duration), solving_time: Math.round(solve.duration),
+        quarter_turns: data.turns, face_turns: data.turns, slice_turns: data.turns, turns_per_second: data.tps,
+        total_recognition_time: data.recognitionTime * 1000, total_execution_time: data.executionTime * 1000, first_f2l_pair: data.firstF2LPair ?? '' });
+      let cumulative = 0;
+      data.steps.forEach((step, i) => {
+        cumulative += step.time * 1000;
+        Object.entries({ name: step.name, moves: step.moves, case: step.case, time: step.time * 1000, recognition_time: step.recognitionTime * 1000,
+          execution_time: step.executionTime * 1000, cumulative_time: cumulative, slice_turns: step.turns, face_turns: step.turns, quarter_turns: step.turns,
+          turns_per_second: step.tps, skipped: !step.time && !step.turns, has_turns: step.turns > 0 }).forEach(([field, value]) => { values[`step_${i}_${field}`] = value; });
+      });
+    } else CFOP_STEPS.forEach((name, i) => {
       const start = analysis.ends[i - 1] ?? 0, end = analysis.ends[i];
       values[`step_${i}_name`] = name; if (end === undefined) return;
       const moves = solve.moves.slice(start, end), { end: cumulative, time, recognition, execution } = cfopTiming(solve, analysis.ends, i);
@@ -239,9 +258,11 @@ export function cubeastCSV(solves: Solve[], cube: Cube): string {
       };
       Object.entries(step).forEach(([field, value]) => { values[`step_${i}_${field}`] = value; });
     });
-    values.steps_skipped = analysis.ends.filter((end, i) => end === (analysis.ends[i - 1] ?? 0)).length;
-    values.total_recognition_time = analysis.ends.reduce((sum, _, i) => sum + Number(values[`step_${i}_recognition_time`]), 0);
-    values.total_execution_time = analysis.ends.reduce((sum, _, i) => sum + Number(values[`step_${i}_execution_time`]), 0);
+    values.steps_skipped = solve.imported ? solve.imported.steps.filter(step => !step.time && !step.turns).length : analysis.ends.filter((end, i) => end === (analysis.ends[i - 1] ?? 0)).length;
+    if (!solve.imported) {
+      values.total_recognition_time = analysis.ends.reduce((sum, _, i) => sum + Number(values[`step_${i}_recognition_time`]), 0);
+      values.total_execution_time = analysis.ends.reduce((sum, _, i) => sum + Number(values[`step_${i}_execution_time`]), 0);
+    }
     return cubeastColumns.map(column => csvCell(values[column] ?? '')).join(',');
   });
   return [cubeastColumns.join(','), ...rows, ''].join('\r\n');

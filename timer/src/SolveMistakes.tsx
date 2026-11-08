@@ -9,6 +9,7 @@ import { cubeastCSV } from './storage';
 import { useAlgorithmPreferences } from '../../src/database/favorites';
 import { nonFavoriteAlgorithms, unlearnAlgorithms, type AlgorithmUse } from './favoriteAlgorithms';
 import { CFOP_STEPS } from './cfop';
+import { importedAnalysis } from './csvImport';
 
 const cache = new WeakMap<Cube, WeakMap<Solve, AnalyzedSolve>>();
 const emptyHistory: Solve[] = [];
@@ -36,7 +37,7 @@ export function SolveMistakes({ solve, cube, history = emptyHistory, brief = fal
         const item = session[i];
         let record = records!.get(item);
         if (!record || record.dnf !== (item.status !== 'complete') || record.time !== Math.round(solveTime(item)) / 1000) {
-          record = { ...parseCsv(cubeastCSV([item], cube), ',')[0], source: 'timer', isCorrupt: false }; records!.set(item, record);
+          record = item.imported ? importedAnalysis(item) : { ...parseCsv(cubeastCSV([item], cube), ',')[0], source: 'timer', isCorrupt: false }; records!.set(item, record);
         }
         solves.push(record);
         if (i % 20 === 19) await yieldToBrowser();
@@ -44,8 +45,8 @@ export function SolveMistakes({ solve, cube, history = emptyHistory, brief = fal
       if (!active) return;
       solves.sort((a, b) => a.date.getTime() - b.date.getTime());
       markMistakes(solves, 100);
-      const nonFavorites = enabled ? nonFavoriteAlgorithms(solve, cube, favorites, categories) : [];
-      const unlearned = unlearnAlgorithms(solve, cube, unlearn);
+      const nonFavorites = enabled && !solve.imported ? nonFavoriteAlgorithms(solve, cube, favorites, categories) : [];
+      const unlearned = solve.imported ? [] : unlearnAlgorithms(solve, cube, unlearn);
       if (active) setResult({ solve, analysis: solves.find(item => item.id === solve.id)!, nonFavorites, unlearned });
     }
     void analyze().catch(() => { if (active) setFailure(solve); });

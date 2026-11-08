@@ -30,6 +30,33 @@ beforeEach(() => {
   jest.mocked(loadCube).mockClear();
 });
 afterEach(cleanup);
+test('Un-Favorite All respects cancellation and preserves custom algorithms and Unlearn selections', async () => {
+  const custom = { 'F2L-1': ["F R U R' U' F'"] }, unlearn = ["F2L-1:R U2 R'"];
+  localStorage.setItem('cuberplus-custom-algorithms', JSON.stringify(custom));
+  localStorage.setItem('cuberplus-unlearn-algorithms', JSON.stringify(unlearn));
+  localStorage.setItem('cuberplus-database-favorites', JSON.stringify(["F2L-1:R U R'", "PLL-1:R U R'"]));
+  const confirm = jest.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+  try {
+    render(<Database />); await openGroup();
+    fireEvent.click(screen.getByRole('button', { name: 'Un-Favorite All' }));
+    expect(screen.getByRole('button', { name: 'Unfavorite F2L 1 algorithm 1' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Un-Favorite All' }));
+    expect(localStorage.getItem('cuberplus-database-favorites')).toBe('[]');
+    expect(JSON.parse(localStorage.getItem('cuberplus-custom-algorithms')!)).toEqual(custom);
+    expect(JSON.parse(localStorage.getItem('cuberplus-unlearn-algorithms')!)).toEqual(unlearn);
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Un-Favorite All' }).disabled).toBe(true);
+  } finally { confirm.mockRestore(); }
+});
+test('an embedded case shows only that case and ignores page hashes without scrolling the parent', async () => {
+  history.replaceState(null, '', '/timer/#PLL-1');
+  render(<Database caseKey="OLL-1" />);
+  await screen.findByRole('img', { name: 'OLL 1 case' });
+  expect(document.querySelectorAll('.database-case')).toHaveLength(1);
+  expect(document.querySelector('header')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Un-Favorite All' })).toBeNull();
+  fireEvent(window, new HashChangeEvent('hashchange'));
+  expect(scrollIntoView).not.toHaveBeenCalled();
+});
 async function openGroup(category = 'F2L') {
   const group = Array.from(document.querySelectorAll('details')).find(group =>
     group.querySelector('summary')!.textContent!.startsWith(category === 'AF2L' ? 'Advanced F2L' : category))!;

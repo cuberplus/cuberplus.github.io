@@ -122,6 +122,7 @@ export interface Solve {
     source: 'cubeast' | 'acubemy' | 'timer',
     rawSourceId?: string,
     rawSource?: string,
+    recording?: { solution: string; timestamps?: string },
     time: number,
     date: Date,
     dnf?: boolean,

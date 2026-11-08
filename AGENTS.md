@@ -1,5 +1,10 @@
 # Screenshots
 
+## Explanatory text
+
+Put explanatory blocks of text in an info tooltip using the circled "i" control.
+Keep its trigger beside the label it explains, outside expandable content.
+
 Always capture Timer, Scrambler, and Smartcube Analyzer screenshots in the **Dark**
 theme, including homepage tool previews and documentation images. Aurora is the
 site default; do not change that default to take screenshots.

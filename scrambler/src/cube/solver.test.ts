@@ -7,7 +7,7 @@ import { bruteDistance, seededRandom, verifySolution } from './testHelpers';
 jest.setTimeout(60000);
 let solver: Solver;
 beforeAll(() => { solver = new Solver(); });
-const options = (changes: Partial<Settings> = {}): Settings => ({ ...DEFAULT_SETTINGS, ...changes });
+const options = (changes: Partial<Settings> = {}): Settings => ({ ...DEFAULT_SETTINGS, metric: 'HTM', minimum: 0, maximum: 20, ...changes });
 
 test('goal enumeration covers all colors, pairs, and XX-Cross relationships without duplicates', () => {
   expect(goalsFor(options({ mode: 'cross' }))).toHaveLength(6);

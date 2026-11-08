@@ -51,7 +51,7 @@ export default function App() {
   const [battery, setBattery] = useState<number | null>(null);
   const [mac, setMac] = useState(() => { try { return localStorage.getItem('timer-last-cube-mac') ?? ''; } catch { return ''; } });
   const { precision } = useContext(SettingsContext);
-  const [overTurnPenalty, setOverTurnPenalty] = useState(() => { try { return localStorage.getItem('timer-over-turn-penalty') !== 'false'; } catch { return true; } });
+  const [overTurnPenalty, setOverTurnPenalty] = useState(() => { try { return localStorage.getItem('timer-over-turn-penalty') === 'true'; } catch { return false; } });
   const [inspection, setInspection] = useState(() => { try { return localStorage.getItem('timer-inspection') === 'true'; } catch { return false; } });
   const [showEveryLongPb, setShowEveryLongPb] = useState(() => { try { return localStorage.getItem('timer-show-every-long-pb') === 'true'; } catch { return false; } });
   const [hiddenVisuals, setHiddenVisuals] = useState<HiddenVisuals>(() => {
@@ -205,6 +205,8 @@ export default function App() {
       if (pending.current === 0) setStorage(failedSaves.current.size ? 'Some solves not saved - export a backup now' : 'Saved locally');
     };
     window.addEventListener('timer-solve-deleted', removeSavedSolve);
+    const refreshHistory = () => { void readSolves().then(items => { if (mounted.current) updateHistory(items.sort((a, b) => b.createdAt.localeCompare(a.createdAt))); }).catch(() => setError('Local history could not be refreshed.')); };
+    window.addEventListener('timer-solves-changed', refreshHistory);
     void loadCube().then(async model => {
       let recovered: Solve[] = [];
       try {
@@ -228,7 +230,7 @@ export default function App() {
     const interval = setInterval(render, 30);
     const adapter = bluetooth.current;
     const checks = recordChecks.current;
-    return () => { mounted.current = false; window.removeEventListener('timer-solve-deleted', removeSavedSolve); clearInterval(interval); checks.forEach(check => clearTimeout(check.timeout)); checks.clear(); void adapter.disconnect(); };
+    return () => { mounted.current = false; window.removeEventListener('timer-solve-deleted', removeSavedSolve); window.removeEventListener('timer-solves-changed', refreshHistory); clearInterval(interval); checks.forEach(check => clearTimeout(check.timeout)); checks.clear(); void adapter.disconnect(); };
   }, []);
 
   useEffect(() => {
@@ -397,7 +399,7 @@ export default function App() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  const timer = engine.current, solve = timer?.active ?? timer?.result, elapsed = timer?.elapsed(performance.now()) ?? 0;
+  const timer = engine.current, solve = timer?.active ?? (timer?.result ? history.find(solve => solve.id === timer.result?.id) ?? null : history.find(solve => solve.status !== 'active')), elapsed = timer?.elapsed(performance.now()) ?? 0;
   const inspecting = inspection && timer?.phase === 'ready', inspectionTime = timer?.inspectionElapsed(performance.now()) ?? 0;
   const inspectionStatus = inspectionPenalty(inspectionTime);
   const message = status || timer?.message || 'Loading local puzzle tools...';
@@ -446,7 +448,7 @@ export default function App() {
     <dialog ref={optionsDialog} className="panel options-dialog" aria-labelledby="options-title">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h2 id="options-title" className="mb-0">Options</h2>
-        <button className="btn-close btn-close-white" aria-label="Close options" onClick={() => optionsDialog.current?.close()} />
+        <button className="btn-close" aria-label="Close options" onClick={() => optionsDialog.current?.close()} />
       </div>
       <SessionPicker value={session} sessions={[...createdSessions, ...history.map(solve => solve.session)]} disabled={timer?.phase === 'solving' || !!retry.current} change={setSession} create={createSession} />
       <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="inspection-help" checked={inspection} disabled={timer?.phase === 'solving'} onChange={event => changeInspection(event.target.checked)} /><span className="form-check-label">15-second inspection</span></label>
@@ -460,13 +462,13 @@ export default function App() {
         <summary className="visuals-summary d-flex align-items-center gap-2">
           <input type="checkbox" className="form-check-input m-0" aria-labelledby="hide-visuals-title" aria-describedby="hide-visuals-help" checked={allVisualsHidden} ref={element => { if (element) element.indeterminate = someVisualsHidden && !allVisualsHidden; }} onClick={event => event.stopPropagation()} onChange={event => changeHiddenVisuals({ timer: event.target.checked, cube: event.target.checked, progressBar: event.target.checked })} />
           <span id="hide-visuals-title">Hide distracting visuals</span>
+          <span onClick={event => event.preventDefault()}><InfoTip id="hide-visuals-help">Choose which visuals to hide while solving.</InfoTip></span>
         </summary>
         <fieldset className="mt-3 ms-3">
           <legend className="visually-hidden">Visuals hidden while solving</legend>
           <label className="form-check"><input type="checkbox" className="form-check-input" checked={hiddenVisuals.timer} onChange={event => changeHiddenVisuals({ ...hiddenVisuals, timer: event.target.checked })} /><span className="form-check-label">Timer</span></label>
           <label className="form-check"><input type="checkbox" className="form-check-input" checked={hiddenVisuals.cube} onChange={event => changeHiddenVisuals({ ...hiddenVisuals, cube: event.target.checked })} /><span className="form-check-label">Cube</span></label>
           <label className="form-check"><input type="checkbox" className="form-check-input" checked={hiddenVisuals.progressBar} onChange={event => changeHiddenVisuals({ ...hiddenVisuals, progressBar: event.target.checked })} /><span className="form-check-label">Progress bar</span></label>
-          <InfoTip id="hide-visuals-help">Choose which visuals to hide while solving.</InfoTip>
         </fieldset>
       </details>
       {!connected && <div className="mt-4">
@@ -474,7 +476,6 @@ export default function App() {
         <a className="d-inline-block mt-2" href="/timer/help/mac-address.html" target="_blank" rel="noopener noreferrer">Find my cube's MAC address</a>
       </div>}
       {(error.startsWith('Visual preference changed') || error.startsWith('Penalty preference changed') || error.startsWith('PB notification preference changed')) && <p role="alert" className="text-warning mt-3 mb-0">{error}</p>}
-      <form method="dialog" className="text-end mt-4"><button className="btn btn-primary">Done</button></form>
     </dialog>
     {(!navigator.bluetooth || !window.isSecureContext) && <p className="alert alert-info">Bluetooth needs a supported browser and HTTPS or localhost. Try Chrome/Edge on Windows.</p>}
     {error && <div className="alert alert-danger d-flex justify-content-between" role="alert">{error}<button className="btn-close" aria-label="Dismiss error" onClick={() => setError('')} /></div>}
@@ -517,7 +518,7 @@ export default function App() {
       </div>{!hideCube && <div className="col-lg-5">
         {cube && timer && <CubeView cube={cube} facelets={timer.facelets} moves={timer.visualizationMoves} animateSeeks />}
       </div>}</div>
-          {!hideProgressBar && cube && solve && <SolveTimeline cube={cube} solve={solve} elapsed={elapsed} precision={precision} />}
+          {!hideProgressBar && cube && solve && <SolveTimeline cube={cube} solve={solve} elapsed={elapsed} precision={precision} open={solve.status === 'active' ? undefined : () => setReplay(history.find(item => item.id === solve.id) ?? solve)} />}
           {cube && solve && solve.status !== 'active' && <SolveMistakes cube={cube} solve={solve} history={history} brief />}
           {connected && <div className="d-flex justify-content-center gap-2 flex-wrap mt-3">
             <button className="btn btn-outline-secondary" disabled={busy || timer.phase === 'solving'} onClick={() => void resynchronize()}>Read cube state</button>

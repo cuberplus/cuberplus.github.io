@@ -1,7 +1,10 @@
 /** @jest-environment node */
 import { GenerationEvent, generateWorksheet } from './generation';
 import { MOVES, applyMoves, parseAlgorithm, solvedCube } from './cube';
-import { DEFAULT_SETTINGS, Solution, solutionLength } from './solver';
+import { DEFAULT_SETTINGS as APP_DEFAULT_SETTINGS, Solution, solutionLength } from './solver';
+
+// Keep the HTM generation fixtures independent of the application's default metric and bounds.
+const DEFAULT_SETTINGS = { ...APP_DEFAULT_SETTINGS, metric: 'HTM' as const, minimum: 2, maximum: 20 };
 
 const result = (length: number): Solution => ({
   moves: Array(length).fill(0), algorithm: Array(length).fill('U').join(' '),

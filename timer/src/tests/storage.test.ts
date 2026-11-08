@@ -549,11 +549,11 @@ test('Cubeast CSV matches the sample schema and records milliseconds, UTC dates,
   solve.moves[1].elapsed = 1234.56;
   solve.duration = 1234.56;
   const [header, line, trailing] = cubeastCSV([solve], cube).split('\r\n');
-  expect(header).toBe(`${cubeastHeader},first_f2l_pair,manual_two_second_penalty,penalty_reason,dnf_reason,cuberplus_version,solve_end_date`);
+  expect(header).toBe(`${cubeastHeader},first_f2l_pair,manual_two_second_penalty,penalty_reason,dnf_reason,cuberplus_version,solve_end_date,cuberplus_source`);
   expect(trailing).toBe('');
   const columns = header.split(',');
   const cells = line.split(',');
-  expect(cells).toHaveLength(170);
+  expect(cells).toHaveLength(columns.length);
   const row = Object.fromEntries(columns.map((column, i) => [column, cells[i]]));
   expect(row).toMatchObject({
     id: solve.id, date: '2026-10-31 15:22:52 UTC', dnf: 'false', time: '1235',
@@ -631,8 +631,8 @@ test('Cubeast CSV excludes active attempts, includes incomplete attempts as DNFs
   expect(first.split(',')[0]).toBe(complete.id);
   const columns = header.split(','), cells = second.split(',');
   const row = Object.fromEntries(columns.map((column, i) => [column, cells[i]]));
-  expect(cells).toHaveLength(170);
+  expect(cells).toHaveLength(columns.length);
   expect(row).toMatchObject({ dnf: 'true', time: '', timer_time: '', solving_time: '', session_name: 'Other', description: 'Disconnected.' });
   expect(row.solution).toBe("U2[0] R'[100]");
-  expect(cubeastCSV([], cube)).toBe(cubeastHeader + ',first_f2l_pair,manual_two_second_penalty,penalty_reason,dnf_reason,cuberplus_version,solve_end_date\r\n');
+  expect(cubeastCSV([], cube)).toBe(cubeastHeader + ',first_f2l_pair,manual_two_second_penalty,penalty_reason,dnf_reason,cuberplus_version,solve_end_date,cuberplus_source\r\n');
 });

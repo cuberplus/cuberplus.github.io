@@ -9,10 +9,10 @@ import { formatAlgorithm } from './formatAlgorithm';
 import { AlgorithmNotification, DiscoverAlgorithms, type AlgorithmNotice } from './DiscoverAlgorithms';
 import './database.css';
 
-export default function Database() {
+export default function Database({ caseKey }: { caseKey?: string } = {}) {
   const [catalog, setCatalog] = useState(getAlgorithms);
   const { favorites, unlearn, setFavorites, setUnlearn, error } = useAlgorithmPreferences();
-  const [open, setOpen] = useState<Set<string>>(() => new Set([location.hash.slice(1).split('-')[0]]));
+  const [open, setOpen] = useState<Set<string>>(() => new Set([(caseKey ?? location.hash.slice(1)).split('-')[0]]));
   const [expandedCases, setExpandedCases] = useState<Set<string>>(() => new Set());
   const [linked, setLinked] = useState(() => location.hash.slice(1));
   const [adding, setAdding] = useState(false), [category, setCategory] = useState<Category>('F2L');
@@ -26,6 +26,7 @@ export default function Database() {
     return () => { window.removeEventListener(CATALOG_CHANGED, refresh); window.removeEventListener('storage', refresh); };
   }, []);
   useEffect(() => {
+    if (caseKey) return;
     function revealCase() {
       const key = location.hash.slice(1);
       if (!catalog.some(entry => `${entry.category}-${entry.id}` === key)) return;
@@ -34,8 +35,8 @@ export default function Database() {
     revealCase();
     window.addEventListener('hashchange', revealCase);
     return () => window.removeEventListener('hashchange', revealCase);
-  }, [catalog]);
-  useEffect(() => { if (linked) document.getElementById(linked)?.scrollIntoView({ block: 'start' }); }, [linked, open]);
+  }, [catalog, caseKey]);
+  useEffect(() => { if (!caseKey && linked) document.getElementById(linked)?.scrollIntoView({ block: 'start' }); }, [linked, open, caseKey]);
   function toggleFavorite(id: string) {
     const next = new Set(favorites);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -71,13 +72,16 @@ export default function Database() {
     finally { setBusy(false); }
   }
   return <div className="cuberplus-page database-page">
-    <header className="cuberplus-header"><Navigation current="database" /></header>
+    {!caseKey && <header className="cuberplus-header"><Navigation current="database" /></header>}
     <main className="container py-4 database-main">
-      <h2>Algorithm database</h2>
+      {!caseKey && <><h2>Algorithm database</h2>
       <div className="d-flex flex-wrap gap-2 my-3">
         <DiscoverAlgorithms notify={setNotice} /><DiscoverAlgorithms learn notify={setNotice} />
         <button type="button" className="btn btn-outline-secondary btn-sm" aria-expanded={adding} onClick={() => setAdding(value => !value)}>Add your own algorithm</button>
-      </div>
+        <button type="button" className="btn btn-outline-secondary btn-sm" disabled={!favorites.size} onClick={() => {
+          if (window.confirm('Un-favorite all algorithms? Your algorithms and Unlearn selections will be kept.')) setFavorites(new Set());
+        }}>Un-Favorite All</button>
+      </div></>}
       {adding && <form className="card p-3 mb-3" onSubmit={event => { event.preventDefault(); void addAlgorithm(); }}>
         <div className="d-flex justify-content-between align-items-center mb-2">
           <h3 className="h5 mb-0">Add your own algorithm</h3>
@@ -94,7 +98,7 @@ export default function Database() {
       </form>}
       {message && <p role="status">{message}</p>}
       {error && <p role="alert">{error}</p>}
-      {categories.map(category => <details className="card database-group" key={category} open={open.has(category)}
+      {categories.filter(category => !caseKey || caseKey.startsWith(`${category}-`)).map(category => <details className="card database-group" key={category} open={open.has(category)}
         onToggle={event => {
           const expanded = event.currentTarget.open;
           setOpen(previous => {
@@ -107,7 +111,7 @@ export default function Database() {
           <span>{category === 'AF2L' ? 'Advanced F2L' : category}</span><span className="database-count">{catalog.filter(entry => entry.category === category).length} cases</span>
         </summary>
         <div className="database-group-content">
-          {open.has(category) && entries.filter(entry => entry.category === category).map(entry => {
+          {open.has(category) && entries.filter(entry => entry.category === category && (!caseKey || `${category}-${entry.id}` === caseKey)).map(entry => {
             const key = `${category}-${entry.id}`;
             const builtInOptions = algorithms.find(base => base.category === category && base.id === entry.id)!.options;
             return <article className={`database-case${linked === key ? ' database-case--linked' : ''}`} id={key} key={key} aria-label={`${category} ${entry.id}`}>
@@ -154,6 +158,6 @@ export default function Database() {
       </details>)}
       <AlgorithmNotification notice={notice} close={() => setNotice(null)} />
     </main>
-    <Footer />
+    {!caseKey && <Footer />}
   </div>;
 }

@@ -6,12 +6,12 @@ import { cfopFrame } from './cfop';
 
 interface Animation {
   cube: Cube; moves: readonly string[]; rotation: string; length: number;
-  cursor: number; target: number; speed: number; time: number; frame: number;
+  cursor: number; target: number; speed: number; playback: boolean; seekVersion: number; time: number; frame: number;
 }
 const timestamp = (position: number) => position * 1000 as ExperimentalMillisecondTimestamp;
 
-export function CubeView({ cube, facelets, moves, position = moves.length, speed = 1, animateSeeks = false, cross = null, rotation = crossRotation(cross) }: {
-  cube: Cube; facelets: string; moves: readonly string[]; position?: number; speed?: number; animateSeeks?: boolean; cross?: number | null; rotation?: string;
+export function CubeView({ cube, facelets, moves, position = moves.length, speed = 1, animateSeeks = false, playback = false, seekVersion = 0, cross = null, rotation = crossRotation(cross) }: {
+  cube: Cube; facelets: string; moves: readonly string[]; position?: number; speed?: number; animateSeeks?: boolean; playback?: boolean; seekVersion?: number; cross?: number | null; rotation?: string;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const player = useRef<TwistyPlayer | null>(null);
@@ -35,7 +35,7 @@ export function CubeView({ cube, facelets, moves, position = moves.length, speed
       if (state) cancelAnimationFrame(state.frame);
       const prefix = new Alg(moves.slice(0, position).join(' '));
       element.experimentalModel.setupTransformation.set(cube.parse(facelets).applyAlg(prefix.invert()).applyAlg(rotation).experimentalToTransformation());
-      state = { cube, moves, rotation, length: -1, cursor: position, target: position, speed, time: 0, frame: 0 };
+      state = { cube, moves, rotation, length: -1, cursor: position, target: position, speed, playback, seekVersion, time: 0, frame: 0 };
       animation.current = state;
     }
     if (state.length !== moves.length) {
@@ -47,23 +47,25 @@ export function CubeView({ cube, facelets, moves, position = moves.length, speed
       })));
       state.length = moves.length;
     }
-    if (!animateSeeks && Math.abs(position - state.target) > 1) {
+    if ((seekVersion !== state.seekVersion || (!animateSeeks && !playback)) && Math.abs(position - state.target) > 1) {
       cancelAnimationFrame(state.frame); state.frame = 0; state.cursor = position;
     }
-    state.target = position; state.speed = speed;
+    state.target = position; state.speed = speed; state.playback = playback; state.seekVersion = seekVersion;
     element.timestamp = timestamp(state.cursor);
     if (state.frame || state.cursor === state.target) return;
     const active = state;
     active.time = performance.now();
     const tick = (now: number) => {
       // A stalled/background frame must not skip an entire batch of individual turns.
-      const distance = Math.min(0.95, Math.max(0, now - active.time) * active.speed / 100);
+      const remaining = Math.abs(active.target - active.cursor);
+      const pace = active.playback ? Math.max(1, remaining) / 80 : 1 / 100;
+      const distance = Math.min(0.95, Math.max(0, now - active.time) * active.speed * pace);
       active.time = now;
       active.cursor += Math.sign(active.target - active.cursor) * Math.min(Math.abs(active.target - active.cursor), distance);
       element.timestamp = timestamp(active.cursor);
       active.frame = active.cursor === active.target ? 0 : requestAnimationFrame(tick);
     };
     active.frame = requestAnimationFrame(tick);
-  }, [cube, facelets, moves, moves.length, position, speed, animateSeeks, rotation]);
+  }, [cube, facelets, moves, moves.length, position, speed, animateSeeks, playback, seekVersion, rotation]);
   return <div ref={container} role="img" aria-label="Live 3x3 cube state" />;
 }

@@ -3,7 +3,7 @@ import React from 'react';
 import { describe, expect, jest, test } from '@jest/globals';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MistakeChart } from '../Components/MistakeChart';
-import { MISTAKES, MistakeKind, markMistakes, rankedMistakes, summarizeMistakes } from '../Helpers/MistakeAnalysis';
+import { MISTAKES, MistakeKind, markMistakes, mistakeLabel, rankedMistakes, summarizeMistakes } from '../Helpers/MistakeAnalysis';
 import { consolidateMoves } from '../Helpers/CsvParser';
 import { analyzeMoveMistakes } from '../Helpers/MoveAnalysis';
 import { CrossColor, MethodName, Solve, Step, StepName } from '../Helpers/Types';
@@ -15,6 +15,16 @@ const caseSolve = (name: StepName, moves = "R U R'", overrides: Partial<Solve> =
     makeSolve({ steps: [makeStep(name, 3, { case: 'test case', moves })], ...overrides });
 
 describe('specific mistake reasons', () => {
+    test('slow steps have separate stage labels and multiple F2L pair outliers count once per solve', () => {
+        const names = [StepName.Cross, StepName.F2L_1, StepName.F2L_2, StepName.PLL];
+        const solves = makeSolves(20).map(solve => ({ ...solve, steps: names.map(name => makeStep(name, 1)) }));
+        solves.at(-1)!.steps.forEach(step => { step.time = 100; });
+        markMistakes(solves, 5);
+        const mistakes = solves.at(-1)!.mistakes!.filter(mistake => mistake.kind === 'slowStep');
+        expect(mistakes.map(mistakeLabel)).toEqual(['Unusually slow Cross', 'Unusually slow F2L', 'Unusually slow PLL']);
+        expect(summarizeMistakes(solves, 5).counts.filter(mistake => mistake.kind === 'slowStep').map(({ step, count }) => ({ step, count })))
+            .toEqual([{ step: StepName.Cross, count: 1 }, { step: StepName.F2L, count: 1 }, { step: StepName.PLL, count: 1 }]);
+    });
     test('retains reasons rather than only a boolean, and clears old reasons on recalculation', () => {
         const solve = makeSolve({ steps: [makeStep(StepName.Cross, 2, { turns: 9 })] });
         markMistakes([solve], 5);
@@ -267,7 +277,8 @@ describe('recent mistake counts', () => {
         expect(summary.sampleCount).toBe(3);
         expect(summary.counts[0]).toEqual({ kind: 'f2lMoves', count: 2 });
         expect(summary.counts.find(r => r.kind === 'crossMoves')?.count).toBe(1);
-        expect(summary.counts).toHaveLength(Object.keys(MISTAKES).length - 3);
+        expect(summary.counts).toHaveLength(Object.keys(MISTAKES).length - 4);
+        expect(summary.counts.some(row => row.kind === 'slowStep' && !row.step)).toBe(false);
         expect(summarizeMistakes([], 10).counts.every(row => row.count === 0)).toBe(true);
     });
 
@@ -356,8 +367,9 @@ describe('recent mistake counts', () => {
     });
 
     test.each(Object.keys(MISTAKES) as MistakeKind[])('explains %s in a concise, keyboard-accessible tooltip', async kind => {
-        render(<MistakeChart summary={{ windowSize: 5, sampleCount: 1, counts: [{ kind, count: 1 }] }} />);
-        const button = screen.getByRole('button', { name: `About ${MISTAKES[kind].label}` });
+        const mistake = { kind, step: kind === 'slowStep' ? StepName.PLL : undefined };
+        render(<MistakeChart summary={{ windowSize: 5, sampleCount: 1, counts: [{ ...mistake, count: 1 }] }} />);
+        const button = screen.getByRole('button', { name: `About ${mistakeLabel(mistake)}` });
         expect(screen.queryByRole('tooltip')).toBeNull();
         fireEvent.focus(button);
         const tooltip = await screen.findByRole('tooltip');

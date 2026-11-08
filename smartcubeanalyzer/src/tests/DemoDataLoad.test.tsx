@@ -26,6 +26,7 @@ interface ChartMockProps { data?: MockChartData }
 
 const mockChartProps: ChartMockProps[] = [];
 const mockWorkerResults: { input: WorkerInput; chartData: ChartDataBundle }[] = [];
+jest.mock('../../../timer/src/analyzer-data', () => ({ readLocalAnalysis: jest.fn(async () => []) }));
 
 jest.mock('react-chartjs-2', () => ({
     Line: (props: ChartMockProps) => { mockChartProps.push(props); return React.createElement('div', { 'data-chart': 'line' }); },
@@ -122,8 +123,6 @@ describe('loading the bundled dev stats through the UI', () => {
             mockChartProps.length = 0;
             mockWorkerResults.length = 0;
             render(React.createElement(FileInput));
-
-            fireEvent.click(screen.getByText('Demo Data'));
 
             await waitFor(() => expect(mockChartProps.length).toBeGreaterThan(0), { timeout: 240_000 });
 

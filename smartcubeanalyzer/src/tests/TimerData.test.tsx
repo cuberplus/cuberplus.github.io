@@ -2,128 +2,134 @@
 import React from 'react';
 import { beforeEach, expect, jest, test } from '@jest/globals';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { PageVisible } from '@cuberplus/navigation';
 import { FileInput } from '../Components/FileInput';
-import { readTimerData } from '../../../timer/src/analyzer-data';
-import type { FilterPanelProps } from '../Helpers/Types';
+import { readLocalAnalysis } from '../../../timer/src/analyzer-data';
+import { GetDemoData } from '../Helpers/SampleData';
+import { parseCsv } from '../Helpers/CsvParser';
+import type { FilterPanelProps, Solve } from '../Helpers/Types';
 
-jest.mock('../../../timer/src/analyzer-data', () => ({ readTimerData: jest.fn() }));
+jest.mock('../../../timer/src/analyzer-data', () => ({ readLocalAnalysis: jest.fn() }));
+jest.mock('../Helpers/SampleData', () => ({
+    GetDemoData: jest.fn(), DEMO_DATASETS: [],
+}));
 jest.mock('../Components/FilterPanel', () => {
     const { createElement, forwardRef } = jest.requireActual<typeof import('react')>('react');
     return { FilterPanel: forwardRef((_props: FilterPanelProps, _ref) => createElement('div')) };
 });
 
-const timerData = jest.mocked(readTimerData);
+const localData = jest.mocked(readLocalAnalysis);
 const csv = 'id,date,dnf,time,solving_method,solving_time,one_turn_away_two_second_penalty,session_name\r\nnew,2026-01-03 00:00:00 UTC,false,14000,CFOP,12000,true,"Practice, ""Summer"""\r\nold,2026-01-01 00:00:00 UTC,true,,CFOP,,,Other\r\n';
+const own = () => parseCsv(csv, ',').map(solve => ({ ...solve, source: 'timer' as const, rawSource: 'timer' }));
+const file = (name: string, content = csv) => Object.assign(new File([], name), { text: () => Promise.resolve(content) });
+async function ready(ref: React.RefObject<FileInput>, count = 2) {
+    await waitFor(() => { expect(ref.current?.state.isParsing).toBe(false); expect(ref.current?.state.solves).toHaveLength(count); });
+}
+beforeEach(() => { jest.clearAllMocks(); localData.mockReset().mockResolvedValue(own()); jest.mocked(GetDemoData).mockResolvedValue(csv); });
 
-beforeEach(() => { timerData.mockReset(); });
-
-test('choosing a CSV automatically loads its stats without a second button or Timer storage', async () => {
+test('opening Analyzer automatically loads local data with provenance, sessions, penalties and DNFs', async () => {
     const ref = React.createRef<FileInput>();
     render(<FileInput ref={ref} />);
+    await ready(ref);
+    expect(ref.current!.state.solves.map(solve => solve.id)).toEqual(['old', 'new']);
+    expect(ref.current!.state.solves.every(solve => solve.source === 'timer')).toBe(true);
+    expect(ref.current!.state.solves[0].dnf).toBe(true);
+    expect(ref.current!.state.solves[1]).toMatchObject({ time: 14, session: 'Practice, "Summer"' });
+    expect(ref.current!.state.showTestAlert).toBe(false);
+    expect(GetDemoData).not.toHaveBeenCalled();
+});
+
+test('an empty database automatically loads Dev Solves, but manual refresh explains the empty database', async () => {
+    localData.mockResolvedValue([]);
+    const ref = React.createRef<FileInput>();
+    render(<FileInput ref={ref} />);
+    await ready(ref);
+    expect(GetDemoData).toHaveBeenCalledTimes(1);
+    expect(ref.current!.state.showTestAlert).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Display My Stats!' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('No saved CuberPlus solves found');
+    expect(ref.current!.state.solves).toHaveLength(2);
+});
+
+test('CSV selection loads all files automatically, cancelling preserves stats, and later selections replace them', async () => {
+    const ref = React.createRef<FileInput>();
+    render(<FileInput ref={ref} />);
+    await ready(ref);
     const input = screen.getByLabelText<HTMLInputElement>('CSV files');
-    const choose = screen.getByRole('button', { name: 'Choose CSV File' });
+    const first = file('first.csv'), second = file('second.csv', csv.replace('new,', 'another,'));
     const open = jest.spyOn(input, 'click').mockImplementation(() => {});
-    fireEvent.click(choose);
-    expect(open).toHaveBeenCalledTimes(1);
-    open.mockRestore();
-    const file = Object.assign(new File([], 'my-solves.csv', { type: 'text/csv' }), { text: () => Promise.resolve(csv) });
-    fireEvent.change(input, { target: { files: [file] } });
-    expect(choose.textContent).toContain('my-solves.csv');
-    expect(screen.queryByRole('button', { name: 'Display CSV Stats' })).toBeNull();
-    await waitFor(() => expect(ref.current?.state.solves).toHaveLength(2));
-    expect(ref.current?.state.solves.every(solve => solve.source === 'cubeast')).toBe(true);
-    expect(timerData).not.toHaveBeenCalled();
-    expect(screen.queryByText(/Read saved Timer/)).toBeNull();
-});
-
-test('multiple CSV files load together, cancelling keeps the stats, and a later selection replaces them', async () => {
-    const ref = React.createRef<FileInput>();
-    render(<FileInput ref={ref} />);
-    const input = screen.getByLabelText<HTMLInputElement>('CSV files');
-    const first = Object.assign(new File([], 'first.csv'), { text: () => Promise.resolve(csv) });
-    const second = Object.assign(new File([], 'second.csv'), { text: () => Promise.resolve(csv.replace('new,', 'another,')) });
+    fireEvent.click(screen.getByRole('button', { name: 'Choose CSV File' }));
+    expect(open).toHaveBeenCalledTimes(1); open.mockRestore();
     fireEvent.change(input, { target: { files: [first, second] } });
-    await waitFor(() => expect(ref.current?.state.solves).toHaveLength(4));
+    await ready(ref, 4);
     expect(screen.getByRole('button', { name: 'Choose CSV File' }).textContent).toContain('first.csv, second.csv');
+    expect(ref.current!.state.solves.every(solve => solve.source === 'cubeast')).toBe(true);
     fireEvent.change(input, { target: { files: [] } });
-    expect(ref.current?.state.solves).toHaveLength(4);
+    expect(ref.current!.state.solves).toHaveLength(4);
     fireEvent.change(input, { target: { files: [first] } });
-    await waitFor(() => expect(ref.current?.state.solves).toHaveLength(2));
-    expect(timerData).not.toHaveBeenCalled();
+    await ready(ref);
+    expect(localData).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'Display CSV Stats' })).toBeNull();
 });
 
-test('CSV reading disables competing loads and reports errors without discarding previous stats', async () => {
+test('CSV reading disables competing loads and errors preserve the previous stats', async () => {
     const ref = React.createRef<FileInput>();
     render(<FileInput ref={ref} />);
+    await ready(ref);
+    let finish!: (value: string) => void;
+    const pending = Object.assign(new File([], 'pending.csv'), { text: () => new Promise<string>(resolve => { finish = resolve; }) });
     const input = screen.getByLabelText<HTMLInputElement>('CSV files');
-    let finish: (value: string) => void = () => {};
-    const file = Object.assign(new File([], 'solves.csv'), { text: () => new Promise<string>(resolve => { finish = resolve; }) });
-    fireEvent.change(input, { target: { files: [file] } });
-    expect(screen.getByRole('button', { name: 'Choose CSV File' }).hasAttribute('disabled')).toBe(true);
-    expect(screen.getByRole('button', { name: 'Choose demo data' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.change(input, { target: { files: [pending] } });
     expect(input.disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Choose demo data' }).hasAttribute('disabled')).toBe(true);
     await act(async () => finish(csv));
-    await waitFor(() => expect(ref.current?.state.solves).toHaveLength(2));
+    await ready(ref);
     const bad = Object.assign(new File([], 'bad.csv'), { text: () => Promise.reject(new Error('File could not be read')) });
     fireEvent.change(input, { target: { files: [bad] } });
     expect((await screen.findByRole('alert')).textContent).toContain('File could not be read');
-    expect(ref.current?.state.solves).toHaveLength(2);
-    expect(screen.getByRole('button', { name: 'Choose CSV File' }).hasAttribute('disabled')).toBe(false);
+    expect(ref.current!.state.solves).toHaveLength(2);
     expect(input.disabled).toBe(false);
 });
 
-test('loads Timer attempts into the analysis pipeline with provenance, sessions, penalties and DNFs', async () => {
-    timerData.mockResolvedValue(csv);
+test('refresh and returning to the retained page replace snapshots while preserving imported sources', async () => {
+    const imported = { ...own()[1], id: 'acubemy:new', source: 'acubemy' as const };
+    localData.mockResolvedValueOnce(own()).mockResolvedValue([imported]);
+    const ref = React.createRef<FileInput>();
+    const view = render(<PageVisible.Provider value={true}><FileInput ref={ref} /></PageVisible.Provider>);
+    await ready(ref);
+    act(() => window.dispatchEvent(new Event('timer-solves-changed')));
+    await ready(ref, 1);
+    expect(ref.current!.state.solves[0].source).toBe('acubemy');
+    view.rerender(<PageVisible.Provider value={false}><FileInput ref={ref} /></PageVisible.Provider>);
+    view.rerender(<PageVisible.Provider value={true}><FileInput ref={ref} /></PageVisible.Provider>);
+    await waitFor(() => expect(localData).toHaveBeenCalledTimes(3));
+    await ready(ref, 1);
+});
+
+test('a newer request wins and late completion after unmount is ignored', async () => {
+    let finish!: (value: Solve[]) => void;
+    localData.mockReturnValueOnce(new Promise(resolve => { finish = resolve; })).mockResolvedValue(own());
+    const ref = React.createRef<FileInput>();
+    const view = render(<FileInput ref={ref} />);
+    await waitFor(() => expect(localData).toHaveBeenCalledTimes(1));
+    act(() => window.dispatchEvent(new Event('timer-solves-changed')));
+    await ready(ref);
+    await act(async () => finish([]));
+    expect(ref.current!.state.solves).toHaveLength(2);
+    expect(GetDemoData).not.toHaveBeenCalled();
+    localData.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    act(() => window.dispatchEvent(new Event('timer-solves-changed')));
+    await waitFor(() => expect(localData).toHaveBeenCalledTimes(3));
+    view.unmount();
+    await act(async () => finish(own()));
+});
+
+test('storage failures preserve previously loaded data', async () => {
+    localData.mockResolvedValueOnce(own()).mockRejectedValueOnce(new Error('Local storage is unavailable'));
     const ref = React.createRef<FileInput>();
     render(<FileInput ref={ref} />);
+    await ready(ref);
     fireEvent.click(screen.getByRole('button', { name: 'Display My Stats!' }));
-    await waitFor(() => expect(ref.current?.state.solves).toHaveLength(2));
-    const solves = ref.current!.state.solves;
-    expect(solves.map(solve => solve.id)).toEqual(['old', 'new']);
-    expect(solves.every(solve => solve.source === 'timer' && solve.rawSource === 'timer')).toBe(true);
-    expect(solves[0].dnf).toBe(true);
-    expect(solves[1]).toMatchObject({ time: 14, session: 'Practice, "Summer"' });
-    expect(ref.current?.state.showTestAlert).toBe(false);
-    expect(ref.current?.state.suggestedSessions?.map(session => session.value)).toContain('Practice, "Summer"');
-});
-
-test('shows an empty state and allows a later snapshot to be loaded', async () => {
-    timerData.mockResolvedValueOnce('').mockResolvedValueOnce(csv);
-    render(<FileInput />);
-    const button = screen.getByRole('button', { name: 'Display My Stats!' });
-    fireEvent.click(button);
-    expect((await screen.findByRole('alert')).textContent).toContain('No saved Timer solves found');
-    fireEvent.click(button);
-    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
-    await waitFor(() => expect(button.getAttribute('disabled')).toBeNull());
-    expect(timerData).toHaveBeenCalledTimes(2);
-});
-
-test('disables competing loads while reading and refreshes instead of appending duplicates', async () => {
-    let finish: (value: string) => void = () => {};
-    timerData.mockReturnValueOnce(new Promise(resolve => { finish = resolve; })).mockResolvedValueOnce(csv);
-    const ref = React.createRef<FileInput>();
-    render(<FileInput ref={ref} />);
-    const button = screen.getByRole('button', { name: 'Display My Stats!' });
-    fireEvent.click(button);
-    expect(button.getAttribute('disabled')).not.toBeNull();
-    expect(screen.getAllByRole('button', { name: 'Parsing...' }).every(control => control.hasAttribute('disabled'))).toBe(true);
-    await act(async () => finish(csv));
-    fireEvent.click(button);
-    await waitFor(() => expect(timerData).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(button.hasAttribute('disabled')).toBe(false));
-    expect(ref.current?.state.solves).toHaveLength(2);
-});
-
-test('reports storage failures without discarding the previously loaded data', async () => {
-    timerData.mockResolvedValueOnce(csv).mockRejectedValueOnce(new Error('Local storage is unavailable'));
-    const ref = React.createRef<FileInput>();
-    render(<FileInput ref={ref} />);
-    const button = screen.getByRole('button', { name: 'Display My Stats!' });
-    fireEvent.click(button);
-    await waitFor(() => expect(ref.current?.state.solves).toHaveLength(2));
-    fireEvent.click(button);
     expect((await screen.findByRole('alert')).textContent).toContain('Local storage is unavailable');
-    expect(button.hasAttribute('disabled')).toBe(false);
-    expect(ref.current?.state.solves).toHaveLength(2);
+    expect(ref.current!.state.solves).toHaveLength(2);
 });

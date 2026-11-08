@@ -16,14 +16,14 @@ export const MISTAKES = {
     sequenceUndo: { label: 'Multi-move undo', rule: "Two or more moves immediately undone in reverse (R U U' R') in this step or AUF. The inner single undo isn't counted again." },
     redundantTurns: { label: 'Redundant same-face turns', rule: 'Explicit 3+ quarter turns (U3, U4). Sensor-split turns such as U U are consolidated into U2 before analysis; actual undos are retained.' },
     slowAuf: { label: 'AUF: Slow adjustment', rule: 'More than 0.5 seconds in the post-AUF of a last-layer step. Pre-AUF is excluded.' },
-    slowStep: { label: 'Unusually slow step', rule: 'At least one step exceeds its rolling average plus 3 standard deviations, using the selected window.' },
+    slowStep: { label: 'Unusually slow', rule: 'This step exceeds its rolling average plus 3 standard deviations, using the selected window. F2L includes outliers in any pair.' },
     slowSolve: { label: 'Unusually slow solve', rule: 'Solve time exceeds its rolling average plus 3 standard deviations, using the selected window.' },
 } as const;
 export type MistakeKind = keyof typeof MISTAKES;
 export interface Mistake { kind: MistakeKind; step?: StepName; auf?: boolean; }
 export interface MistakeSummary { sampleCount: number; windowSize: number; counts: (Mistake & { count: number })[]; }
 export const mistakeKey = ({ kind, step, auf }: Mistake) => `${kind}:${step ?? ''}:${auf ? 'auf' : ''}`;
-export const mistakeLabel = ({ kind, step, auf }: Mistake) => `${step ? `${step}${auf ? ' AUF' : ''}: ` : ''}${MISTAKES[kind].label}`;
+export const mistakeLabel = ({ kind, step, auf }: Mistake) => kind === 'slowStep' ? `Unusually slow ${step}` : `${step ? `${step}${auf ? ' AUF' : ''}: ` : ''}${MISTAKES[kind].label}`;
 export function rankedMistakes(solve: Solve): Mistake[] {
     const score = ({ kind, step }: Mistake): number => {
         const steps = solve.steps.filter(s => !step || s.name === step);
@@ -85,12 +85,12 @@ export function markMistakes(solves: Solve[], windowSize: number): Solve[] {
     const thresholds = new Map<string, number>();
     examples.forEach((values, key) => { if (values.length >= 5) thresholds.set(key, typicalCaseMoves(values.sort((a, b) => a - b)) + 2); });
     const slowSolves = getMistakeMap(valid.map(s => s.time), windowSize);
-    const slowSteps = Array.from(stepTimes.values(), times => getMistakeMap(times, windowSize));
+    const slowSteps = Array.from(stepTimes, ([step, times]) => ({ step: PAIRS.has(step) ? StepName.F2L : step, map: getMistakeMap(times, windowSize) }));
     valid.forEach((solve, i) => {
         const reasons = new Map<string, Mistake>();
         const add = (kind: MistakeKind, step?: StepName, auf?: boolean) => { const mistake = { kind, step, auf }; reasons.set(mistakeKey(mistake), mistake); };
         if (slowSolves[i]) add('slowSolve');
-        if (slowSteps.some(map => map[i])) add('slowStep');
+        slowSteps.forEach(({ step, map }) => { if (map[i]) add('slowStep', step); });
         const auf = getAufMovesForSolve(solve);
         for (const { name, turns, moves, case: caseName, recognitionTime, time, postAufTime, executionTime } of solve.steps) {
             const pair = PAIRS.has(name), ll = LAST_LAYER.has(name);
@@ -120,7 +120,7 @@ export function mistakeWindow(solves: Solve[], windowSize: number): Solve[] {
 export function summarizeMistakes(solves: Solve[], windowSize: number): MistakeSummary {
     const recent = mistakeWindow(solves, windowSize);
     const counts = new Map<string, Mistake & { count: number }>();
-    (Object.keys(MISTAKES) as MistakeKind[]).filter(kind => !['singleUndo', 'sequenceUndo', 'redundantTurns'].includes(kind))
+    (Object.keys(MISTAKES) as MistakeKind[]).filter(kind => !['slowStep', 'singleUndo', 'sequenceUndo', 'redundantTurns'].includes(kind))
         .forEach(kind => counts.set(mistakeKey({ kind }), { kind, count: 0 }));
     for (const solve of recent) {
         const unique = new Map((solve.mistakes ?? []).map(mistake => [mistakeKey(mistake), mistake]));

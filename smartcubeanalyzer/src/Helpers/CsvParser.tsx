@@ -43,7 +43,7 @@ export function getAufMovesForSolve(solve: Pick<Solve, 'source' | 'date' | 'cros
 export type MoveTiming = { move: string; timestamp: number };
 
 /** Parses Cubeast format "U[100] R[200]" into MoveTiming[], filtering out rotations. */
-export function parseRecordedMoves(raw: string): MoveTiming[] {
+export function parseRecordedMoves(raw: string, includeRotations = false): MoveTiming[] {
     const result: MoveTiming[] = [];
     if (!raw) return result;
     // One pass over the raw string: tokenizing it and slicing the digits out of every
@@ -67,7 +67,7 @@ export function parseRecordedMoves(raw: string): MoveTiming[] {
         const move = raw.slice(start, open);
         const firstChar = move.charCodeAt(0) | 32;
         // Only tokens starting with x/y/z can be rotations, so only they pay for the lookup.
-        if (firstChar >= 120 && firstChar <= 122 && ROTATIONS.has(move.toLowerCase())) continue;
+        if (!includeRotations && firstChar >= 120 && firstChar <= 122 && ROTATIONS.has(move.toLowerCase())) continue;
         result.push({ move, timestamp });
     }
     return result;
@@ -255,11 +255,12 @@ interface RowScratch {
     cumulativeSec: number[];
     penaltyMs: number;
     solution: string;
+    recorded: string[];
 }
 
 type ColumnSetter = (obj: Solve, value: string, scratch: RowScratch) => void;
 
-function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
+function parseCubeastCsv(stringVal: string, splitter: string, keepRecording: boolean): Solve[] {
     // Separators inside [...] (e.g. step case "[FL,BR]->FR 30") are skipped while splitting,
     // which avoids rewriting the whole 45MB export before it can be parsed.
     const splitterCode = splitter.charCodeAt(0);
@@ -267,6 +268,7 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
     const keys = splitCsvLine((headerEnd < 0 ? stringVal : stringVal.slice(0, headerEnd)).trim(), splitterCode);
 
     const keyMap: { [key: string]: ColumnSetter } = {
+        "cuberplus_source": (obj, value) => { if (value === 'cubeast' || value === 'acubemy') obj.source = value; },
         "id": (obj, value) => { obj.id = value; obj.rawSourceId = value; obj.source = 'cubeast'; },
         "time": (obj, value) => { obj.time = Number(value) / 1000; if (obj.time < 1) obj.isCorrupt = true; },
         "dnf": (obj, value) => { obj.dnf = value.toLowerCase() === 'true'; },
@@ -295,6 +297,7 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
         "slice_turns": (step, value) => { step.turns = Number(value); },
         "time": (step, value) => { step.time = Number(value) / 1000; },
         "case": (step, value) => { step.case = value; },
+        "moves": (step, value) => { step.moves = value; },
         "turns_per_second": (step, value) => { step.tps = Number(value); },
         "recognition_time": (step, value) => { step.recognitionTime = Number(value) / 1000; },
         "execution_time": (step, value) => { step.executionTime = Number(value) / 1000; },
@@ -308,6 +311,7 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
         const stepKey = key.split("_").slice(2).join("_");
         if (stepKey === "recorded_moves") {
             return (obj, value, scratch) => {
+                if (keepRecording) scratch.recorded[stepIndex] = value;
                 const moveTimings = parseRecordedMoves(value);
                 if (moveTimings.length > 0) scratch.moves[stepIndex] = moveTimings;
             };
@@ -328,7 +332,7 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
     const formedArr: Solve[] = [];
     const stepCount = GetEmptySolve().steps.length;
     // Reused across rows; the parser is single threaded, so one set of scratch buffers is enough.
-    const scratch: RowScratch = { moves: new Array<MoveTiming[] | null>(stepCount).fill(null), cumulativeSec: new Array<number>(stepCount).fill(-1), penaltyMs: 0, solution: '' };
+    const scratch: RowScratch = { moves: new Array<MoveTiming[] | null>(stepCount).fill(null), cumulativeSec: new Array<number>(stepCount).fill(-1), penaltyMs: 0, solution: '', recorded: [] };
     const times = [0, 0, 0, 0];
     const total = stringVal.length;
 
@@ -343,6 +347,7 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
         const obj = GetEmptySolve();
         scratch.penaltyMs = 0;
         scratch.solution = '';
+        if (keepRecording) scratch.recorded.length = 0;
         for (let i = 0; i < stepCount; i++) { scratch.moves[i] = null; scratch.cumulativeSec[i] = -1; }
         times[0] = times[1] = times[2] = times[3] = 0;
 
@@ -449,11 +454,11 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
         obj.turns = turnsTotal;
         if (normalized) obj.tps = obj.time > 0 ? obj.turns / obj.time : 0;
 
-        obj.source = 'cubeast';
-        obj.rawSource = 'cubeast';
+        obj.rawSource = obj.source;
         if (obj.firstF2LPair === undefined && obj.method.startsWith('CFOP')) obj.firstF2LPair = firstF2LPair(obj.scramble, scratch.solution, COLORS.indexOf(obj.crossColor as typeof COLORS[number]));
         if (obj.dnf) obj.isCorrupt = false;
 
+        if (keepRecording) obj.recording = { solution: scratch.solution || scratch.recorded.join(' ') };
         formedArr.push(obj);
         lineStart = lineEnd + 1;
     }
@@ -461,7 +466,7 @@ function parseCubeastCsv(stringVal: string, splitter: string): Solve[] {
     return formedArr.sort((a: Solve, b: Solve) => a.date.getTime() - b.date.getTime());
 }
 
-function parseAcubemyCsv(stringVal: string, splitter: string): Solve[] {
+function parseAcubemyCsv(stringVal: string, splitter: string, keepRecording: boolean): Solve[] {
 
     type AcubemyStepDef = { index: number; name: StepName; movesField: string };
 
@@ -513,25 +518,14 @@ function parseAcubemyCsv(stringVal: string, splitter: string): Solve[] {
         }
     };
 
-    const normalizeAcubemyLastLayerCases = (
-        steps: Solve["steps"],
-        ollCaseRaw: string,
-        pllCaseRaw: string
-    ) => {
-        const ollStep = steps[5];
-        if (ollStep) {
-            ollStep.name = StepName.OLL;
-            if (ollCaseRaw) {
-                ollStep.case = ollCaseRaw === "-1" ? "Solved" : ollCaseRaw;
-            }
+    const normalizeAcubemyLastLayerCases = (steps: Solve["steps"], ollCaseRaw: string, pllCaseRaw: string) => {
+        if (steps[5]) {
+            steps[5].name = StepName.OLL;
+            if (ollCaseRaw) steps[5].case = ollCaseRaw === "-1" ? "Solved" : ollCaseRaw;
         }
-
-        const pllStep = steps[6];
-        if (pllStep) {
-            pllStep.name = StepName.PLL;
-            if (pllCaseRaw) {
-                pllStep.case = pllCaseRaw === "Unknown" ? "Solved" : pllCaseRaw;
-            }
+        if (steps[6]) {
+            steps[6].name = StepName.PLL;
+            if (pllCaseRaw) steps[6].case = pllCaseRaw === "Unknown" ? "Solved" : pllCaseRaw;
         }
     };
 
@@ -751,6 +745,9 @@ function parseAcubemyCsv(stringVal: string, splitter: string): Solve[] {
 
         const solutionMovesRaw = get("solution") || get("raw_solution");
         const moveTimesRaw = get("move_times");
+        if (keepRecording) solve.recording = get("raw_solution") && get("raw_timestamps")
+            ? { solution: get("raw_solution"), timestamps: get("raw_timestamps") }
+            : { solution: solutionMovesRaw, timestamps: moveTimesRaw };
         const { solutionNoRot, moveTimesNoRot } = stripRotationsFromSolutionAndTimes(solutionMovesRaw, moveTimesRaw);
 
         computeAcubemySolveTurnsAndTps(solve, solutionNoRot || solutionMovesRaw);
@@ -782,13 +779,13 @@ function parseAcubemyCsv(stringVal: string, splitter: string): Solve[] {
     return formedArr.sort((a: Solve, b: Solve) => a.date.getTime() - b.date.getTime());
 }
 
-export function parseCsv(stringVal: string, splitter: string): Solve[] {
+export function parseCsv(stringVal: string, splitter: string, keepRecording = false): Solve[] {
     // Only the first line is needed, so avoid splitting the whole 45MB export to find it.
     const firstBreak = stringVal.indexOf("\n");
     const header = (firstBreak < 0 ? stringVal : stringVal.slice(0, firstBreak)).trim();
 
-    if (!header.includes("solve_id,date,total_time")) return parseCubeastCsv(stringVal, splitter);
-    const solves = parseAcubemyCsv(stringVal, splitter);
+    if (!header.includes("solve_id,date,total_time")) return parseCubeastCsv(stringVal, splitter, keepRecording);
+    const solves = parseAcubemyCsv(stringVal, splitter, keepRecording);
     for (const solve of solves) for (const step of solve.steps) {
         const turns = step.turns;
         if (!consolidateStep(step)) continue;

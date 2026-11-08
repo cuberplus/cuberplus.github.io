@@ -104,7 +104,8 @@ try {
   await database(page, samples);
   await visit(page, 'Smartcube Analyzer');
   await page.getByRole('button', { name: 'Display My Stats!', exact: true }).click();
-  await expect(page.getByRole('gridcell', { name: 'drilldown-11', exact: true }).first()).toBeAttached();
+  await expect(page.locator('.clickable-grid').getByRole('columnheader')).toHaveCount(4);
+  await expect(page.locator('.clickable-grid').getByRole('row')).toHaveCount(samples.length + 2);
   const count = await clickPoint(page, 'Count of Solves by How Long They Took', 12);
   const list = page.getByRole('dialog', { name: `12s to <13s (${count} solves)`, exact: true });
   await expect(list).toBeVisible();
@@ -114,11 +115,11 @@ try {
   const replay = page.getByRole('dialog', { name: 'Solve replay', exact: true });
   await expect(replay).toBeVisible({ timeout: 60000 });
   if (solveId) await expect(replay.getByLabel('Solve ID', { exact: true })).toContainText(solveId);
-  await replay.getByRole('button', { name: 'Close', exact: true }).click();
+  await replay.getByRole('button', { name: 'Close replay', exact: true }).click();
   await list.getByRole('button', { name: 'Close solves', exact: true }).click();
   await clickPoint(page, 'Daily Fastest Solve');
   await expect(replay).toBeVisible({ timeout: 60000 });
-  await replay.getByRole('button', { name: 'Close', exact: true }).click();
+  await replay.getByRole('button', { name: 'Close replay', exact: true }).click();
   await page.getByRole('button', { name: 'Open filters', exact: true }).click();
   await expect(page.locator('.offcanvas.show')).toBeVisible();
   await page.goBack();

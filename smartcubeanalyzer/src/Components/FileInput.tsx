@@ -8,6 +8,7 @@ import { Alert, Button, Form, FormControl, Card, Row, Col, ButtonGroup, Containe
 import { HelpPanel } from "./HelpPanel";
 import { CalculateMostUsedMethod, CalculateWindowSize, CalculateAllSessionOptions } from "../Helpers/CubeHelpers";
 import ReactGA from 'react-ga4';
+import { PageVisible } from '@cuberplus/navigation';
 
 const CFOP_PRESETS: { label: string; steps: StepName[] }[] = [
     { label: 'Cross+1', steps: [StepName.Cross, StepName.F2L_1] },
@@ -18,9 +19,12 @@ const CFOP_PRESETS: { label: string; steps: StepName[] }[] = [
 ];
 
 export class FileInput extends React.Component<FileInputProps, FileInputState> {
+    static contextType = PageVisible;
     state: FileInputState = { solves: [], showHelpModal: false, isParsing: false, currentMethod: MethodName.CFOP };
 
     private filterPanelRef = React.createRef<FilterPanel>();
+    private requestId = 0;
+    private wasVisible = true;
 
     constructor(props: FileInputProps) {
         super(props);
@@ -29,28 +33,32 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
 
     private removeSolve = (event: Event) => {
         const id = (event as CustomEvent<string>).detail;
-        this.setState(state => ({ solves: state.solves.filter(solve => solve.source !== 'timer' || solve.id !== id) }));
+        this.setState(state => ({ solves: state.solves.filter(solve => solve.id !== id || (solve.source !== 'timer' && !solve.id.startsWith(`${solve.source}:`))) }));
     };
-    componentDidMount() { window.addEventListener('timer-solve-deleted', this.removeSolve); }
-    componentWillUnmount() { window.removeEventListener('timer-solve-deleted', this.removeSolve); }
+    private refresh = () => this.showTimerData();
+    componentDidMount() { this.wasVisible = this.context !== false; window.addEventListener('timer-solve-deleted', this.removeSolve); window.addEventListener('timer-solves-changed', this.refresh); this.showTimerData(true); }
+    componentDidUpdate() { const visible = this.context !== false, entering = visible && !this.wasVisible; this.wasVisible = visible; if (entering) this.showTimerData(true); }
+    componentWillUnmount() { this.requestId++; window.removeEventListener('timer-solve-deleted', this.removeSolve); window.removeEventListener('timer-solves-changed', this.refresh); }
 
-    private async loadData(read: () => Promise<Solve[]>, demo = false) {
+    private async loadData(read: () => Promise<Solve[]>, demo: boolean | (() => boolean) = false) {
+        const requestId = ++this.requestId;
         this.setState({ isParsing: true, loadError: undefined });
         try {
             const solves = (await read()).sort((a, b) => a.date.getTime() - b.date.getTime());
+            if (requestId !== this.requestId) return;
             if (!solves.length) throw new Error('No solves found in the selected data source.');
             const method = CalculateMostUsedMethod(solves);
             this.setState({
-                solves, currentMethod: method, showTestAlert: demo,
+                solves, currentMethod: method, showTestAlert: typeof demo === 'function' ? demo() : demo,
                 suggestedMethod: { label: method, value: method },
                 suggestedSessions: CalculateAllSessionOptions(solves),
                 suggestedWindowSize: CalculateWindowSize(solves.length),
             });
             ReactGA.event({ category: 'DataLoaded', action: demo ? 'Loaded Test Data' : 'Loaded User Data', value: solves.length });
         } catch (error) {
-            this.setState({ loadError: error instanceof Error ? error.message : 'Unable to load solves. Please try again.' });
+            if (requestId === this.requestId) this.setState({ loadError: error instanceof Error ? error.message : 'Unable to load solves. Please try again.' });
         } finally {
-            this.setState({ isParsing: false });
+            if (requestId === this.requestId) this.setState({ isParsing: false });
         }
     }
 
@@ -64,13 +72,17 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
         void this.loadData(() => GetDemoData(file).then(csv => parseCsv(csv, ',')), true);
     }
 
-    showTimerData() {
+    showTimerData(auto = false) {
+        let demo = false; const requestId = this.requestId + 1;
         void this.loadData(async () => {
-            const { readTimerData } = await import('../../../timer/src/analyzer-data');
-            const csv = await readTimerData();
-            if (!csv) throw new Error('No saved Timer solves found. Use Timer in this browser on this website, then try again.');
-            return parseCsv(csv, ',').map(solve => ({ ...solve, source: 'timer', rawSource: 'timer' }));
-        });
+            const { readLocalAnalysis } = await import('../../../timer/src/analyzer-data');
+            const solves = await readLocalAnalysis();
+            if (requestId !== this.requestId) return [];
+            if (solves.length) return solves;
+            if (!auto) throw new Error('No saved CuberPlus solves found. Import CSVs in Options or use Timer, then try again.');
+            demo = true;
+            return parseCsv(await GetDemoData(), ',');
+        }, () => demo);
     }
 
     render() {

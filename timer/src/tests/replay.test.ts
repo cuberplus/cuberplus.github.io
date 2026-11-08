@@ -13,10 +13,11 @@ import { favoriteId, FAVORITES_KEY, MISTAKES_KEY, CATEGORIES_KEY, UNLEARN_KEY } 
 import { waitFor } from '@testing-library/react';
 
 await jest.unstable_mockModule('../CubeView', () => ({
-  CubeView: ({ facelets, cross, rotation }: { facelets: string; cross: number | null; rotation: string }) => createElement('div', { 'data-facelets': facelets, 'data-cross': cross, 'data-rotation': rotation, 'aria-label': 'Replay cube' }),
+  CubeView: ({ facelets, cross, rotation, seekVersion, playback }: { facelets: string; cross: number | null; rotation: string; seekVersion: number; playback: boolean }) => createElement('div', { 'data-facelets': facelets, 'data-cross': cross, 'data-rotation': rotation, 'data-seek-version': seekVersion, 'data-playback': playback, 'aria-label': 'Replay cube' }),
 }));
 const { Replay } = await import('../Replay');
 const { SolveMistakes } = await import('../SolveMistakes');
+const { importSolveCSVs } = await import('../csvImport');
 const cube = await loadCube();
 const pll = "R U R' U' R' F R2 U' R' U' R U R' F'", oll = "R U R' U R U2 R'";
 const scramble = `${pll} ${oll} R U R' F U F' L U L' B U B' D`;
@@ -99,12 +100,12 @@ async function feedbackReady() {
   await waitFor(() => expect(container.querySelector('[aria-label="Solve mistakes"]')?.textContent).not.toContain('Analyzing solve mistakes'));
 }
 async function click(text: string) {
-  const button = Array.from(container.querySelectorAll('button')).find(button => button.textContent === text)!;
+  const button = Array.from(container.querySelectorAll('button')).find(button => button.textContent === text || button.getAttribute('aria-label') === (text === 'Close' ? 'Close replay' : text))!;
   expect(button.disabled).toBe(false);
   await act(async () => button.click());
 }
 const groups = () => Array.from(container.querySelectorAll('[aria-label="Solution steps"] > [role="group"]'));
-const position = () => container.querySelector<HTMLInputElement>('[aria-label="Replay move"]')!.value;
+const position = () => container.querySelector('[aria-label="Replay move"]')!.getAttribute('aria-valuenow');
 const facelets = () => container.querySelector('[aria-label="Replay cube"]')!.getAttribute('data-facelets');
 
 test('manual penalties are reversible, preserve automatic reasons, and do not change the raw timeline', async () => {
@@ -112,10 +113,12 @@ test('manual penalties are reversible, preserve automatic reasons, and do not ch
   const original = structuredClone(solve);
   const change = (updated: Solve) => { solve = updated; };
   await draw(solve, change);
-  const manual = () => container.querySelectorAll<HTMLInputElement>('fieldset input');
+  const manual = () => container.querySelectorAll<HTMLButtonElement>('[aria-label="Solve penalties and deletion"] button[aria-pressed]');
+  expect(manual()[0].getAttribute('aria-pressed')).toBe('false');
   await act(async () => manual()[0].click());
   expect(solve).toMatchObject({ penalty: 6000, penaltyReason: 'inspection, over-turn, manual' });
   await draw(solve, change);
+  expect(manual()[0].getAttribute('aria-pressed')).toBe('true');
   expect(container.querySelector('[aria-label="Penalty reason"]')?.textContent).toBe('+6 reasons: inspection, over-turn, manual');
   await act(async () => manual()[1].click());
   expect(solve).toMatchObject({ status: 'incomplete', dnfReason: 'manual' });
@@ -133,13 +136,13 @@ test('manual penalties are reversible, preserve automatic reasons, and do not ch
 test.each(['inspection', 'solve interrupted', 'solve aborted'] as const)('manual controls cannot erase an automatic %s DNF', async dnfReason => {
   const change = jest.fn<(solve: Solve) => void>();
   await draw({ ...recording('R U', "U'", 'incomplete'), dnfReason }, change);
-  expect(container.querySelector('fieldset')!.disabled).toBe(true);
+  expect(Array.from(container.querySelectorAll<HTMLButtonElement>('[aria-label="Solve penalties and deletion"] button[aria-pressed]')).every(button => button.disabled)).toBe(true);
   expect(change).not.toHaveBeenCalled();
 });
 
 test('Analyzer read-only replay has no manual edit controls', async () => {
   await draw(recording('R', "R'"));
-  expect(container.querySelector('fieldset')).toBeNull();
+  expect(container.querySelector('[aria-pressed]')).toBeNull();
   expect(container.querySelector<HTMLAnchorElement>('a')!.getAttribute('href')).toBe('/timer/?retry=replay-fixture');
 });
 
@@ -173,14 +176,18 @@ test('opens replay as a modal and closes with its button or Escape', async () =>
   expect(close).toHaveBeenCalledTimes(2);
 });
 
-test('the compact header emphasizes time, keeps inspection beside turns, and orders Delete, Retry, Close', async () => {
+test('the compact header keeps inspection beside turns and the X separate from horizontal solve actions', async () => {
   await draw({ ...recording('R U2', "U2 R'"), inspection: 2345 });
   const header = container.querySelector('.replay-header')!;
   expect(header.querySelector('[aria-label="Solve time"]')!.textContent).toBe('0.100s');
   const inspection = header.querySelector('[aria-label="Inspection time"]')!;
   expect(inspection.previousElementSibling!.textContent).toBe('3 turns');
   expect(inspection.textContent).toBe('Inspection: 2.345s');
-  expect(Array.from(header.querySelectorAll('a, button'), element => element.textContent)).toEqual(['Delete', 'Retry', 'Close']);
+  expect(header.querySelector('[aria-label="Close replay"]')).not.toBeNull();
+  expect(header.querySelector('a')).toBeNull();
+  expect(container.querySelector('.replay-scramble a')!.textContent).toBe('Retry');
+  expect(inspection.nextElementSibling!.getAttribute('aria-label')).toBe('Solve date');
+  expect(Array.from(container.querySelectorAll('[aria-label="Solve penalties and deletion"] button'), element => element.textContent)).toEqual(['Delete']);
   expect(header.querySelector('h2')).toBeNull();
   expect(header.textContent).not.toMatch(/Solve replay|complete|host timing|quarter turns/i);
 });
@@ -222,9 +229,9 @@ test.each([true, false])('Delete waits for storage and disables conflicting acti
   expect(remove).toHaveBeenCalledWith(solve);
   expect(remove).toHaveBeenCalledTimes(1);
   expect(container.querySelector('dialog')!.open).toBe(true);
-  expect(container.querySelector('fieldset')!.disabled).toBe(true);
+  expect(Array.from(container.querySelectorAll<HTMLButtonElement>('[aria-label="Solve penalties and deletion"] button')).every(button => button.disabled)).toBe(true);
   for (const label of ['Deleting...', ...(timerRetry ? ['Retry'] : []), 'Close']) {
-    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === label)!.disabled).toBe(true);
+    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === label || (label === 'Close' && button.getAttribute('aria-label') === 'Close replay'))!.disabled).toBe(true);
   }
   if (!timerRetry) {
     const link = container.querySelector('a')!;
@@ -290,11 +297,94 @@ test('shows the original solve GUID before the final mistake feedback and distin
   await draw(solve);
   const dialog = container.querySelector('dialog')!;
   expect(dialog.lastElementChild!.getAttribute('aria-label')).toBe('Solve mistakes');
-  expect(dialog.lastElementChild!.previousElementSibling!.getAttribute('aria-label')).toBe('Solve ID');
-  expect(dialog.lastElementChild!.previousElementSibling!.textContent).toBe(`Solve ID: ${solve.id}`);
+  const id = container.querySelector('[aria-label="Solve ID"]')!;
+  expect(dialog.lastElementChild!.previousElementSibling!.contains(id)).toBe(true);
+  expect(id.textContent).toBe(`Solve ID: ${solve.id}`);
+  expect(id.nextElementSibling!.getAttribute('aria-label')).toBe('Solve source');
+  expect(id.nextElementSibling!.textContent).toBe('CuberPlus');
   expect(container.querySelector('[aria-label="Inspection time"]')!.textContent).toBe('Inspection: 2.345s');
   await draw(recording('R', "R'"));
   expect(container.querySelector('[aria-label="Inspection time"]')!.textContent).toBe('Inspection: Not recorded');
+});
+
+test('playhead advances continuously between moves, pauses, and resumes at the selected speed', async () => {
+  const solve = recording('R U', "U' R'");
+  solve.moves[1].elapsed = solve.moves[1].hostTime = 1000;
+  solve.duration = 1000;
+  await draw(solve);
+  jest.useFakeTimers();
+  const cursor = () => parseFloat((container.querySelector('.solve-trail .trail-tip') as HTMLElement).style.left);
+  expect(container.querySelector('[aria-label="Replay cube"]')!.getAttribute('data-playback')).toBe('true');
+  await click('Play');
+  await act(async () => jest.advanceTimersByTimeAsync(160));
+  expect(position()).toBe('1');
+  expect(cursor()).toBeCloseTo(16);
+  await act(async () => jest.advanceTimersByTimeAsync(160));
+  expect(position()).toBe('1');
+  expect(cursor()).toBeCloseTo(32);
+  await click('Pause');
+  await act(async () => jest.advanceTimersByTimeAsync(160));
+  expect(cursor()).toBeCloseTo(32);
+  const speed = container.querySelector<HTMLSelectElement>('[aria-label="Replay speed"]')!;
+  await act(async () => { speed.value = '2'; speed.dispatchEvent(new Event('change', { bubbles: true })); });
+  await click('Play');
+  await act(async () => jest.advanceTimersByTimeAsync(160));
+  expect(cursor()).toBeCloseTo(64);
+  await act(async () => jest.advanceTimersByTimeAsync(192));
+  expect(cursor()).toBe(100);
+  expect(position()).toBe('2');
+  expect(container.querySelector('.btn-primary')!.textContent).toBe('Play');
+});
+
+test.each([
+  ['Cubeast (imported)', 'id,date,dnf,time,solving_method\nsource,2026-01-01 00:00:00 UTC,false,1000,CFOP'],
+  ['Acubemy (imported)', 'solve_id,date,total_time,analysis_type\nsource,2026-01-01T00:00:00Z,1000,CFOP'],
+])('replay identifies %s beside the solve ID', async (label, csv) => {
+  await importSolveCSVs([Object.assign(new File([csv], 'source.csv'), { text: async () => csv })]);
+  await draw((await readSolves())[0]);
+  const source = container.querySelector('[aria-label="Solve source"]')!;
+  expect(source.previousElementSibling!.getAttribute('aria-label')).toBe('Solve ID');
+  expect(source.firstChild!.textContent).toBe(label);
+  expect(source.querySelector('button')).not.toBeNull();
+});
+
+test('keyboard seeking distinguishes turns sharing a timestamp and background visibility pauses playback', async () => {
+  const solve = recording('R2', "R' R'");
+  solve.moves[1].elapsed = 0;
+  solve.duration = 1000;
+  await draw(solve);
+  const slider = container.querySelector('[aria-label="Replay move"]')!;
+  await act(async () => slider.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
+  expect(position()).toBe('1');
+  await act(async () => slider.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
+  expect(position()).toBe('2');
+  await act(async () => slider.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })));
+  expect(position()).toBe('0');
+  await click('Play');
+  jest.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+  await act(async () => document.dispatchEvent(new Event('visibilitychange')));
+  expect(container.querySelector('.btn-primary')!.textContent).toBe('Play');
+});
+
+test('device-fit playback uses calibrated timing and reaches the final cube state at the solve duration', async () => {
+  const solve = recording('R U F', "F' U' R'");
+  solve.duration = 1000;
+  solve.timingBasis = 'device-fit';
+  solve.moves.forEach((move, index) => {
+    move.elapsed = move.hostTime = move.localTimestamp = index * 600;
+    move.cubeTimestamp = 1000 + index * 100;
+  });
+  await draw(solve);
+  await click('Next move');
+  await click('Next move');
+  expect((container.querySelector('.solve-trail .trail-tip') as HTMLElement).style.left).toBe('50%');
+  await click('Previous move');
+  jest.useFakeTimers();
+  await click('Play');
+  await act(async () => jest.advanceTimersByTimeAsync(1008));
+  expect(position()).toBe('3');
+  expect(facelets()).toBe(cube.facelets(cube.solved()));
+  expect((container.querySelector('.solve-trail .trail-tip') as HTMLElement).style.left).toBe('100%');
 });
 
 test('feedback recalculates cached timing when the engine adds a penalty to the same solve object', async () => {
@@ -351,10 +441,10 @@ test('solution is partitioned into the same seven CFOP milestones as the timelin
   expect(groups().map(group => group.querySelector('h3')!.textContent)).toEqual(['Cross', 'F2L Pair 1', 'F2L Pair 2', 'F2L Pair 3', 'F2L Pair 4', 'OLL', 'PLL']);
   for (let step = 0; step < CFOP_STEPS.length; step++) {
     const recorded = solve.moves.slice(ends[step - 1] ?? 0, ends[step]).map(move => move.move).join(' ');
-    const displayed = Array.from(groups()[step].querySelectorAll('button')).map(button => button.textContent).join(' ');
+    const displayed = Array.from(groups()[step].querySelectorAll('button.move')).map(button => button.textContent).join(' ');
     expect(cube.equals(cube.solved().applyAlg(recorded), cube.solved().applyAlg(displayed))).toBe(true);
   }
-  await act(async () => (groups()[6].querySelector('button:last-child') as HTMLButtonElement).click());
+  await act(async () => (Array.from(groups()[6].querySelectorAll<HTMLButtonElement>('button.move')).at(-1)!).click());
   expect(position()).toBe(String(solve.moves.length));
   expect(facelets()).toBe(cube.facelets(cube.solved()));
   expect(solve).toEqual(original);
@@ -399,7 +489,7 @@ test('pair emoji labels and initial rotations agree with the normalized solution
   const displayed = Array.from(container.querySelectorAll('.move-timeline .move')).map(move => move.textContent).join(' ');
   expect(cube.parse(solve.startFacelets).applyAlg(displayed).patternData)
     .toEqual(cube.solved().applyAlg(rotation).patternData);
-  expect(container.querySelector<HTMLInputElement>('[aria-label="Replay move"]')!.max).toBe(String(solve.moves.length));
+  expect(container.querySelector('[aria-label="Replay move"]')!.getAttribute('aria-valuemax')).toBe(String(solve.moves.length));
   await click('Next move');
   expect(position()).toBe('1');
   expect(facelets()).toBe(cube.facelets(cube.parse(solve.startFacelets).applyMove(solve.moves[0].move)));
@@ -419,7 +509,7 @@ test('repeated turns compact within a step without combining across a milestone'
   const solve = recording(scramble.slice(0, -1) + 'D2', `D D D D D D ${rest}`);
   await draw(solve);
   expect(groups()[0].querySelector('button')!.textContent).toBe('D2');
-  const firstPair = groups()[1].querySelector('button')!;
+  const firstPair = groups()[1].querySelector<HTMLButtonElement>('button.move')!;
   expect(firstPair.textContent).toBe('D4');
   expect(firstPair.getAttribute('aria-label')).toContain('D D D D');
   await act(async () => firstPair.click());
@@ -436,10 +526,13 @@ test('replay shows recognized F2L, OLL and PLL labels beside the step headings, 
   expect(container.querySelector('[aria-label="OLL case"]')!.textContent).toBe('OLL 34');
   expect(container.querySelector('[aria-label="PLL case"]')!.textContent).toBe('T perm');
   for (const [label, caseId] of [['F2L Pair 4', 'F2L-1'], ['OLL', 'OLL-34'], ['PLL', 'PLL-T']]) {
-    const link = container.querySelector<HTMLAnchorElement>(`a[aria-label="${label} case"]`)!;
-    expect(link.getAttribute('href')).toBe(`/database/#${caseId}`);
-    expect(link.target).toBe('_blank');
-    expect(link.rel).toBe('noopener noreferrer');
+    const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${label} case"]`)!;
+    expect(button.hasAttribute('href')).toBe(false);
+    await act(async () => button.click());
+    await waitFor(() => expect(container.querySelector('dialog.case-dialog .database-case')?.id).toBe(caseId));
+    expect(container.querySelectorAll('dialog.case-dialog .database-case')).toHaveLength(1);
+    await click('Close algorithm case');
+    expect(container.querySelector('dialog[aria-label="Solve replay"]')!.hasAttribute('open')).toBe(true);
   }
   expect(solve).toEqual(before);
   await draw({ ...solve, status: 'incomplete' });
@@ -473,9 +566,9 @@ test('combined turns seek to the last raw move while next, previous and playback
   expect(position()).toBe('1');
   jest.useFakeTimers();
   await click('Play');
-  await act(async () => jest.advanceTimersByTime(100));
+  await act(async () => jest.advanceTimersByTime(112));
   expect(position()).toBe('2');
-  await act(async () => jest.advanceTimersByTime(100));
+  await act(async () => jest.advanceTimersByTime(96));
   expect(position()).toBe('3');
   expect(facelets()).toBe(cube.facelets(cube.parse(solve.startFacelets).applyAlg("D D U'")));
   expect(buttons[1].classList.contains('partial')).toBe(true);
@@ -501,10 +594,9 @@ test('single moves stay highlighted when stepping, seeking and playing across so
   expect(current()).toEqual(["D'"]);
   await act(async () => buttons[2].click());
   expect(current()).toEqual(["U'"]);
-  const slider = container.querySelector<HTMLInputElement>('[aria-label="Replay move"]')!;
+  const slider = container.querySelector('[aria-label="Replay move"]')!;
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(slider, '0');
-    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    slider.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
   });
   expect(position()).toBe('0');
   expect(current()).toEqual(["D'"]);

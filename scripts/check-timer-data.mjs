@@ -21,6 +21,10 @@ async function database(page, records, removeIds = []) {
 }
 
 async function checkAverage(average, numbers) {
+  await expect(average.locator('.btn-close')).toHaveCSS('background-size', '16px 16px');
+  expect(await average.locator('.btn-close').evaluate(button => {
+    const box = button.getBoundingClientRect(); return [box.width, box.height];
+  })).toEqual([32, 32]);
   const table = average.getByRole('table', { name: 'Average solves' });
   const labels = ['Solve', 'Time', 'Turns', 'TPS', 'View'];
   await expect(table.locator('thead th')).toHaveText(labels);
@@ -54,8 +58,9 @@ async function dismissCelebrations(page) {
 }
 
 async function clickChartPoint(page, title, datasetIndex = 0, index = -1) {
+  await expect(page.getByRole('button', { name: 'Display My Stats!', exact: true })).toBeEnabled({ timeout: 60000 });
   const canvas = page.getByRole('region', { name: title, exact: true }).locator('canvas');
-  await canvas.scrollIntoViewIfNeeded();
+  await expect(async () => { await canvas.scrollIntoViewIfNeeded(); }).toPass({ timeout: 15000 });
   await page.waitForTimeout(1100);
   const point = await canvas.evaluate((canvas, { datasetIndex, index }) => {
     let fiber = canvas[Object.keys(canvas).find(key => key.startsWith('__reactFiber$'))];
@@ -88,6 +93,7 @@ try {
   const demo = page.getByRole('button', { name: 'Demo Data', exact: true });
   const choose = page.getByRole('button', { name: 'Choose CSV File', exact: true });
   const displayCsv = page.getByRole('button', { name: 'Display CSV Stats', exact: true });
+  await expect(load).toBeEnabled({ timeout: 60000 });
   await expect(displayCsv).toHaveCount(0);
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
@@ -103,7 +109,7 @@ try {
   await expect(page.getByText('Read saved Timer solves', { exact: false })).toHaveCount(0);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await load.click();
-  await expect(page.getByRole('alert')).toContainText('No saved Timer solves found');
+  await expect(page.getByRole('alert').filter({ hasText: 'No saved CuberPlus solves found' })).toBeVisible();
 
   const chooserEvent = page.waitForEvent('filechooser');
   await choose.click();
@@ -191,9 +197,9 @@ try {
   await sessions.locator('.dropdown-heading').click();
   const sources = page.locator('.offcanvas.show .card').filter({ has: page.getByRole('heading', { name: /^Source/ }) });
   await sources.locator('.dropdown-heading').click();
-  await sources.getByText('Timer', { exact: true }).click();
+  await sources.getByText('CuberPlus', { exact: true }).click();
   await expect(page.getByText('Showing 0 / 7 solves', { exact: false })).toBeVisible();
-  await sources.getByText('Timer', { exact: true }).click();
+  await sources.getByText('CuberPlus', { exact: true }).click();
   await expect(page.getByText('Showing 7 / 7 solves', { exact: false })).toBeVisible();
   await page.locator('.offcanvas.show .btn-close').click();
 
@@ -221,7 +227,9 @@ try {
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     const header = replay.locator('.replay-header');
-    await expect(header.locator('a, button')).toHaveText(['Delete', 'Retry', 'Close']);
+    await expect(header.locator('a, button')).toHaveText(['', '+2', 'DNF', 'Delete']);
+    await expect(replay.locator('.replay-scramble a, .replay-scramble button')).toHaveText(['Retry']);
+    await expect(header.getByRole('button', { name: 'Close replay' })).toBeVisible();
     await expect(header).not.toContainText(/Solve replay|complete|host timing|quarter turns/i);
     await expect(header.getByLabel('Solve time', { exact: true })).toHaveText('12.000s');
     expect(await header.getByLabel('Solve time', { exact: true }).evaluate(time =>
@@ -254,7 +262,7 @@ try {
   if (await initialRotation.count()) await expect(replay.getByRole('group', { name: 'Cross solution', exact: true }).locator('.move').first()).toHaveAttribute('aria-label', 'Initial rotation');
   await expect(page.getByLabel('Solve ID', { exact: true })).toContainText(seed.id);
   await page.getByRole('button', { name: 'Next move', exact: true }).click();
-  await expect(page.getByRole('slider', { name: 'Replay move', exact: true })).toHaveValue('1');
+  await expect(page.getByRole('slider', { name: 'Replay move', exact: true })).toHaveAttribute('aria-valuenow', '1');
   await page.keyboard.press('Escape');
   await expect(replay).toHaveCount(0);
   await expect(page).toHaveURL(`${base}/smartcubeanalyzer/`);
@@ -284,7 +292,7 @@ try {
       await average.locator('tbody button').first().click();
       await expect(replay).toBeVisible();
       await page.getByRole('button', { name: 'Next move', exact: true }).click();
-      await page.getByRole('button', { name: 'Close', exact: true }).click();
+      await page.getByRole('button', { name: 'Close replay', exact: true }).click();
       await expect(replay).toHaveCount(0);
       await expect(average).toBeVisible();
       await average.getByRole('button', { name: 'Close average', exact: true }).click();
@@ -309,7 +317,7 @@ try {
   }), seed.id);
   await page.locator('.clickable-grid').getByRole('gridcell', { name: '12.000', exact: true }).click();
   await expect(replay.getByRole('alert')).toHaveText('This solve is no longer saved in Timer.');
-  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: 'Close replay', exact: true }).click();
   await expect(replay).toHaveCount(0);
   await expect(page).toHaveURL(`${base}/smartcubeanalyzer/`);
   expect(popups).toBe(0);
@@ -334,6 +342,7 @@ try {
   expect(pairPoint.value).toBe(60);
   const pairAverage = page.getByRole('dialog', { name: /Red \/ Green first pair \(3 solves\)/ });
   await expect(pairAverage).toBeVisible();
+  await expect(pairAverage.getByRole('button', { name: 'Close solves', exact: true })).toHaveCSS('background-size', '16px 16px');
   await expect(pairAverage.locator('tbody th')).toHaveText(['69', '71', '73']);
   await page.keyboard.press('Escape');
   for (const width of [1440, 390]) {
@@ -364,20 +373,20 @@ try {
     await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
     await penaltyPage.getByRole('button', { name: 'View', exact: true }).click();
     let replay = penaltyPage.getByRole('dialog', { name: 'Solve replay', exact: true });
-    await replay.getByRole('checkbox', { name: 'Manual +2', exact: true }).check();
+    await replay.getByRole('button', { name: '+2', exact: true }).click();
     await expect(replay.getByLabel('Penalty reason', { exact: true })).toHaveText('+6 reasons: inspection, over-turn, manual');
-    await replay.getByRole('checkbox', { name: 'Manual DNF', exact: true }).check();
+    await replay.getByRole('button', { name: 'DNF', exact: true }).click();
     await expect(replay.getByLabel('Penalty reason', { exact: true }).first()).toHaveText('DNF reason: manual');
     await expect.poll(async () => (await database(penaltyPage))[0]).toMatchObject({ status: 'incomplete', dnfReason: 'manual', penalty: 6000 });
     await penaltyPage.reload();
     await penaltyPage.getByRole('button', { name: 'View', exact: true }).click();
     replay = penaltyPage.getByRole('dialog', { name: 'Solve replay', exact: true });
-    await expect(replay.getByRole('checkbox', { name: 'Manual DNF', exact: true })).toBeChecked();
-    await expect(replay.getByRole('checkbox', { name: 'Manual +2', exact: true })).toBeChecked();
-    await replay.getByRole('checkbox', { name: 'Manual DNF', exact: true }).uncheck();
-    await replay.getByRole('checkbox', { name: 'Manual +2', exact: true }).uncheck();
+    await expect(replay.getByRole('button', { name: 'DNF', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(replay.getByRole('button', { name: '+2', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await replay.getByRole('button', { name: 'DNF', exact: true }).click();
+    await replay.getByRole('button', { name: '+2', exact: true }).click();
     await expect(replay.getByLabel('Penalty reason', { exact: true })).toHaveText('+4 reasons: inspection, over-turn');
-    await replay.getByRole('button', { name: 'Close', exact: true }).click();
+    await replay.getByRole('button', { name: 'Close replay', exact: true }).click();
     await expect(penaltyPage.getByRole('button', { name: 'View current Single', exact: true })).toHaveText('14.00');
     await penaltyPage.getByText('Try simulated cube', { exact: true }).evaluate(button => button.click());
     const guided = penaltyPage.getByRole('button', { name: 'Perform guided move', exact: true });
@@ -447,7 +456,8 @@ try {
     await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
     await penaltyPage.getByRole('table', { name: 'Solve history' }).getByRole('button', { name: 'View', exact: true }).first().click();
     replay = penaltyPage.getByRole('dialog', { name: 'Solve replay', exact: true });
-    await expect(replay.locator('.replay-header a, .replay-header button')).toHaveText(['Delete', 'Retry', 'Close']);
+    await expect(replay.locator('.replay-header a, .replay-header button')).toHaveText(['', '+2', 'DNF', 'Delete']);
+    await expect(replay.locator('.replay-scramble a, .replay-scramble button')).toHaveText(['Retry']);
     const deletedId = await replay.getByLabel('Solve ID', { exact: true }).locator('span').textContent();
     const beforeDelete = await database(penaltyPage);
     penaltyPage.once('dialog', async dialog => {
@@ -470,7 +480,8 @@ try {
     await penaltyPage.locator('.site-page--timer').getByRole('link', { name: 'Smartcube Analyzer', exact: true }).click();
     await penaltyPage.getByRole('button', { name: 'Display My Stats!', exact: true }).click();
     await penaltyPage.locator('.clickable-grid').getByRole('gridcell', { name: '14.00', exact: true }).click();
-    await expect(replay.locator('.replay-header a, .replay-header button')).toHaveText(['Delete', 'Retry', 'Close']);
+    await expect(replay.locator('.replay-header a, .replay-header button')).toHaveText(['', '+2', 'DNF', 'Delete']);
+    await expect(replay.locator('.replay-scramble a, .replay-scramble button')).toHaveText(['Retry']);
     penaltyPage.once('dialog', async dialog => {
       expect(dialog.type()).toBe('confirm');
       expect(dialog.message()).toBe('Are you sure you want to delete this solve? This cannot be undone.');

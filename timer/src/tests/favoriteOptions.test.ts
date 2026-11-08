@@ -102,3 +102,15 @@ test('category checkboxes occupy separate lines and discovery follows all checkb
   expect(controls().every(control => !!(control.compareDocumentPosition(discoverButton()) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   expect(container.querySelectorAll('p.text-secondary')).toHaveLength(0);
 });
+test('favorite settings collapse independently while their checkbox and tooltip stay in the summary', async () => {
+  await render();
+  const details = container.querySelector('details')!, summary = details.querySelector('summary')!;
+  expect(details.open).toBe(false);
+  expect(summary.contains(controls()[0])).toBe(true);
+  expect(summary.querySelector('button')).not.toBeNull();
+  await act(async () => controls()[0].click());
+  expect(details.open).toBe(false);
+  expect(controls()[0].checked).toBe(true);
+  await act(async () => summary.querySelector<HTMLButtonElement>('button')!.focus());
+  expect(container.querySelector('[role="tooltip"]')!.textContent).toContain('Only checks cases with favorites.');
+});

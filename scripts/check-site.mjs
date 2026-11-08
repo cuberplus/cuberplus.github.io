@@ -68,8 +68,9 @@ try {
       await expect(panel).toHaveCSS('background-color', 'rgb(24, 31, 45)');
       await expect(panel).toHaveCSS('border-radius', '16px');
       if (route === '/scrambler/') {
-        await expect(page.getByRole('spinbutton', { name: 'Minimum turns' })).toHaveValue('2');
-        await expect(page.getByRole('spinbutton', { name: 'Maximum turns' })).toHaveValue('20');
+        await expect(page.getByRole('spinbutton', { name: 'Minimum turns' })).toHaveValue('4');
+        await expect(page.getByRole('spinbutton', { name: 'Maximum turns' })).toHaveValue('8');
+        await expect(page.getByLabel('Move metric')).toHaveValue('QTM');
         const fields = await page.locator('.range-inputs > div').evaluateAll(fields => fields.map(field => {
           const input = field.querySelector('input'), label = field.querySelector('span'), style = getComputedStyle(input);
           const canvas = document.createElement('canvas'), context = canvas.getContext('2d');

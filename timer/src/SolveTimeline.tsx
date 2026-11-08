@@ -7,7 +7,7 @@ import { formatTime } from './storage';
 // Analyzer's Cross/OLL/PLL hues, with the same dark purple for every F2L pair.
 const colors = ['rgb(100, 200, 255)', 'rgb(156, 115, 220)', 'rgb(156, 115, 220)', 'rgb(156, 115, 220)', 'rgb(156, 115, 220)', 'rgb(255, 230, 150)', 'rgb(80, 220, 220)'];
 type Annotation = { name: string; key: string; i: number; timing: ReturnType<typeof cfopTiming> | null; done: boolean };
-export function SolveTimeline({ cube, solve, elapsed, precision }: { cube: Cube; solve: Solve; elapsed: number; precision: 2 | 3 }) {
+export function SolveTimeline({ cube, solve, elapsed, precision, open, seek, seekMove, position, cursor }: { cube: Cube; solve: Solve; elapsed: number; precision: 2 | 3; open?: () => void; seek?: (time: number) => void; seekMove?: (position: number) => void; position?: number; cursor?: number }) {
   const trail = useRef<HTMLDivElement>(null), [width, setWidth] = useState(1000);
   useEffect(() => {
     if (!trail.current || typeof ResizeObserver === 'undefined') return;
@@ -15,7 +15,12 @@ export function SolveTimeline({ cube, solve, elapsed, precision }: { cube: Cube;
     observer.observe(trail.current); return () => observer.disconnect();
   }, []);
   const analysis = analyzeCFOP(solve, cube), time = Math.round(Math.max(solve.duration, elapsed));
-  const steps = CFOP_STEPS.map((name, i) => ({ name: name.replace('Slot', 'Pair'), i, timing: i <= analysis.ends.length ? cfopTiming(solve, analysis.ends, i, time) : null }));
+  const cfop = !solve.imported || solve.imported.method.startsWith('CFOP');
+  const steps = (cfop ? CFOP_STEPS : solve.imported!.steps.map(step => step.name)).map((name, i) => {
+    const step = solve.imported?.steps.find(step => step.name === name);
+    const start = solve.imported ? solve.imported.steps.slice(0, solve.imported.steps.findIndex(step => step.name === name)).reduce((sum, step) => sum + step.time * 1000, 0) : 0;
+    return { name: name.replace('Slot', 'Pair'), i, timing: solve.imported ? step ? { start, end: start + step.time * 1000, time: step.time * 1000, recognition: step.recognitionTime * 1000, execution: step.executionTime * 1000 } : null : i <= analysis.ends.length ? cfopTiming(solve, analysis.ends, i, time) : null };
+  });
   const scale = solve.status === 'active' ? Math.max(10000, time * 1.2) : Math.max(1, time);
   const segments = steps.flatMap(({ name, i, timing }) => timing ? [
     { name, i, phase: 'recognition', start: timing.start, end: timing.start + timing.recognition },
@@ -28,8 +33,8 @@ export function SolveTimeline({ cube, solve, elapsed, precision }: { cube: Cube;
     recognition: pairs.reduce((sum, pair) => sum + pair.recognition, 0),
     execution: pairs.reduce((sum, pair) => sum + pair.execution, 0),
   } : null;
-  const annotation = (i: number): Annotation => ({ ...steps[i], key: String(i), done: i < analysis.ends.length });
-  const major = [annotation(0), { name: 'F2L', key: 'f2l', i: 1, timing: f2l, done: analysis.ends[4] !== undefined }, annotation(5), annotation(6)];
+  const annotation = (i: number): Annotation => ({ ...steps[i], key: String(i), done: !!solve.imported || i < analysis.ends.length });
+  const major = cfop ? [annotation(0), { name: 'F2L', key: 'f2l', i: 1, timing: f2l, done: !!solve.imported || analysis.ends[4] !== undefined }, annotation(5), annotation(6)] : steps.map((_, i) => annotation(i));
   function annotations(items: Annotation[], bottom = false) {
     const captions = items.map(item => ({
       ...item, caption: bottom ? item.name.replace('Pair ', '') : item.name,
@@ -54,13 +59,17 @@ export function SolveTimeline({ cube, solve, elapsed, precision }: { cube: Cube;
       {labels.map(({ key, name, caption, i, timing, done, text, row, position }) => <span key={key} className="trail-duration" data-step={key} data-duration={timing?.time} data-status={!timing ? 'unreached' : done ? 'done' : 'pending'} role="img" aria-label={`${name}: ${text} (${!timing ? 'not reached' : done ? 'complete' : 'in progress'})`} title={timing ? `${name}: ${text}; ${formatTime(timing.recognition, precision)}s recognition / ${formatTime(timing.execution, precision)}s execution` : `${name}: not reached`} style={{ left: `${position / area * 100}%`, top: row * 24 + (bottom ? 12 : 0), width: labelWidth, [bottom ? 'borderTopColor' : 'borderBottomColor']: colors[i] }}><strong>{caption}</strong> {text}</span>)}
     </div>;
   }
-  return <div className="mt-3 mb-3" role="group" aria-label="Solve timeline">
+  return <div className="mt-3 mb-3" role={open ? 'button' : 'group'} aria-label={open ? 'View most recent solve' : 'Solve timeline'} tabIndex={open ? 0 : undefined} onClick={open} onKeyDown={event => { if (open && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); open(); } }} style={open ? { cursor: 'pointer' } : undefined}>
     {annotations(major)}
-    <div className="solve-trail" ref={trail}>
+    <div className="solve-trail" ref={trail} role={seek ? 'slider' : undefined} tabIndex={seek ? 0 : undefined}
+      aria-label={seek ? 'Replay move' : undefined} aria-valuemin={seek ? 0 : undefined} aria-valuemax={seek ? solve.moves.length : undefined} aria-valuenow={seek ? position : undefined}
+      onClick={event => { if (seek) { const rect = event.currentTarget.getBoundingClientRect(); seek(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * scale); } }}
+      onKeyDown={event => { if (!seek) return; const next = event.key === 'ArrowRight' ? (position ?? 0) + 1 : event.key === 'ArrowLeft' ? (position ?? 0) - 1 : event.key === 'Home' ? 0 : event.key === 'End' ? solve.moves.length : null; if (next !== null) { event.preventDefault(); if (seekMove) seekMove(Math.max(0, Math.min(next, solve.moves.length))); else seek(next <= 0 ? -1 : solve.moves[Math.min(next, solve.moves.length) - 1].elapsed); } }}>
       {segments.map(({ name, i, phase, start, end }) => <span key={`${i}-${phase}`} className={`trail-segment ${phase}`} data-step={i} data-phase={phase} data-start={start} data-end={end} role="img" aria-label={`${name} ${phase}: ${formatTime(end - start, precision)}s`} title={`${name} ${phase}: ${formatTime(end - start, precision)}s`} style={{ left: `${start / scale * 100}%`, width: `${(end - start) / scale * 100}%`, backgroundColor: colors[i] }} />)}
       {solve.status === 'active' && <span className="trail-tip" aria-hidden="true" style={{ left: `${time / scale * 100}%` }} />}
+      {seek && <span className="trail-tip" aria-hidden="true" style={{ left: `${(cursor ?? (position ? solve.moves[position - 1].elapsed : 0)) / scale * 100}%` }} />}
     </div>
-    {annotations([1, 2, 3, 4].map(annotation), true)}
+    {cfop && annotations([1, 2, 3, 4].map(annotation), true)}
     <div className="d-flex justify-content-between small text-secondary"><span>0s</span><span>{formatTime(scale, precision)}s</span></div>
   </div>;
 }

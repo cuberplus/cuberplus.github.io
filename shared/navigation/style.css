@@ -1,5 +1,16 @@
 @import './theme.css';
 
+:is(dialog, .modal, .offcanvas) .btn-close { flex-shrink: 0; width: 1rem; height: 1rem; padding: .5rem; font-size: 16px; background-size: 1rem 1rem; box-sizing: content-box; }
+:is(dialog, .modal, .offcanvas) .btn-close:focus-visible { outline: 2px solid var(--cp-accent); outline-offset: 2px; }
+html:not([data-theme="light"]) .btn-close { filter: invert(1) grayscale(100%) brightness(200%); }
+.case-dialog .cuberplus-page { min-height: 0; }
+.case-dialog .database-main { padding: 0 !important; }
+.case-dialog .cuberplus-page { background: transparent; }
+.case-dialog .database-group { margin: 0; border: 0; background: transparent; box-shadow: none; }
+.case-dialog .database-group > summary { display: none; }
+.case-dialog .database-group-content { padding: 0; }
+.case-dialog .database-case { border: 0; padding: 0; }
+
 .cuberplus-page { display: flex; flex-direction: column; min-height: 100vh; }
 .cuberplus-footer { flex-shrink: 0; margin-top: auto; padding: 24px; background: color-mix(in srgb, var(--cp-bg) 75%, transparent); color: var(--cp-muted); text-align: center; font: 400 13px/20px var(--cp-font); }
 

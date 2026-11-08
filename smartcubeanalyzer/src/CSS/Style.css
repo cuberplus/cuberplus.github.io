@@ -27,7 +27,6 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--cp-font); }
   .chart-card-expanded .chart-card-scroll > * { position: static; height: auto; overflow: visible !important; }
 }
 .alert-heading { font-weight: 650; font-size: 20px; }
-.btn-close { background-size: 25%; }
 .btn-close:focus { outline: 0; box-shadow: none; }
 .header { z-index: 997; }
 .dashboard .info-card { padding-bottom: 10px; }

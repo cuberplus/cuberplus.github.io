@@ -98,6 +98,11 @@ async function click(name: string) {
   expect(button).toBeDefined(); expect(button!.disabled).toBe(false);
   await act(async () => button!.click());
 }
+async function enableExtraTurnPenalty() {
+  await click('Options');
+  await act(async () => container.querySelector<HTMLInputElement>('input[aria-describedby="over-turn-penalty-help"]')!.click());
+  await click('Close options');
+}
 function move(notation: string, hostTime: number, serial?: number) {
   jest.mocked(performance.now).mockReturnValue(hostTime);
   physicalFacelets = cube.facelets(cube.parse(physicalFacelets).applyMove(notation)); physicalSerial = serial;
@@ -331,6 +336,7 @@ test('failed retry setup restores the previous session and leaves the original u
 });
 
 test('a late over-turn update to an older retries solve does not complete the new retry', async () => {
+  await enableExtraTurnPenalty();
   await chooseSession('Retries');
   await finishFirst();
   const original = save.mock.calls.at(-1)![0][0];
@@ -683,6 +689,7 @@ test('blocked storage keeps long-average PBs daily by default but still allows s
 
 test.each([1000, 3000])('penalty updates are included before comparing a solve against a %s ms PB', async previous => {
   await timedApp([historySolve(1, previous, 2)]);
+  await enableExtraTurnPenalty();
   await finishFirst();
   await act(async () => move('F', 1000));
   await act(async () => jest.advanceTimersByTime(501));
@@ -1015,7 +1022,7 @@ test('scramble leads the timer card and cube-state controls follow the timing sp
   expect(container.querySelector('main > section')).toBe(panel);
   expect(panel.firstElementChild).toBe(container.querySelector('[aria-label="Scramble"]'));
   await finishFirst();
-  const timeline = panel.querySelector('[aria-label="Solve timeline"]')!;
+  const timeline = panel.querySelector('[aria-label="View most recent solve"]')!;
   expect(timeline).not.toBeNull();
   for (const label of ['Read cube state', 'Cube is physically solved - calibrate']) {
     const button = Array.from(panel.querySelectorAll('button')).find(button => button.textContent === label)!;
@@ -1600,7 +1607,7 @@ test('hiding distracting visuals defaults off, persists, and does not change sol
   expect(container.querySelector('[aria-label="Solving"]')).toBeNull();
   expect(container.querySelector('[aria-label="Solve time"]')!.textContent).toBe('0.60');
   expect(container.querySelector('.timer-panel [role="img"]')!.getAttribute('data-facelets')).toBe(SOLVED);
-  expect(container.querySelector('[aria-label="Solve timeline"]')).not.toBeNull();
+  expect(container.querySelector('[aria-label="View most recent solve"]')).not.toBeNull();
   const solve = save.mock.calls.flatMap(([solves]) => solves).at(-1)!;
   expect(solve.status).toBe('complete');
   expect(solve.duration).toBe(600);
@@ -1617,8 +1624,9 @@ test('hiding distracting visuals defaults off, persists, and does not change sol
 
 test.each(['Timer', 'Cube', 'Progress bar'])('the %s submenu toggle hides only that component and remembers a mixed selection', async name => {
   await click('Options');
-  const submenu = container.querySelector('details')!;
-  expect(submenu.querySelector('summary')!.textContent).toBe('Hide distracting visuals');
+  const submenu = container.querySelector('#hide-visuals-title')!.closest('details')!;
+  expect(submenu.querySelector('#hide-visuals-title')!.textContent).toBe('Hide distracting visuals');
+  expect(submenu.querySelector('summary button')).not.toBeNull();
   const setting = Array.from(submenu.querySelectorAll('label')).find(label => label.textContent === name)!.querySelector<HTMLInputElement>('input')!;
   const all = submenu.querySelector<HTMLInputElement>('input[aria-describedby="hide-visuals-help"]')!;
   await act(async () => setting.click());
@@ -1648,7 +1656,7 @@ test.each(['Timer', 'Cube', 'Progress bar'])('the %s submenu toggle hides only t
 test.each(['true', 'false', '{"timer":true,"cube":"true","progressBar":false}', '{'])('loads legacy or partial visual preferences safely: %s', async stored => {
   localStorage.setItem('timer-hide-distracting-visuals', stored);
   await showHistory([]);
-  const fields = Array.from(container.querySelectorAll<HTMLInputElement>('details input'));
+  const fields = Array.from(container.querySelector('#hide-visuals-title')!.closest('details')!.querySelectorAll<HTMLInputElement>('input'));
   expect(fields.map(field => field.checked)).toEqual(stored === 'true' ? [true, true, true, true] : stored.startsWith('{"') ? [false, true, false, false] : [false, false, false, false]);
   expect(fields[0].indeterminate).toBe(stored.startsWith('{"'));
 });
@@ -1684,7 +1692,7 @@ test('hide all can be toggled during a solve, including a mixed selection, and a
   expect(container.querySelector('[aria-label="Solving"]')).toBeNull();
   expect(container.querySelector('[aria-label="Solve time"]')).not.toBeNull();
   expect(container.querySelector('.timer-panel [role="img"]')).not.toBeNull();
-  expect(container.querySelector('[aria-label="Solve timeline"]')).not.toBeNull();
+  expect(container.querySelector('[aria-label="View most recent solve"]')).not.toBeNull();
   expect(save.mock.calls.flatMap(([solves]) => solves).at(-1)?.status).toBe('incomplete');
 });
 
@@ -1761,6 +1769,7 @@ test('a blocked preference save does not prevent switching display precision', a
 });
 
 test('automatically advances, preserves the last time, and replays buffered moves with their original host timing', async () => {
+  await enableExtraTurnPenalty();
   await finishFirst();
   expect(container.querySelector('.timer-panel [role="img"]')).not.toBeNull();
   expect(container.textContent).not.toContain('Next scramble');
@@ -1782,6 +1791,7 @@ test('automatically advances, preserves the last time, and replays buffered move
 });
 
 test('disconnect cancels pending advancement and discards buffered events', async () => {
+  await enableExtraTurnPenalty();
   await finishFirst();
   await act(async () => move('F', 1000));
   await click('Disconnect');
@@ -1793,6 +1803,7 @@ test('disconnect cancels pending advancement and discards buffered events', asyn
 });
 
 test.each([100, 500, 501])('an extra turn after %s ms updates the timer and history immediately, even during preparation', async delay => {
+  await enableExtraTurnPenalty();
   await finishFirst();
   await act(async () => move('F', 900 + delay));
   const penalty = delay <= 500;
@@ -1830,14 +1841,16 @@ test.each(['Abort solve', 'Disconnect', 'snapshot mismatch'])('%s displays red D
   expect(container.querySelector('[aria-label="Solve history"]')?.textContent).not.toMatch(/solve aborted|solve interrupted/);
 });
 
-test('extra-turn penalties default enabled, can be disabled immediately, and remember the preference', async () => {
+test('extra-turn penalties default disabled, apply no penalty, and remember a disabled preference', async () => {
   await finishFirst();
   await click('Options');
   const setting = container.querySelector<HTMLInputElement>('input[aria-describedby="over-turn-penalty-help"]')!;
-  expect(setting.checked).toBe(true);
+  expect(setting.checked).toBe(false);
+  await act(async () => move('F', 1000));
+  expect(save.mock.calls.at(-1)![0][0].penalty).toBeUndefined();
+  await act(async () => setting.click());
   await act(async () => setting.click());
   expect(localStorage.getItem('timer-over-turn-penalty')).toBe('false');
-  await act(async () => move('F', 1000));
   expect(container.querySelector('.timer-display .solve-penalty')).toBeNull();
   expect(save.mock.calls.at(-1)![0][0].penalty).toBeUndefined();
   await act(async () => resolveNext('F L2'));
@@ -1862,18 +1875,28 @@ test('a stored disabled penalty preference can be enabled again without changing
   expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ penalty: 2000, penaltyReason: 'over-turn' });
 });
 
-test('blocked preference storage defaults penalties on and still permits disabling them', async () => {
+test('a stored enabled penalty preference is preserved despite the disabled default', async () => {
+  localStorage.setItem('timer-over-turn-penalty', 'true');
+  await showHistory([]);
+  await click('Options');
+  expect(container.querySelector<HTMLInputElement>('input[aria-describedby="over-turn-penalty-help"]')!.checked).toBe(true);
+  await finishFirst();
+  await act(async () => move('F', 1000));
+  expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ penalty: 2000, penaltyReason: 'over-turn' });
+});
+
+test('blocked preference storage defaults penalties off and still permits enabling them', async () => {
   jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Blocked'); });
   jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Blocked'); });
   await showHistory([]);
   await finishFirst();
   await click('Options');
   const setting = container.querySelector<HTMLInputElement>('input[aria-describedby="over-turn-penalty-help"]')!;
-  expect(setting.checked).toBe(true);
+  expect(setting.checked).toBe(false);
   await act(async () => setting.click());
   expect(container.querySelector('.options-dialog')?.textContent).toContain('Penalty preference changed');
   await act(async () => move('F', 1000));
-  expect(save.mock.calls.at(-1)![0][0].penalty).toBeUndefined();
+  expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ penalty: 2000, penaltyReason: 'over-turn' });
 });
 
 test('restored history sorts by penalized totals and displays DNF instead of +2 for invalid attempts', async () => {
