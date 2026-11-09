@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { backupNow, cloudState, configureCloud, connectCloud, disconnectCloud, dismissCloudMessage, initializeCloud, restoreNow, subscribeCloud } from './backup';
 import { providerNames, type Provider } from './providers';
-import { InfoTip } from '../../timer/src/InfoTip';
+import { InfoTip } from '../../shared/Components/InfoTip';
 
 function useCloud() {
   const [state, setState] = useState(cloudState);

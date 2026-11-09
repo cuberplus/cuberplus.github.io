@@ -37,5 +37,5 @@ finishing. Refresh only the tools requested; preserve other approved previews.
   computation and animations to finish.
 
 Do not generate these two previews from the small fixtures in
-`scripts/check-solve-workflows.mjs`. Its screenshot mode is only suitable for
+`tests/browser/check-solve-workflows.mjs`. Its screenshot mode is only suitable for
 Scrambler and Database.

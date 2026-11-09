@@ -1,15 +1,15 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type TouchEvent } from 'react';
 import { links, PageLocation, PageVisible, SettingsProvider, type Tool } from '@cuberplus/navigation';
-import { useInstall } from './pwa';
+import { useInstall } from './pwa/pwa';
 import { CloudNotice } from './cloud/CloudOptions';
 
 const pages = {
-  home: lazy(() => import('./Components/App')),
+  home: lazy(() => import('./Pages/Home/Home')),
   timer: lazy(() => import('../timer/src/App')),
   smartcubeanalyzer: lazy(() => import('../smartcubeanalyzer/src/Components/App')),
   scrambler: lazy(() => import('../scrambler/src/Components/App')),
   database: lazy(() => import('./database/Database')),
-  options: lazy(() => import('./Options')),
+  options: lazy(() => import('./Pages/Options/Options')),
 };
 export function toolAt(path: string): Tool | null {
   const name = path.replace(/\/index\.html$/, '/').replace(/^\/|\/$/g, '') || 'home';

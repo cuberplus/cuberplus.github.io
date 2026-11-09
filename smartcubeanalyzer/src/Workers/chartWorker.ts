@@ -1,12 +1,12 @@
 import { calculateMovingAverage, calculateMovingPercentage, calculateMovingAverageChopped, makeLabels, reduceDataset } from '../Helpers/MathHelpers';
-import { buildRunningAverageData, buildRunningStdDevData, buildRunningTpsData, buildRunningInspectionData, buildRunningTurnsData, buildRunningRecognitionExecution, buildHistogramData, buildGoodBadData, buildRunningColorPercentages, buildFirstPairPercentages, buildStepPercentages, buildOllCategoryChart, buildPllCategoryChart, buildInspectionData, shouldShowInspectionCharts, buildTypicalCompare, fastestByDay, buildMovingLineChart } from '../Helpers/ChartDataBuilders';
-import { applyPaletteToChartData, SEGMENT_COLORS } from '../Helpers/ChartColors';
-import { analyzeStepMoves, computeCaseFailureStats, computeSolveEfficiency } from '../Helpers/MoveAnalysis';
-import { getAufMovesForSolve } from '../Helpers/CsvParser';
-import { summarizeMistakes } from '../Helpers/MistakeAnalysis';
-import { Const } from '../Helpers/Constants';
-import { AlgoPracticeRow, CaseStats, ChartDataBundle, FastestSolve, LabelledChart, getStep, MethodName, RecordRow, Solve, StepName, StreakRow } from '../Helpers/Types';
-import { calendarDay, streakWindows } from '../../../shared/streaks';
+import { buildRunningAverageData, buildRunningStdDevData, buildRunningTpsData, buildRunningInspectionData, buildRunningTurnsData, buildRunningRecognitionExecution, buildHistogramData, buildGoodBadData, buildRunningColorPercentages, buildFirstPairPercentages, buildStepPercentages, buildOllCategoryChart, buildPllCategoryChart, buildInspectionData, shouldShowInspectionCharts, buildTypicalCompare, fastestByDay, buildMovingLineChart } from '../Charts/ChartDataBuilders';
+import { applyPaletteToChartData, SEGMENT_COLORS } from '../Charts/ChartColors';
+import { analyzeStepMoves, computeCaseFailureStats, computeSolveEfficiency } from '../Analysis/MoveAnalysis';
+import { getAufMovesForSolve } from '../Data/CsvParser';
+import { summarizeMistakes } from '../Analysis/MistakeAnalysis';
+import { Const } from '../Models/Constants';
+import { AlgoPracticeRow, CaseStats, ChartDataBundle, FastestSolve, LabelledChart, caseCategory, caseSteps, getStep, MethodName, RecordRow, Solve, StepName, StreakRow } from '../Models/Types';
+import { calendarDay, streakWindows } from '../../../shared/statistics/streaks';
 
 export interface WorkerInput {
     requestId: number;
@@ -112,14 +112,11 @@ export function buildRunningEfficiencyData(
     const needPll = methodName === MethodName.CFOP || methodName === MethodName.CFOP_2OLL;
     const allStepsSelected = steps.length === Const.MethodSteps[methodName].length;
 
-    const ollMap = needOll
-        ? new Map(computeCaseFailureStats(solves, StepName.OLL).map((s: CaseStats) => [s.caseName, s]))
-        : undefined;
-    const pllMap = needPll
-        ? new Map(computeCaseFailureStats(solves, StepName.PLL).map((s: CaseStats) => [s.caseName, s]))
-        : undefined;
+    const caseMap = (needed: boolean, step: StepName) => needed
+        ? new Map(computeCaseFailureStats(solves, step).map(stats => [stats.caseName, stats])) : undefined;
 
-    const effList = solves.map((solve: Solve) => computeSolveEfficiency(solve, ollMap, pllMap));
+    const ollMap = caseMap(needOll, StepName.OLL), pllMap = caseMap(needPll, StepName.PLL);
+    const effList = solves.map(solve => computeSolveEfficiency(solve, ollMap, pllMap));
     const efficiencies = effList.map(e => e.moveEfficiency * 100);
 
     let movingAvg = calculateMovingAverage(efficiencies, windowSize);
@@ -131,15 +128,14 @@ export function buildRunningEfficiencyData(
     ];
 
     if (allStepsSelected && (needOll || needPll)) {
-        const ollRate = needOll
-            ? reduceDataset(calculateMovingPercentage(effList, windowSize, e => e.hadOllFailure), pointsPerGraph)
-            : movingAvg.map(() => 0);
-        const pllRate = needPll
-            ? reduceDataset(calculateMovingPercentage(effList, windowSize, e => e.hadPllFailure), pointsPerGraph)
-            : movingAvg.map(() => 0);
-        datasets.push({ label: 'Solve efficiency', data: movingAvg.map((eff, i) => eff - ollRate[i] - pllRate[i]) });
-        if (needOll) datasets.push({ label: `OLL success % (last ${windowSize})`, data: ollRate.map(r => 100 - r) });
-        if (needPll) datasets.push({ label: `PLL success % (last ${windowSize})`, data: pllRate.map(r => 100 - r) });
+        const failures = [
+            { name: 'OLL', needed: needOll, failed: (e: typeof effList[number]) => e.hadOllFailure },
+            { name: 'PLL', needed: needPll, failed: (e: typeof effList[number]) => e.hadPllFailure },
+        ].filter(stage => stage.needed).map(stage => ({
+            ...stage, rates: reduceDataset(calculateMovingPercentage(effList, windowSize, stage.failed), pointsPerGraph),
+        }));
+        datasets.push({ label: 'Solve efficiency', data: movingAvg.map((eff, i) => eff - failures.reduce((sum, stage) => sum + stage.rates[i], 0)) });
+        datasets.push(...failures.map(stage => ({ label: `${stage.name} success % (last ${windowSize})`, data: stage.rates.map(rate => 100 - rate) })));
     }
 
     return { labels, datasets };
@@ -148,84 +144,50 @@ export function buildRunningEfficiencyData(
 // ── Case data (OLL/PLL single-step) ──────────────────────────────────────────
 
 export function buildCaseData(solves: Solve[], steps: StepName[], windowSize: number, use4SegmentTiming: boolean) {
-    const colors = SEGMENT_COLORS;
-    if (steps.length !== 1 || (steps[0] !== StepName.OLL && steps[0] !== StepName.PLL)) {
-        return { labels: [], datasets: [] };
+    const category = caseCategory(steps);
+    if (!category) return { labels: [], datasets: [] };
+    type Totals = { label: string; count: number; recognition: number; execution: number; preAuf: number; postAuf: number };
+    const totals = new Map<string, Totals>();
+    for (const solve of solves.slice(-windowSize)) for (const step of caseSteps(solve, category)) {
+        if (!step.case || step.case === 'Solved') continue;
+        const row = totals.get(step.case) ?? { label: step.case, count: 0, recognition: 0, execution: 0, preAuf: 0, postAuf: 0 };
+        row.count++; row.recognition += step.recognitionTime;
+        row.execution += Math.max(0, step.executionTime - step.preAufTime - step.postAufTime);
+        row.preAuf += step.preAufTime; row.postAuf += step.postAufTime;
+        totals.set(step.case, row);
     }
-    const recentSolves = solves.slice(-windowSize);
-    const failureStatsArr = computeCaseFailureStats(recentSolves, steps[0]);
-    const failureMap: { [k: string]: CaseStats } = {};
-    failureStatsArr.forEach((cs: CaseStats) => { failureMap[cs.caseName] = cs; });
-
-    type CaseRow = { recognitionTime: number; executionTime: number; preAufTime: number; postAufTime: number; turns: number };
-    const caseTimes: { [id: string]: CaseRow[] } = {};
-    for (const s of recentSolves) {
-        const step = getStep(s, steps[0]);
-        if (!step?.case) continue;
-        if (!(step.case in caseTimes)) caseTimes[step.case] = [];
-        caseTimes[step.case].push({
-            recognitionTime: s.recognitionTime,
-            executionTime: s.executionTime - s.preAufTime - s.postAufTime,
-            preAufTime: s.preAufTime,
-            postAufTime: s.postAufTime,
-            turns: step.turns,
-        });
-    }
-
-    type CaseAgg = { label: string; recognitionTime: number; executionTime: number; preAufTime: number; postAufTime: number; avgMoves: number; failureRate: number };
-    const cases: CaseAgg[] = [];
-    for (const key in caseTimes) {
-        const rows = caseTimes[key];
-        const fs = failureMap[key];
-        cases.push({
-            label: key,
-            recognitionTime: rows.reduce((a, r) => a + r.recognitionTime, 0) / rows.length,
-            executionTime: rows.reduce((a, r) => a + r.executionTime, 0) / rows.length,
-            preAufTime: rows.reduce((a, r) => a + r.preAufTime, 0) / rows.length,
-            postAufTime: rows.reduce((a, r) => a + r.postAufTime, 0) / rows.length,
-            avgMoves: rows.reduce((a, r) => a + r.turns, 0) / rows.length,
-            failureRate: fs ? fs.failureRate : 0,
-        });
-    }
-    cases.sort((a, b) =>
-        (b.recognitionTime + b.preAufTime + b.executionTime + b.postAufTime) -
-        (a.recognitionTime + a.preAufTime + a.executionTime + a.postAufTime)
-    );
-
+    const cases = [...totals.values()].map(row => ({ ...row, recognition: row.recognition / row.count, execution: row.execution / row.count, preAuf: row.preAuf / row.count, postAuf: row.postAuf / row.count }));
+    cases.sort((a, b) => b.recognition + b.execution + b.preAuf + b.postAuf - a.recognition - a.execution - a.preAuf - a.postAuf);
+    if (category === StepName.F2L) cases.splice(20);
     const labels = cases.map(x => x.label);
-    if (use4SegmentTiming) {
-        const hasPreAuf = cases.some(x => x.preAufTime > 0);
-        const hasPostAuf = cases.some(x => x.postAufTime > 0);
-        const datasets: { label: string; data: number[]; backgroundColor: string }[] = [];
-        datasets.push({ label: `Recognition (past ${windowSize})`, data: cases.map(x => x.recognitionTime), backgroundColor: colors.recognition });
-        if (hasPreAuf) datasets.push({ label: `Pre-AUF (past ${windowSize})`, data: cases.map(x => x.preAufTime), backgroundColor: colors.preAuf });
-        datasets.push({ label: `Execution (past ${windowSize})`, data: cases.map(x => x.executionTime), backgroundColor: colors.execution });
-        if (hasPostAuf) datasets.push({ label: `Post-AUF (past ${windowSize})`, data: cases.map(x => x.postAufTime), backgroundColor: colors.postAuf });
-        return { labels, datasets };
-    }
-    return {
-        labels,
-        datasets: [
-            { label: `Average recognition time for each case in past ${windowSize} solves`, data: cases.map(x => x.recognitionTime), backgroundColor: colors.recognition },
-            { label: `Average execution time for each case in past ${windowSize} solves`, data: cases.map(x => x.preAufTime + x.executionTime + x.postAufTime), backgroundColor: colors.execution },
-        ],
-    };
+    const dataset = (label: string, key: 'recognition' | 'execution' | 'preAuf' | 'postAuf', combined = false) => ({
+        label, data: cases.map(row => row[key] + (combined ? row.preAuf + row.postAuf : 0)), backgroundColor: SEGMENT_COLORS[key],
+    });
+    const datasets = use4SegmentTiming ? [
+        dataset(`Recognition (past ${windowSize})`, 'recognition'),
+        ...(cases.some(row => row.preAuf > 0) ? [dataset(`Pre-AUF (past ${windowSize})`, 'preAuf')] : []),
+        dataset(`Execution (past ${windowSize})`, 'execution'),
+        ...(cases.some(row => row.postAuf > 0) ? [dataset(`Post-AUF (past ${windowSize})`, 'postAuf')] : []),
+    ] : [
+        dataset(`Average recognition time for each case in past ${windowSize} solves`, 'recognition'),
+        dataset(`Average execution time for each case in past ${windowSize} solves`, 'execution', true),
+    ];
+    return { labels, datasets };
 }
 
 export function buildAlgorithmPracticeRows(solves: Solve[], steps: StepName[], windowSize: number, precision = 3): AlgoPracticeRow[] {
-    if (steps.length !== 1 || (steps[0] !== StepName.OLL && steps[0] !== StepName.PLL)) {
-        return [];
+    const category = caseCategory(steps);
+    if (!category) return [];
+    const recentSolves = solves.slice(-windowSize), grouped = new Map<string, { time: number; wasted: number; count: number }>();
+    for (const solve of recentSolves) for (const step of caseSteps(solve, category)) {
+        const row = grouped.get(step.case) ?? { time: 0, wasted: 0, count: 0 };
+        row.time += step.time; row.wasted += analyzeStepMoves(step.moves, getAufMovesForSolve(solve)).wastedMoves; row.count++;
+        grouped.set(step.case, row);
     }
-    const recentSolves = solves.slice(-windowSize);
-    const caseStats = computeCaseFailureStats(recentSolves, steps[0]);
+    const caseStats = computeCaseFailureStats(recentSolves, category);
+    if (category === StepName.F2L) caseStats.splice(20);
     return caseStats.map((cs: CaseStats) => {
-        const matchingSolves = recentSolves.filter((s: Solve) => getStep(s, steps[0])?.case === cs.caseName);
-        const avgTime = matchingSolves.length > 0
-            ? matchingSolves.reduce((sum: number, s: Solve) => sum + (getStep(s, steps[0])?.time ?? 0), 0) / matchingSolves.length
-            : 0;
-        const avgWasted = matchingSolves.length > 0
-            ? matchingSolves.reduce((sum: number, s: Solve) => sum + analyzeStepMoves(getStep(s, steps[0])?.moves ?? '', getAufMovesForSolve(s)).wastedMoves, 0) / matchingSolves.length
-            : 0;
+        const { time, wasted, count } = grouped.get(cs.caseName)!;
         return {
             case: cs.caseName,
             total: cs.totalCount,
@@ -233,8 +195,8 @@ export function buildAlgorithmPracticeRows(solves: Solve[], steps: StepName[], w
             failureRate: cs.failureRate.toFixed(1) + '%',
             avgMoves: cs.avgMoves.toFixed(1),
             expectedMoves: cs.expectedMovesBase,
-            avgWasted: avgWasted.toFixed(1),
-            avgTime: avgTime.toFixed(precision),
+            avgWasted: (wasted / count).toFixed(1),
+            avgTime: (time / count).toFixed(precision),
         };
     });
 }
@@ -242,19 +204,11 @@ export function buildAlgorithmPracticeRows(solves: Solve[], steps: StepName[], w
 // ── Best solves ───────────────────────────────────────────────────────────────
 
 export function computeBestSolvesData(solves: Solve[], precision = 3): FastestSolve[] {
-    return solves
-        .slice()
-        .sort((a, b) => a.time - b.time)
-        .slice(0, Const.FastestSolvesCount)
-        .map(x => ({
-            date: x.date.toDateString(),
-            time: x.time.toFixed(precision),
-            scramble: x.scramble,
-            id: x.id,
-            fullstep: x.isFullStep ? 'Yes 🔥' : 'No',
-            source: x.source,
-            rawSourceId: x.rawSourceId,
-        } as FastestSolve));
+    return solves.slice().sort((a, b) => a.time - b.time).slice(0, Const.FastestSolvesCount).map(solve => ({
+        date: solve.date.toDateString(), time: solve.time.toFixed(precision),
+        scramble: solve.scramble, id: solve.id, fullstep: solve.isFullStep ? 'Yes 🔥' : 'No',
+        source: solve.source, rawSourceId: solve.rawSourceId,
+    }));
 }
 
 // ── Main computation ──────────────────────────────────────────────────────────
@@ -308,7 +262,7 @@ export function computeAllChartData(input: WorkerInput): ChartDataBundle {
 
     if (hasOll) cache.ollCategory = paintRolling(buildOllCategoryChart(solves, windowSize, pointsPerGraph));
     if (hasPll) cache.pllCategory = paintRolling(buildPllCategoryChart(solves, windowSize, pointsPerGraph));
-    if (steps.length === 1 && (steps[0] === StepName.OLL || steps[0] === StepName.PLL)) {
+    if (caseCategory(steps)) {
         cache.caseData = paint(buildCaseData(solves, steps, windowSize, use4SegmentTiming));
         cache.algoPracticeRows = buildAlgorithmPracticeRows(solves, steps, windowSize, input.precision);
     }

@@ -4,15 +4,15 @@ import moment from "moment";
 import DatePicker from "react-datepicker";
 import Select from "react-select";
 import { MultiSelect } from "react-multi-select-component";
-import { CrossColor, FilterPanelProps, FilterPanelState, Filters, getStep, KeysOfType, MethodName, Option, OptionGroup, Solve, SolveCleanliness, SolveLuckiness, Step, StepName } from "../Helpers/Types";
+import { CrossColor, FilterPanelProps, FilterPanelState, Filters, getStep, KeysOfType, MethodName, Option, OptionGroup, Solve, SolveCleanliness, SolveLuckiness, Step, StepName } from "../Models/Types";
 import { ChartPanel } from "./ChartPanel";
 import { GroupedMultiSelect } from "./GroupedMultiSelect";
 import { calculateMovingAverage, calculateMovingStdDev } from "../Helpers/MathHelpers";
-import { markMistakes } from "../Helpers/MistakeAnalysis";
+import { markMistakes } from "../Analysis/MistakeAnalysis";
 import { FormControl, Card, Row, Offcanvas, Col, Button, Tooltip, OverlayTrigger, Alert, Container, Spinner } from 'react-bootstrap';
-import { Const } from "../Helpers/Constants";
+import { Const } from "../Models/Constants";
 import { CalculateAllSessionOptions, CalculateBenchmarkTimes, CalculateWindowSize } from "../Helpers/CubeHelpers";
-import { APP_VERSION } from "../Helpers/Version";
+import { APP_VERSION } from "../Models/Version";
 import ReactSwitch from "react-switch";
 import { PageVisible } from '@cuberplus/navigation';
 
@@ -37,7 +37,7 @@ const COLOR_OPTIONS: Option<CrossColor>[] =
     [CrossColor.White, CrossColor.Yellow, CrossColor.Red, CrossColor.Orange, CrossColor.Blue, CrossColor.Green, CrossColor.Unknown]
         .map(x => ({ label: x, value: x }));
 
-const SOURCE_OPTIONS: Option<Solve['source']>[] = [{ label: 'Cubeast', value: 'cubeast' }, { label: 'Acubemy', value: 'acubemy' }, { label: 'CuberPlus', value: 'timer' }];
+const SOURCE_OPTIONS: Option<Solve['source']>[] = [{ label: 'CuberPlus', value: 'timer' }, { label: 'Cubeast', value: 'cubeast' }, { label: 'Acubemy', value: 'acubemy' }];
 
 // Closing the test-data warning sticks across visits, the same way the theme toggle does.
 // The version is stored rather than a flag, so a release re-announces itself once.
@@ -685,7 +685,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                     <Row className="mt-3">
                         <Alert show={this.state.showTestAlert} variant={"warning"}>
                             <Alert.Heading>Warning: Viewing Test Data</Alert.Heading>
-                            These are not your solves, these are the dev's personal solves, just to show off the capabilities of this website! To view your solves, click "Display My Stats!" for Timer data, or choose a CSV file to automatically display its stats.
+                            These are the dev's personal solves. To view yours, click "Display My Stats!" for CuberPlus data, or choose a CSV file.
                             <div className="d-flex justify-content-end">
                                 <Button onClick={() => this.hideAlert()} variant="warning">
                                     Close

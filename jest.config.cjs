@@ -8,8 +8,9 @@ const shared = {
     '^react-dom/client$': require.resolve('react-dom/client'),
     '^react/jsx-runtime$': require.resolve('react/jsx-runtime'),
     '^@testing-library/react$': require.resolve('@testing-library/react'),
-    '\\.(css|png|jpe?g|gif|svg)$': '<rootDir>/src/tests/asset.cjs',
-    '^.+/Workers/createChartWorker$': '<rootDir>/smartcubeanalyzer/src/Workers/__mocks__/createChartWorker.ts',
+    '\\.(css|png|jpe?g|gif|svg)$': '<rootDir>/tests/mocks/asset.cjs',
+    '^.+/Workers/createChartWorker$': '<rootDir>/tests/mocks/createChartWorker.ts',
+    '^.+/createDataWorker$': '<rootDir>/tests/mocks/dataWorker.ts',
   },
 };
 const common = {
@@ -18,11 +19,11 @@ const common = {
 };
 module.exports = {
   projects: [
-    { ...common, displayName: 'site', testEnvironment: 'jsdom', testMatch: ['<rootDir>/src/**/*.test.ts?(x)', '<rootDir>/scrambler/src/**/*.test.ts?(x)'] },
-    { ...common, displayName: 'analyzer', testEnvironment: 'node', testMatch: ['<rootDir>/smartcubeanalyzer/src/tests/**/*.test.ts?(x)'] },
+    { ...common, displayName: 'site', testEnvironment: 'jsdom', testMatch: ['<rootDir>/tests/site/**/*.test.ts?(x)', '<rootDir>/tests/scrambler/**/*.test.ts?(x)'] },
+    { ...common, displayName: 'analyzer', testEnvironment: 'node', testMatch: ['<rootDir>/tests/analyzer/**/*.test.ts?(x)'] },
     {
       ...shared, displayName: 'timer', testEnvironment: 'node',
-      testMatch: ['<rootDir>/timer/src/tests/**/*.test.ts'],
+      testMatch: ['<rootDir>/tests/timer/**/*.test.ts'],
       extensionsToTreatAsEsm: ['.ts', '.tsx'],
       transform: { '^.+\\.tsx?$': ['ts-jest', { useESM: true }] },
     },

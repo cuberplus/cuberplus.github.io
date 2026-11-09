@@ -1,9 +1,10 @@
 import React from "react";
 import Navigation from '@cuberplus/navigation';
-import { FileInputProps, FileInputState, MethodName, Solve, StepName } from "../Helpers/Types";
-import { parseCsv } from "../Helpers/CsvParser";
+import { FileInputProps, FileInputState, MethodName, Solve, StepName } from "../Models/Types";
+import { dataTask } from '../../../shared/workers/dataClient';
+import type { DataTask } from '../../../shared/workers/dataTasks';
 import { FilterPanel } from "./FilterPanel";
-import { GetDemoData, DEMO_DATASETS } from "../Helpers/SampleData"
+import { GetDemoData, DEMO_DATASETS } from "../Data/SampleData"
 import { Alert, Button, Form, FormControl, Card, Row, Col, ButtonGroup, Container, Dropdown } from "react-bootstrap";
 import { HelpPanel } from "./HelpPanel";
 import { CalculateMostUsedMethod, CalculateWindowSize, CalculateAllSessionOptions } from "../Helpers/CubeHelpers";
@@ -25,6 +26,9 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
     private filterPanelRef = React.createRef<FilterPanel>();
     private requestId = 0;
     private wasVisible = true;
+    private tasks = new Set<() => void>();
+    private loadedIds = new Set<string>();
+    private mounted = false;
 
     constructor(props: FileInputProps) {
         super(props);
@@ -35,24 +39,36 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
         const id = (event as CustomEvent<string>).detail;
         this.setState(state => ({ solves: state.solves.filter(solve => solve.id !== id || (solve.source !== 'timer' && !solve.id.startsWith(`${solve.source}:`))) }));
     };
-    private refresh = () => this.showTimerData();
-    componentDidMount() { this.wasVisible = this.context !== false; window.addEventListener('timer-solve-deleted', this.removeSolve); window.addEventListener('timer-solves-changed', this.refresh); this.showTimerData(true); }
-    componentDidUpdate() { const visible = this.context !== false, entering = visible && !this.wasVisible; this.wasVisible = visible; if (entering) this.showTimerData(true); }
-    componentWillUnmount() { this.requestId++; window.removeEventListener('timer-solve-deleted', this.removeSolve); window.removeEventListener('timer-solves-changed', this.refresh); }
+    private refresh = () => { void import('../../../timer/src/Data/storage').then(async ({ readSolveIds }) => {
+        const ids = await readSolveIds();
+        if (this.mounted) this.setState({ unloadedCount: ids.filter(id => !this.loadedIds.has(id)).length });
+    }).catch(() => {}); };
+    componentDidMount() { this.mounted = true; this.wasVisible = this.context !== false; window.addEventListener('timer-solve-deleted', this.removeSolve); window.addEventListener('timer-solves-changed', this.refresh); this.showTimerData(true); }
+    componentDidUpdate() { const visible = this.context !== false, entering = visible && !this.wasVisible; this.wasVisible = visible; if (entering) this.refresh(); }
+    componentWillUnmount() { this.mounted = false; this.requestId++; this.tasks.forEach(cancel => cancel()); window.removeEventListener('timer-solve-deleted', this.removeSolve); window.removeEventListener('timer-solves-changed', this.refresh); }
+    private async read(task: DataTask): Promise<Solve[]> {
+        if (!this.mounted) throw new Error('Data loading cancelled.');
+        const { promise, cancel } = dataTask(task); this.tasks.add(cancel);
+        try { const result = await promise; if (!('solves' in result)) throw new Error('Invalid analysis data.'); return result.solves; }
+        finally { this.tasks.delete(cancel); }
+    }
 
-    private async loadData(read: () => Promise<Solve[]>, demo: boolean | (() => boolean) = false) {
+    private async loadData(read: (requestId: number) => Promise<Solve[]>, demo: boolean | (() => boolean) = false) {
         const requestId = ++this.requestId;
+        this.tasks.forEach(cancel => cancel()); this.tasks.clear();
         this.setState({ isParsing: true, loadError: undefined });
         try {
-            const solves = (await read()).sort((a, b) => a.date.getTime() - b.date.getTime());
+            const solves = (await read(requestId)).sort((a, b) => a.date.getTime() - b.date.getTime());
             if (requestId !== this.requestId) return;
             if (!solves.length) throw new Error('No solves found in the selected data source.');
             const method = CalculateMostUsedMethod(solves);
+            this.loadedIds = new Set(solves.map(solve => solve.id));
             this.setState({
                 solves, currentMethod: method, showTestAlert: typeof demo === 'function' ? demo() : demo,
                 suggestedMethod: { label: method, value: method },
                 suggestedSessions: CalculateAllSessionOptions(solves),
                 suggestedWindowSize: CalculateWindowSize(solves.length),
+                unloadedCount: 0,
             });
             ReactGA.event({ category: 'DataLoaded', action: demo ? 'Loaded Test Data' : 'Loaded User Data', value: solves.length });
         } catch (error) {
@@ -65,23 +81,30 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
     showFileData(files: File[]) {
         if (!files.length) return;
         this.setState({ csvFileNames: files.map(file => file.name).join(', ') });
-        void this.loadData(() => Promise.all(files.map(file => file.text().then(csv => parseCsv(csv, ',')))).then(results => results.flat()));
+        void this.loadData(requestId => Promise.all(files.map(async file => {
+            const csv = await file.text();
+            return requestId === this.requestId ? this.read({ type: 'parse', csv }) : [];
+        })).then(results => results.flat()));
     }
 
     showTestData(file?: string) {
-        void this.loadData(() => GetDemoData(file).then(csv => parseCsv(csv, ',')), true);
+        void this.loadData(async requestId => {
+            const csv = await GetDemoData(file, '/smartcubeanalyzer/');
+            return requestId === this.requestId ? this.read({ type: 'parse', csv }) : [];
+        }, true);
     }
 
     showTimerData(auto = false) {
+        if (auto && (this.state.solves.length || this.state.isParsing)) return;
         let demo = false; const requestId = this.requestId + 1;
         void this.loadData(async () => {
-            const { readLocalAnalysis } = await import('../../../timer/src/analyzer-data');
-            const solves = await readLocalAnalysis();
+            const solves = await this.read({ type: 'local' });
             if (requestId !== this.requestId) return [];
-            if (solves.length) return solves;
+            if (solves.length) { this.loadedIds = new Set(solves.map(solve => solve.id)); this.setState({ unloadedCount: 0 }); return solves; }
             if (!auto) throw new Error('No saved CuberPlus solves found. Import CSVs in Options or use Timer, then try again.');
             demo = true;
-            return parseCsv(await GetDemoData(), ',');
+            const csv = await GetDemoData(undefined, '/smartcubeanalyzer/');
+            return requestId === this.requestId ? this.read({ type: 'parse', csv }) : [];
         }, () => demo);
     }
 
@@ -110,6 +133,7 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
                 <HelpPanel showHelpPanel={this.state.showHelpModal} onCloseHandler={() => this.setState({ showHelpModal: false })} />
 
                 <Container className="container-fluid mt-2 mt-md-3">
+                    {!!this.state.unloadedCount && <Alert variant="warning">{this.state.unloadedCount} saved solves are not loaded. Your current data has been kept. <Button variant="outline-primary" disabled={this.state.isParsing} onClick={() => this.showTimerData()}>Load saved solves</Button></Alert>}
                     <Row className="align-items-stretch g-2 g-md-3">
                         <Col lg={6} md={12}>
                             <Card className="info-card h-100">

@@ -1,19 +1,19 @@
 import { useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import Navigation, { Footer, PageLocation, SettingsContext, usePageDialog } from '@cuberplus/navigation';
 import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
-import { BluetoothCube } from './bluetooth';
-import { TimerEngine, inspectionPenalty, solveTime, type Solve } from './engine';
-import { generateScramble, inverse, loadCube, movesOf, simplifyMoves, SOLVED, type Cube } from './puzzle';
-import { averageDetails, backupJSON, cubeastCSV, dailyStreak, deleteSolve, formatTime, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, saveSolves, sessionStats, solveEndDate, turns, validateBackup } from './storage';
-import { AverageDetails } from './AverageDetails';
-import { CubeView } from './CubeView';
-import { Replay } from './Replay';
-import { SolveTimeline } from './SolveTimeline';
-import { SolveMistakes } from './SolveMistakes';
-import { FavoriteOptions } from './FavoriteOptions';
-import { useScreenWakeLock } from './useScreenWakeLock';
-import { InfoTip } from './InfoTip';
-import { SessionPicker } from './SessionPicker';
+import { BluetoothCube } from './Bluetooth/bluetooth';
+import { TimerEngine, inspectionPenalty, solveTime, type Solve } from './Core/engine';
+import { generateScramble, inverse, loadCube, movesOf, simplifyMoves, SOLVED, type Cube } from './Core/puzzle';
+import { averageDetails, backupJSON, cubeastCSV, dailyStreak, deleteSolve, formatTime, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, saveSolves, sessionStats, solveEndDate, turns, validateBackup } from './Data/storage';
+import { AverageDetails } from './Components/AverageDetails';
+import { CubeView } from './Components/CubeView';
+import { Replay } from './Components/Replay';
+import { SolveTimeline } from './Components/SolveTimeline';
+import { SolveMistakes } from './Components/SolveMistakes';
+import { FavoriteOptions } from './Components/FavoriteOptions';
+import { useScreenWakeLock } from './Hooks/useScreenWakeLock';
+import { InfoTip } from '../../shared/Components/InfoTip';
+import { SessionPicker } from './Components/SessionPicker';
 import { noteCloudSolve } from '../../src/cloud/backup';
 
 const errorText = (error: Error): string => error.message || 'The operation failed.';
@@ -83,6 +83,7 @@ export default function App() {
   const generation = useRef(0);
   const preparing = useRef(false);
   const resynchronizing = useRef(false);
+  const calibrating = useRef(false);
   const queued = useRef<{ event: SmartCubeEvent; hostTime: number }[]>([]);
   const mounted = useRef(true);
   const sessionRef = useRef(session);
@@ -272,7 +273,7 @@ export default function App() {
   function cancelPreparation() { generation.current++; preparing.current = false; queued.current = []; setBusy(false); setStatus(''); }
 
   function receive(event: SmartCubeEvent, hostTime = performance.now()) {
-    const timer = engine.current; if (!timer || (event.type === 'FACELETS' && event.source === 'moves')) return;
+    const timer = engine.current; if (!timer || (event.type === 'FACELETS' && (event.source === 'moves' || calibrating.current))) return;
     const turn = event.type === 'MOVE' ? { move: event.move, hostTime, localTimestamp: event.localTimestamp, cubeTimestamp: event.cubeTimestamp, serial: event.serial } : null;
     try {
       if (preparing.current && (event.type === 'MOVE' || event.type === 'FACELETS')) {
@@ -320,10 +321,17 @@ export default function App() {
     engine.current?.disconnect(); finishRetry(); setDemo(false); setBattery(null);
   }
 
-  function calibrate() {
-    const timer = engine.current; if (!timer) return; setError('');
-    try { timer.synchronize(SOLVED); void prepareScramble(); }
+  async function calibrate() {
+    const timer = engine.current; if (!timer || calibrating.current) return; setError('');
+    cancelPreparation(); const token = generation.current;
+    calibrating.current = true; setBusy(true);
+    try {
+      await bluetooth.current.calibrate();
+      if (!mounted.current || token !== generation.current) return;
+      timer.synchronize(SOLVED); await prepareScramble();
+    }
     catch (failure) { setError(failure instanceof Error ? failure.message : 'Calibration failed.'); }
+    finally { calibrating.current = false; if (mounted.current && !preparing.current) setBusy(false); }
   }
 
   function startDemo() { engine.current?.connect('Simulated 3x3'); setDemo(true); calibrate(); }

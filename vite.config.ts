@@ -11,7 +11,7 @@ const scopeStyles: Plugin = {
   postcssPlugin: 'cuberplus-tool-styles',
   Rule(rule) {
     const file = rule.source?.input.file?.replaceAll('\\', '/') ?? '';
-    const tool = file.includes('/scrambler/src/') ? 'scrambler' : file.includes('/smartcubeanalyzer/src/') ? 'smartcubeanalyzer' : file.includes('/src/CSS/App.css') ? 'home' : null;
+    const tool = file.includes('/scrambler/src/') ? 'scrambler' : file.includes('/smartcubeanalyzer/src/') ? 'smartcubeanalyzer' : file.includes('/src/Pages/Home/Style.css') ? 'home' : null;
     if (rule.parent?.type === 'atrule' && /keyframes$/i.test(rule.parent.name)) return;
     if (tool) rule.selectors = rule.selectors.map(selector => {
       const prefix = `:where(.site-page--${tool})`;
@@ -19,7 +19,7 @@ const scopeStyles: Plugin = {
         ? selector.replace(/^(?::root|html|body)/, prefix)
         : `${prefix} ${selector}`;
     });
-    else if (file.endsWith('/timer/src/style.css')) rule.selectors = rule.selectors.map(selector =>
+    else if (file.endsWith('/timer/src/CSS/style.css')) rule.selectors = rule.selectors.map(selector =>
       /^(?::root|body|h[12])$/.test(selector) ? `:where(.site-page--timer) ${selector.replace(/^(?::root|body)$/, '').trim()}`.trim() : selector);
   },
 };
@@ -64,7 +64,7 @@ export default defineConfig(({ mode }) => ({
       const precache = ['/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/favicon.ico', '/smartcubeanalyzer/theme-init.js', '/smartcubeanalyzer/react-data-grid.css', ...assets];
       const version = createHash('sha256');
       for (const file of precache) if (existsSync(resolve(output, `.${file}`))) version.update(readFileSync(resolve(output, `.${file}`)));
-      const { code } = await transformWithEsbuild(readFileSync(resolve(root, 'src', 'service-worker.ts'), 'utf8'), 'service-worker.ts', { loader: 'ts', format: 'iife' });
+      const { code } = await transformWithEsbuild(readFileSync(resolve(root, 'src', 'pwa', 'service-worker.ts'), 'utf8'), 'service-worker.ts', { loader: 'ts', format: 'iife' });
       const worker = code.replace('__CACHE_VERSION__', version.digest('hex').slice(0, 16)).replace('__PRECACHE__', JSON.stringify(precache));
       writeFileSync(resolve(output, 'sw.js'), worker);
     },

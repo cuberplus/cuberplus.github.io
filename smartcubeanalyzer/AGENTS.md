@@ -17,7 +17,7 @@ coverage for line count. Measure before and after:
 **Never bump, commit, push, or deploy without asking the user first.** Wait for
 explicit approval each time, even when the work is finished and green.
 
-Bump `APP_VERSION` in `../shared/navigation/index.js` by hand before every deploy — it
+Bump `APP_VERSION` in `../shared/config/version.ts` by hand before every deploy — it
 is shown at the bottom of the page and is how a release is confirmed live. Then
 commit, push to `master`, and `npm run deploy` (publishes `build/` to
 `gh-pages`, serving https://cuberplus.com/smartcubeanalyzer/).

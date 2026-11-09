@@ -1,0 +1,38 @@
+import { useContext } from 'react';
+import Navigation, { Footer, SettingsContext } from '@cuberplus/navigation';
+import { themeColors, type Theme } from '../../../shared/navigation/settings';
+import { InstallControl } from '../../pwa/pwa';
+import { CloudOptions } from '../../cloud/CloudOptions';
+import { ImportOptions } from './ImportOptions';
+
+export default function Options() {
+  const { theme, setTheme, precision, setPrecision, error } = useContext(SettingsContext);
+  const themes = Object.keys(themeColors) as Theme[];
+  const nextTheme = (offset: number) => setTheme(themes[(themes.indexOf(theme) + offset + themes.length) % themes.length]);
+  return <div className="cuberplus-page">
+    <header className="cuberplus-header"><Navigation current="options" /></header>
+    <main className="container py-4"><section className="card p-4">
+      <h2>Options</h2>
+      <section className="mb-4" aria-label="Theme picker" aria-roledescription="carousel">
+        <h3 className="h6">Theme</h3>
+        <div className="theme-carousel">
+          <button className="btn btn-outline-secondary" aria-label="Previous theme" onClick={() => nextTheme(-1)}>&#10094;</button>
+          <div className="theme-preview" data-theme={theme} role="group" aria-roledescription="slide" aria-label={`${themes.indexOf(theme) + 1} of ${themes.length}`}>
+            <div className="theme-preview-swatches" aria-hidden="true"><i /><i /><i /></div>
+            <strong aria-live="polite">{theme[0].toUpperCase() + theme.slice(1)}</strong>
+            <div className="theme-dots">{themes.map(value => <button key={value} aria-label={`${value[0].toUpperCase() + value.slice(1)} theme`} aria-pressed={value === theme} onClick={() => setTheme(value)} />)}</div>
+          </div>
+          <button className="btn btn-outline-secondary" aria-label="Next theme" onClick={() => nextTheme(1)}>&#10095;</button>
+        </div>
+      </section>
+      <label className="d-block mb-4">Time precision<select aria-label="Time precision" className="form-select mt-2" value={precision} onChange={event => setPrecision(event.target.value === '3' ? 3 : 2)}>
+        <option value="2">Hundredths (0.00)</option><option value="3">Thousandths (0.000)</option>
+      </select></label>
+      <InstallControl />
+      <ImportOptions />
+      <CloudOptions />
+      {error && <p role="alert">{error}</p>}
+    </section></main>
+    <Footer />
+  </div>;
+}

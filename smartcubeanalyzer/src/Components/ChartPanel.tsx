@@ -8,30 +8,34 @@ import {
     DatedPoint,
     FastestSolve,
     getStep,
+    caseCategory,
+    caseSteps,
     LabelledChart,
     MethodName,
     Solve,
     StepName,
     OllEdgeOrientation,
     PllCornerPermutation,
-} from "../Helpers/Types";
+} from "../Models/Types";
 import { Chart as ChartJS, CategoryScale, ActiveElement, ChartData, ChartEvent } from 'chart.js/auto';
-import { createOptions, buildChartHtml, databaseCaseUrl, withCaseTooltip } from "../Helpers/ChartHelpers";
+import { createOptions, buildChartHtml, databaseCaseUrl, withCaseTooltip } from "../Charts/ChartHelpers";
 import { Row, Spinner } from "react-bootstrap";
 import { ThemeContext } from "../contexts/ThemeContext";
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
-import { Const } from "../Helpers/Constants";
+import { Const } from "../Models/Constants";
 import DataGrid, { CellClickArgs, Column, RenderCellProps, SortColumn } from 'react-data-grid';
 import 'chartjs-adapter-moment';
 import { createChartWorker } from '../Workers/createChartWorker';
 import { MistakeChart } from './MistakeChart';
-import { Mistake, mistakeKey, mistakeLabel, mistakeWindow } from '../Helpers/MistakeAnalysis';
+import { Mistake, mistakeKey, mistakeLabel, mistakeWindow } from '../Analysis/MistakeAnalysis';
 import { AverageModal } from './AverageModal';
 import { splitIntoChunks } from '../Helpers/MathHelpers';
-import { fastestByDay, streakSolves } from '../Helpers/ChartDataBuilders';
+import { fastestByDay, streakSolves } from '../Charts/ChartDataBuilders';
 import type { WorkerOutput } from '../Workers/chartWorker';
+import { CaseModal } from '../../../src/database/CaseModal';
+import { CaseThumbnail } from '../../../src/database/CaseThumbnail';
 
-const TimerReplay = React.lazy(() => import('../../../timer/src/analyzer-replay'));
+const TimerReplay = React.lazy(() => import('../../../timer/src/Components/analyzer-replay'));
 
 ChartJS.register(CategoryScale);
 
@@ -73,23 +77,24 @@ const ALGO_STAT_COLS = [
 ];
 
 /** Keep column identity stable to preserve the grid's layout and virtualisation. */
-export function algoCols(step: StepName): Column<AlgoPracticeRow>[] {
+export function algoCols(step: StepName, openCase: (key: string) => void = () => {}): Column<AlgoPracticeRow>[] {
     return [
         {
             key: 'case',
             name: 'Case',
+            minWidth: 130,
             renderCell: ({ row }: RenderCellProps<AlgoPracticeRow>) => {
                 const url = databaseCaseUrl(step, row.case);
                 return url === null ? row.case :
-                    <a className="algo-case-link" href={url} target="_blank" rel="noopener noreferrer">{row.case}</a>;
+                    <button type="button" aria-label={row.case} className="algo-case-link btn btn-link p-0" onClick={() => openCase(url.split('#')[1])}>
+                        <CaseThumbnail category={step === StepName.OLL ? 'OLL' : step === StepName.PLL ? 'PLL' : 'F2L'} id={row.case} />{row.case}
+                    </button>;
             },
         },
         ...ALGO_STAT_COLS,
     ];
 }
 
-const ALGO_COLS_OLL = algoCols(StepName.OLL);
-const ALGO_COLS_PLL = algoCols(StepName.PLL);
 
 // ── Sortable grid ────────────────────────────────────────────────────────────
 
@@ -133,7 +138,7 @@ export function SortableGrid<R>({ rows, columns, className, onCellClick }: Sorta
     }, [rows, sortColumns]);
 
     return <div style={chartDataGridWrapStyle} className={className}>
-        <DataGrid style={chartDataGridStyle} rows={sorted} columns={columns}
+        <DataGrid style={chartDataGridStyle} rows={sorted} columns={columns} rowHeight={columns[0]?.key === 'case' ? 64 : 35}
             sortColumns={sortColumns} onSortColumnsChange={setSortColumns}
             defaultColumnOptions={{ sortable: true, minWidth: MIN_COL_WIDTH }} onCellClick={onCellClick} />
     </div>;
@@ -158,6 +163,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
     }
 
     private _worker: Worker | null = null;
+    private caseColumns = new Map([StepName.OLL, StepName.PLL, StepName.F2L].map(step => [step, algoCols(step, caseKey => this.setState({ caseKey }))]));
     private _pendingRequestId = 0;
 
     /** Snapshot of the props the worker depends on; `solves` is compared by reference. */
@@ -264,7 +270,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
             solves = solves.filter(s => !s.dnf);
             if (key === 'inspection' || key === 'runningInspection') solves = solves.filter(s => s.inspectionTime != null);
             if (key === 'inspection') solves = splitIntoChunks(solves.slice(-p.windowSize).sort((a, b) => a.inspectionTime! - b.inspectionTime!), Const.InspectionGraphChunks)[point.index];
-            else if (key === 'caseData') solves = solves.slice(-p.windowSize).filter(s => getStep(s, p.steps[0])?.case === label);
+            else if (key === 'caseData') solves = solves.slice(-p.windowSize).filter(s => caseSteps(s, caseCategory(p.steps)!).some(step => step.case === label));
             else if (key === 'stepPercentages' || key === 'typicalCompare') {
                 if (key === 'typicalCompare' && point.datasetIndex !== 0) return;
                 solves = solves.slice(-p.windowSize);
@@ -320,9 +326,10 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
         // steps exist by name with zero times. Those charts would be flat zeroes.
         const hasStepTimings = p.solves.some(s => s.steps.some(step => step.time > 0));
 
-        if (hasStepTimings && p.steps.length === 1 && (p.steps[0] === StepName.OLL || p.steps[0] === StepName.PLL) && c.caseData) {
-            plot('caseData', "Average Recognition Time and Execution Time per Case", "This chart shows how long your execution/recognition took for any individual last layer algorithm, sorted by how long each took.", ChartType.Bar, 'Case');
-            charts.push(buildChartHtml(<SortableGrid rows={c.algoPracticeRows ?? []} columns={p.steps[0] === StepName.OLL ? ALGO_COLS_OLL : ALGO_COLS_PLL} onCellClick={({ row, column }) => { if (column.key !== 'case') this.selectSolves(p.solves.filter(solve => !solve.dnf).slice(-p.windowSize).filter(solve => getStep(solve, p.steps[0])?.case === row.case), 0, `${p.steps[0]} ${row.case}`); }} />, "Algorithm Practice", "Click statistics to view contributing solves, or a case to see its algorithm in the database. 'Failed' means core move count exceeded mode and average time for that case. 'Avg Wasted' shows redundant same-face moves that could be cancelled."));
+        const category = caseCategory(p.steps);
+        if (hasStepTimings && category && c.caseData) {
+            plot('caseData', "Average Recognition Time and Execution Time per Case", "Recognition and execution per case, sorted slowest first. F2L shows the worst 20 cases by time.", ChartType.Bar, 'Case');
+            charts.push(buildChartHtml(<SortableGrid rows={c.algoPracticeRows ?? []} columns={this.caseColumns.get(category)!} onCellClick={({ row, column }) => { if (column.key !== 'case') this.selectSolves(p.solves.filter(solve => !solve.dnf).slice(-p.windowSize).filter(solve => caseSteps(solve, category).some(step => step.case === row.case)), 0, `${category} ${row.case}`); }} />, "Algorithm Practice", "Click statistics to view solves, or a case image/name to open its algorithms. F2L shows the worst 20 by failure rate. Failed means excess core moves and above-average case time. Avg Wasted counts cancellable turns."));
         }
 
         plot('runningAverage', "Average Time", `Rolling average chopping ${p.chopAverages === false ? 0 : p.chopPercentage ?? 5}% per end (rounded up, retaining at least one solve). Untrimmed DNFs create gaps. Best and worst valid averages are always plotted; solve numbers mark each window's end. Record averages always use standard 5% trimming.`);
@@ -367,6 +374,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
                 <Row className="g-2 g-md-3">{charts}</Row>
                 {this.state.average && <AverageModal {...this.state.average} close={() => this.setState({ average: undefined })} view={solve => this.openSolveSource(solve)} />}
                 {this.state.replayId && <React.Suspense fallback={<Spinner role="status" animation="border" />}><TimerReplay key={this.state.replayId} id={this.state.replayId} close={() => this.setState({ replayId: undefined })} /></React.Suspense>}
+                {this.state.caseKey && <CaseModal caseKey={this.state.caseKey} close={() => this.setState({ caseKey: undefined })} />}
             </div>
         );
     }

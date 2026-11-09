@@ -1,12 +1,12 @@
 import React from "react";
-import { HelpPanelProps, HelpPanelState } from "../Helpers/Types";
+import { HelpPanelProps, HelpPanelState } from "../Models/Types";
 import { Modal } from "react-bootstrap";
 import cubeastCsv from "../Assets/CubeastCsv.png";
 import cubeastDownload from "../Assets/CubeastDownload.png";
 import acubemyCsv from "../Assets/AcubemyCsv.png";
 import analyzerSteps from "../Assets/AnalyzerSteps.png";
 import { PageVisible } from '@cuberplus/navigation';
-import { InfoTip } from '../../../timer/src/InfoTip';
+import { InfoTip } from '../../../shared/Components/InfoTip';
 
 export class HelpPanel extends React.Component<HelpPanelProps, HelpPanelState> {
     static contextType = PageVisible;

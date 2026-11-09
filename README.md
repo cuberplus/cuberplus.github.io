@@ -47,8 +47,8 @@ use locally installed Microsoft Edge:
 
 ```powershell
 npm run test:site
-node scripts\check-timer-data.mjs
-node scripts\check-solve-workflows.mjs
+node tests\browser\check-timer-data.mjs
+node tests\browser\check-solve-workflows.mjs
 ```
 
 Jest uses experimental VM modules for Timer because cubing.js is ESM-only.
@@ -57,6 +57,18 @@ behavior, and load-time/solver performance budgets. Production declarations
 must not use `any` or `unknown`. Analyzer production lines must remain flat or
 shrinking; tests are exempt. See the root and Analyzer `AGENTS.md` files for
 contributor instructions.
+
+## Repository layout
+
+All automated checks live in `tests/`: `site`, `timer`, `analyzer`, and
+`scrambler` contain Jest suites; `mocks` holds shared test doubles; `browser`
+contains the Playwright workflow checks.
+
+Site pages live in `src/Pages`, alongside the existing `database`, `cloud`,
+and `pwa` modules. Timer separates `Components`, `Core`, `Analysis`, `Data`,
+`Bluetooth`, `Hooks`, and `CSS`. Analyzer separates `Components`, `Models`,
+`Data`, `Analysis`, `Charts`, `Workers`, `Helpers`, and `CSS`. Shared cube,
+statistics, worker, configuration, and UI code lives under `shared/`.
 
 ## Timer
 
@@ -73,6 +85,8 @@ the local solver finds a fresh path to solved, then restarts the same scramble;
 incoming moves remain buffered during calculation. These recovery paths are
 short and fast, not guaranteed minimum-move solutions. Only confirm calibration
 when the physical cube is solved.
+Calibration also requests a hardware reset on cubes advertising that capability;
+other cubes retain the local solved-state confirmation.
 
 The CFOP timeline follows the first aligned cross, four solved F2L pairs,
 OLL, and PLL including final AUF. Recognition/execution splits are inferred
@@ -81,6 +95,10 @@ Click the finished timeline or a history **View** action to open solve details.
 Native recordings support playback, timeline seeking, individual moves,
 retries, reversible +2/DNF buttons, and deletion. Case buttons open a
 single-case algorithm modal instead of navigating away.
+The controls below mistakes can rerun analysis or override the cross color.
+Derived analysis, estimated mistake costs, and replay boundaries are cached and
+included in backups. Imported chart analysis reuses the supplied splits;
+recorded replay boundaries are derived and saved when a replay is opened.
 
 History and raw move timings are saved in this browser's IndexedDB. Interrupted
 attempts remain DNFs. Current and best Single, Ao5, Ao12, Ao100, and Ao1000

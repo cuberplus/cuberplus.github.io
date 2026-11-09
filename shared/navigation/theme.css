@@ -48,6 +48,15 @@
   --bs-primary-rgb: 101, 211, 176;
 }
 body { margin: 0; background: var(--cp-bg); color: var(--cp-text); font-family: var(--cp-font); -webkit-font-smoothing: antialiased; }
+.theme-carousel { display: flex; align-items: center; gap: 1rem; max-width: 32rem; }
+.theme-preview { flex: 1; text-align: center; padding: 1.5rem; border: 1px solid var(--cp-border); border-radius: 1rem; background: var(--cp-art, var(--cp-bg)); box-shadow: var(--cp-glow); }
+.theme-preview-swatches { display: flex; justify-content: center; gap: .4rem; margin-bottom: .75rem; }
+.theme-preview-swatches i { width: 2rem; height: 2rem; border-radius: .5rem; background: var(--cp-accent); }
+.theme-preview-swatches i:nth-child(2) { background: var(--cp-primary); }
+.theme-preview-swatches i:nth-child(3) { background: var(--cp-text); }
+.theme-dots { display: flex; justify-content: center; gap: .6rem; margin-top: 1rem; }
+.theme-dots button { width: .75rem; height: .75rem; padding: 0; border-radius: 50%; border: 1px solid var(--cp-muted); background: transparent; }
+.theme-dots button[aria-pressed="true"] { background: var(--cp-accent); border-color: var(--cp-accent); }
 button, input, select, textarea { font-family: inherit; }
 a, a:hover { color: var(--cp-accent); }
 :focus-visible { outline-color: var(--cp-accent); }

@@ -47,6 +47,7 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--cp-font); }
 
 /* Preserve full-cell targets in the algorithm and fastest-solves grids. */
 .algo-case-link { display: flex; align-items: center; block-size: 100%; margin-inline: -8px; padding-inline: 8px; color: inherit; text-decoration: underline dotted; text-underline-offset: 2px; }
+.algo-case-link .database-case-image { width: 48px; height: 48px; flex-shrink: 0; margin-right: .4rem; }
 .clickable-grid .rdg-row .rdg-cell { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
 .algo-case-link:hover, .algo-case-link:focus-visible, .clickable-grid .rdg-row .rdg-cell:hover { color: var(--cp-accent); text-decoration: underline; }
 .rdg, .rdg-cell, .rdg-header-row, .rdg-row { background: var(--cp-panel); color: var(--cp-text); border-color: var(--cp-border); }

@@ -1,8 +1,8 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import type { TwistyPlayer } from 'cubing/twisty';
-import { TimerEngine, type Solve } from '../src/engine';
-import { inverse, loadCube, SOLVED } from '../src/puzzle';
-import { backupJSON, validateBackup } from '../src/storage';
+import { TimerEngine, type Solve } from '../src/Core/engine';
+import { inverse, loadCube, SOLVED } from '../src/Core/puzzle';
+import { backupJSON, validateBackup } from '../src/Data/storage';
 
 async function expectAnimatedTurn(button: Locator, visualizer: string) {
   const animated = await button.evaluate(async (element, selector) => {

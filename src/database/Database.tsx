@@ -58,7 +58,7 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
     setBusy(true); setMessage('');
     try {
       const [{ loadCube }, { validateUserAlgorithm }] = await Promise.all([
-        import('../../timer/src/puzzle'), import('../../timer/src/favoriteAlgorithms'),
+        import('../../timer/src/Core/puzzle'), import('../../timer/src/Analysis/favoriteAlgorithms'),
       ]);
       const entry = catalog.find(entry => entry.category === category && entry.id === caseId)!;
       const canonical = validateUserAlgorithm(entry, algorithm, await loadCube());

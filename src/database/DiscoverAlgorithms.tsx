@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
-import type { Cube } from '../../timer/src/puzzle';
-import type { Solve } from '../../timer/src/engine';
+import type { Cube } from '../../timer/src/Core/puzzle';
+import type { Solve } from '../../timer/src/Core/engine';
 import { useAlgorithmPreferences } from './favorites';
 import { getAlgorithms } from './customAlgorithms';
 import './discovery.css';
@@ -31,9 +31,9 @@ export function DiscoverAlgorithms({ cube, history, learn = false, notify }: {
       : 'Are you sure you want to automatically add favorites from your most recent 2,000 completed solves? Existing favorites will be kept.')) return;
     setBusy(true); setNotice(null);
     try {
-      const model = cube ?? await (await import('../../timer/src/puzzle')).loadCube();
-      const solves = history ?? await (await import('../../timer/src/storage')).readSolves();
-      const { discoverFavorites, learnAlgorithms } = await import('../../timer/src/favoriteAlgorithms');
+      const model = cube ?? await (await import('../../timer/src/Core/puzzle')).loadCube();
+      const solves = history ?? await (await import('../../timer/src/Data/storage')).readSolves();
+      const { discoverFavorites, learnAlgorithms } = await import('../../timer/src/Analysis/favoriteAlgorithms');
       const found = learn ? await learnAlgorithms(solves, model) : await discoverFavorites(solves, model, favorites);
       const merged = new Set([...latest.current, ...[...found].filter(id => !unlearn.has(id))]);
       const added = merged.size - latest.current.size;

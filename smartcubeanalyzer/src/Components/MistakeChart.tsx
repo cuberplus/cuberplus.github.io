@@ -1,8 +1,8 @@
 import { CSSProperties } from 'react';
 import { OverlayTrigger, ProgressBar, Tooltip } from 'react-bootstrap';
-import { ChartCard } from '../Helpers/ChartHelpers';
-import { SEGMENT_COLORS } from '../Helpers/ChartColors';
-import { MISTAKES, mistakeKey, mistakeLabel, Mistake, MistakeSummary } from '../Helpers/MistakeAnalysis';
+import { ChartCard } from '../Charts/ChartHelpers';
+import { SEGMENT_COLORS } from '../Charts/ChartColors';
+import { MISTAKES, mistakeKey, mistakeLabel, Mistake, MistakeSummary } from '../Analysis/MistakeAnalysis';
 
 export function MistakeChart({ summary, select }: { summary: MistakeSummary; select?: (mistake: Mistake) => void }) {
     const maxCount = Math.max(0, ...summary.counts.map(row => row.count));

@@ -1,7 +1,7 @@
-import { AverageDialog, AverageRow } from '../../../timer/src/AverageDialog';
-import '../../../timer/src/AverageDialog.css';
+import { AverageDialog, AverageRow } from '../../../timer/src/Components/AverageDialog';
+import '../../../timer/src/CSS/AverageDialog.css';
 import { calculateAverage } from '../Helpers/MathHelpers';
-import { Solve } from '../Helpers/Types';
+import { Solve } from '../Models/Types';
 import { useContext } from 'react';
 import { SettingsContext } from '@cuberplus/navigation';
 

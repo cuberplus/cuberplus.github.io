@@ -1,6 +1,6 @@
 import { ChangeEvent, createContext, useContext, useMemo, useState } from "react";
 import { MultiSelect } from "react-multi-select-component";
-import { Option, OptionGroup } from "../Helpers/Types";
+import { Option, OptionGroup } from "../Models/Types";
 
 /** Prefixed onto header rows so they can be told apart from real, selectable cases. */
 const GroupPrefix = "group:";

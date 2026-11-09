@@ -1,4 +1,4 @@
-import type { Solve } from '../../timer/src/engine';
+import type { Solve } from '../../timer/src/Core/engine';
 import { connectProvider, disconnectProvider, isConfigured, isConnected, prepareProvider, readRemote, writeRemote, CloudHttpError, providerNames, type Provider } from './providers';
 
 export const settingKeys = [
@@ -122,13 +122,13 @@ export async function decodeCloudBackup(content: Blob): Promise<{ solves: Solve[
       settings[key] = value;
     }
   }
-  const [{ validateBackup }, { loadCube }] = await Promise.all([import('../../timer/src/storage'), import('../../timer/src/puzzle')]);
+  const [{ validateBackup }, { loadCube }] = await Promise.all([import('../../timer/src/Data/storage'), import('../../timer/src/Core/puzzle')]);
   // Older or externally edited backups may contain duplicate IDs; validate only the winning records.
   const timer = { ...backup.timer, solves: dedupeById(backup.timer.solves) };
   return { solves: validateBackup(JSON.stringify(timer), await loadCube()), settings };
 }
 async function backUp(provider: Provider): Promise<void> {
-  const { readSolves, backupJSON } = await import('../../timer/src/storage');
+  const { readSolves, backupJSON } = await import('../../timer/src/Data/storage');
   // Retry a conditional-write conflict with a fresh cloud snapshot, never a blind overwrite.
   for (let attempt = 0; attempt < 3; attempt++) {
     const remote = await readRemote(provider);
@@ -159,7 +159,7 @@ async function restore(provider: Provider): Promise<void> {
   const remote = await readRemote(provider);
   if (!remote) throw new Error(`No CuberPlus backup was found in ${providerNames[provider]}.`);
   const incoming = await decodeCloudBackup(remote.content);
-  const { readSolves, saveSolves } = await import('../../timer/src/storage');
+  const { readSolves, saveSolves } = await import('../../timer/src/Data/storage');
   const local = await readSolves();
   if (local.some(solve => solve.status === 'active')) throw new Error('Finish or stop your current Timer solve before restoring a backup.');
   const merged = dedupeById(local, incoming.solves), previous = readSettings();
