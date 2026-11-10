@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">
+  <rect width="1440" height="900" fill="#141b25"/>
+  <g font-family="system-ui,sans-serif" text-anchor="middle" fill="#e8eef5">
+    <text x="720" y="130" font-size="54" font-weight="700">OLL &amp; PLL Blitz</text>
+    <text x="720" y="195" font-size="27" fill="#9eafbf">Every case. Shuffled. One continuous challenge.</text>
+    <g fill="#223040" stroke="#486078" stroke-width="3">
+      <rect x="200" y="260" width="350" height="350" rx="24"/>
+      <rect x="605" y="305" width="270" height="270" rx="24"/>
+      <rect x="930" y="305" width="270" height="270" rx="24"/>
+    </g>
+    <text x="375" y="315" font-size="28">Current case</text>
+    <text x="740" y="355" font-size="24">Next 1</text>
+    <text x="1065" y="355" font-size="24">Next 2</text>
+    <g fill="#ffdb58" stroke="#141b25" stroke-width="5">
+      <path d="M285 365h60v60h-60zM345 365h60v60h-60zM405 365h60v60h-60zM345 425h60v60h-60zM345 485h60v60h-60z"/>
+      <path d="M670 390h45v45h-45zM715 390h45v45h-45zM715 435h45v45h-45zM715 480h45v45h-45zM760 480h45v45h-45z"/>
+      <path d="M995 390h45v45h-45zM1040 390h45v45h-45zM1085 390h45v45h-45zM1040 435h45v45h-45zM995 480h45v45h-45z"/>
+    </g>
+    <text x="720" y="720" font-size="75" font-weight="600">3 - 2 - 1</text>
+    <text x="720" y="800" font-size="27" fill="#9eafbf">Smart-cube drills with saved times and individual splits</text>
+  </g>
+</svg>
