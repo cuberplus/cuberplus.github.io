@@ -3,9 +3,10 @@ import { connectSmartCube, type SmartCubeConnection, type SmartCubeEvent } from 
 export class BluetoothCube {
   connection: SmartCubeConnection | null = null;
   private unsubscribe: (() => void) | null = null;
-  async connect(mac: string, event: (event: SmartCubeEvent) => void, connected: (connection: SmartCubeConnection) => void, status: (status: string) => void): Promise<void> {
+  async connect(mac: string, event: (event: SmartCubeEvent) => void, connected: (connection: SmartCubeConnection) => void, status: (status: string) => void, deviceName?: string): Promise<void> {
     const started = performance.now(), log = (message: string, details: string | SmartCubeEvent | (Partial<Pick<SmartCubeConnection, 'deviceName' | 'deviceMAC' | 'protocol' | 'capabilities'>> & { deviceId?: string; fallback?: boolean; enteredMAC?: string | null }) = '') => console.info(`[Timer Bluetooth +${Math.round(performance.now() - started)}ms] ${message}`, details);
     const connection = await connectSmartCube({
+      deviceName,
       onStatus: message => { log('Connection stage', message); status(message); },
       macAddressProvider: async (device, fallback) => {
         log('Library requested MAC address', { deviceName: device.name, deviceId: device.id, fallback, enteredMAC: mac.trim() || null });

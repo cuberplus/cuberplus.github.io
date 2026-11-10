@@ -89,6 +89,8 @@ try {
   await expect(page.getByRole('region', { name: 'Daily Fastest Solve', exact: true })).toBeVisible({ timeout: 60000 });
   await visit(page, 'Scrambler');
   await expect(page.getByRole('button', { name: 'Print sheet' })).toBeEnabled({ timeout: 120000 });
+  await visit(page, 'Trainer');
+  await expect(page.getByRole('button', { name: /OLL Blitz/ })).toBeVisible();
   await visit(page, 'Timer');
   expect(await page.evaluate(({ before, after }) => before === after, { before: originalEngine, after: await engine(page) })).toBe(true);
   expect(initializations).toBe(1);
@@ -132,7 +134,7 @@ try {
   const offline = await context.newPage();
   offline.on('pageerror', error => errors.push(error.message));
   offline.on('requestfailed', request => { if (new URL(request.url()).origin === base) errors.push(`${request.url()}: ${request.failure()?.errorText}`); });
-  for (const [route, name] of [['/', 'Home'], ['/timer/', 'Timer'], ['/smartcubeanalyzer/', 'Smartcube Analyzer'], ['/scrambler/', 'Scrambler'], ['/database/', 'Database'], ['/options/', 'Options']]) {
+  for (const [route, name] of [['/', 'Home'], ['/timer/', 'Timer'], ['/smartcubeanalyzer/', 'Smartcube Analyzer'], ['/scrambler/', 'Scrambler'], ['/database/', 'Database'], ['/trainer/', 'Trainer'], ['/options/', 'Options']]) {
     await offline.goto(`${base}${route}`);
     await expect(offline.getByRole('link', { name, current: 'page', exact: true })).toBeVisible();
     if (name === 'Timer') await expect(offline.getByText('Try simulated cube', { exact: true })).toBeEnabled({ timeout: 60000 });
@@ -143,6 +145,7 @@ try {
     if (name === 'Scrambler') await expect(offline.getByRole('button', { name: 'Print sheet' })).toBeEnabled({ timeout: 120000 });
     if (name === 'Database') {
       await offline.locator('.database-group').first().locator('summary').click();
+      await offline.locator('.database-property > summary').first().click();
       await expect(offline.getByRole('img', { name: 'F2L 1 case', exact: true })).toBeVisible();
     }
   }

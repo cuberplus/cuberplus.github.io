@@ -54,14 +54,16 @@ export default defineConfig(({ mode }) => ({
         cpSync(resolve(root, app, 'public'), resolve(output, app), { recursive: true, filter: source => !/(?:manifest[^\\/]*|index\.html)$/.test(source) });
         writeFileSync(resolve(output, app, 'index.html'), shell);
       }
-      for (const page of ['database', 'options']) {
+      for (const page of ['database', 'trainer', 'options']) {
         mkdirSync(resolve(output, page), { recursive: true });
         writeFileSync(resolve(output, page, 'index.html'), shell);
       }
       for (const size of [192, 512]) cpSync(resolve(root, 'timer', 'public', `icon-${size}.png`), resolve(output, `icon-${size}.png`));
       writeFileSync(resolve(output, '404.html'), shell);
       const assets = readdirSync(resolve(output, 'assets')).filter(file => !file.endsWith('.map')).map(file => `/assets/${file}`);
-      const precache = ['/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/favicon.ico', '/smartcubeanalyzer/theme-init.js', '/smartcubeanalyzer/react-data-grid.css', ...assets];
+      const caseImages = readdirSync(resolve(output, 'case-images')).filter(file => file.endsWith('.svg'))
+        .sort((a, b) => Number(a.includes('-')) - Number(b.includes('-'))).map(file => `/case-images/${file}`);
+      const precache = ['/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/favicon.ico', '/trainer-preview.svg', '/smartcubeanalyzer/theme-init.js', '/smartcubeanalyzer/react-data-grid.css', ...assets, ...caseImages];
       const version = createHash('sha256');
       for (const file of precache) if (existsSync(resolve(output, `.${file}`))) version.update(readFileSync(resolve(output, `.${file}`)));
       const { code } = await transformWithEsbuild(readFileSync(resolve(root, 'src', 'pwa', 'service-worker.ts'), 'utf8'), 'service-worker.ts', { loader: 'ts', format: 'iife' });

@@ -144,7 +144,7 @@ try {
   await expect(page.locator('.trail-tip')).toBeVisible();
   await expect(page.getByRole('table', { name: 'Solve history' }).locator('tbody tr')).toHaveCount(1, { timeout: 30000 });
   await expect(page.locator('.trail-tip')).toHaveCount(0);
-  await expect(page.getByRole('region', { name: 'Solve mistakes', exact: true })).toContainText(/Potential time gain:|No clear mistakes detected/);
+  await expect(page.getByRole('region', { name: 'Solve mistakes', exact: true })).toContainText(/Worst mistake:|No clear mistakes detected/);
   await page.waitForTimeout(1000);
   const [seed] = await database(page);
   expect(seed.status).toBe('complete');

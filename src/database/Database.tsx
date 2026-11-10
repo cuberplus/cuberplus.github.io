@@ -3,17 +3,23 @@ import Navigation, { Footer } from '@cuberplus/navigation';
 import { algorithms, categories, type Category } from './algorithms';
 import caseImages from './caseImages.json';
 import { CATALOG_CHANGED, getAlgorithms, readCustomAlgorithms, saveCustomAlgorithms } from './customAlgorithms';
-import CaseImage, { CategoryImage } from './CaseImage';
+import CaseImage, { CategoryImage, usePreloadCaseImages } from './CaseImage';
+import { caseGroup, compareCases } from './caseGroups';
 import { favoriteId, useAlgorithmPreferences } from './favorites';
 import { formatAlgorithm } from './formatAlgorithm';
 import { AlgorithmNotification, DiscoverAlgorithms, type AlgorithmNotice } from './DiscoverAlgorithms';
 import './database.css';
 
 export default function Database({ caseKey }: { caseKey?: string } = {}) {
+  usePreloadCaseImages();
   const [catalog, setCatalog] = useState(getAlgorithms);
   const { favorites, unlearn, setFavorites, setUnlearn, error } = useAlgorithmPreferences();
   const [open, setOpen] = useState<Set<string>>(() => new Set([(caseKey ?? location.hash.slice(1)).split('-')[0]]));
   const [expandedCases, setExpandedCases] = useState<Set<string>>(() => new Set());
+  const [openProperties, setOpenProperties] = useState<Set<string>>(() => {
+    const key = caseKey ?? location.hash.slice(1), entry = catalog.find(entry => `${entry.category}-${entry.id}` === key);
+    return new Set(entry ? [`${entry.category}:${caseGroup(entry)}`] : []);
+  });
   const [linked, setLinked] = useState(() => location.hash.slice(1));
   const [adding, setAdding] = useState(false), [category, setCategory] = useState<Category>('F2L');
   const [notice, setNotice] = useState<AlgorithmNotice | null>(null);
@@ -31,6 +37,8 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
       const key = location.hash.slice(1);
       if (!catalog.some(entry => `${entry.category}-${entry.id}` === key)) return;
       setLinked(key); setOpen(previous => new Set([...previous, key.split('-')[0]]));
+      const entry = catalog.find(entry => `${entry.category}-${entry.id}` === key)!;
+      setOpenProperties(previous => new Set([...previous, `${entry.category}:${caseGroup(entry)}`]));
     }
     revealCase();
     window.addEventListener('hashchange', revealCase);
@@ -67,6 +75,7 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
       custom[key] = [...(custom[key] ?? []), canonical];
       saveCustomAlgorithms(custom); setAlgorithm(''); setMessage('Algorithm added.');
       setOpen(previous => new Set([...previous, category])); setLinked(key);
+      setOpenProperties(previous => new Set([...previous, `${category}:${caseGroup(entry)}`]));
       setExpandedCases(previous => new Set([...previous, key]));
     } catch (failure) { setMessage(failure instanceof Error ? failure.message : 'Algorithm could not be saved.'); }
     finally { setBusy(false); }
@@ -107,11 +116,22 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
           });
         }}>
         <summary>
-          <CategoryImage category={category} example={category === 'PLL' ? entries.find(entry => entry.category === 'PLL' && entry.id === 'T') : undefined} />
+          <CategoryImage category={category} />
           <span>{category === 'AF2L' ? 'Advanced F2L' : category}</span><span className="database-count">{catalog.filter(entry => entry.category === category).length} cases</span>
         </summary>
         <div className="database-group-content">
-          {open.has(category) && entries.filter(entry => entry.category === category && (!caseKey || `${category}-${entry.id}` === caseKey)).map(entry => {
+          {open.has(category) && [...new Set(entries.filter(entry => entry.category === category && (!caseKey || `${category}-${entry.id}` === caseKey)).sort(compareCases).map(caseGroup))].map(property => {
+            const propertyKey = `${category}:${property}`;
+            const cases = entries.filter(entry => entry.category === category && caseGroup(entry) === property && (!caseKey || `${category}-${entry.id}` === caseKey)).sort(compareCases);
+            return <details key={property} className="database-property" open={!!caseKey || openProperties.has(propertyKey)} onToggle={event => {
+              const expanded = event.currentTarget.open;
+              setOpenProperties(previous => {
+                if (previous.has(propertyKey) === expanded) return previous;
+                const next = new Set(previous); if (expanded) next.add(propertyKey); else next.delete(propertyKey); return next;
+              });
+            }}>
+              <summary>{property || 'Other cases'}<span className="database-count">{cases.length} cases</span></summary>
+              {(caseKey || openProperties.has(propertyKey)) && cases.map(entry => {
             const key = `${category}-${entry.id}`;
             const builtInOptions = algorithms.find(base => base.category === category && base.id === entry.id)!.options;
             return <article className={`database-case${linked === key ? ' database-case--linked' : ''}`} id={key} key={key} aria-label={`${category} ${entry.id}`}>
@@ -153,6 +173,8 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
                 </button>}
               </div>
             </article>;
+              })}
+            </details>;
           })}
         </div>
       </details>)}

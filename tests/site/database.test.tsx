@@ -61,6 +61,9 @@ async function openGroup(category = 'F2L') {
   const group = Array.from(document.querySelectorAll('details')).find(group =>
     group.querySelector('summary')!.textContent!.startsWith(category === 'AF2L' ? 'Advanced F2L' : category))!;
   group.open = true; fireEvent(group, new Event('toggle'));
+  const property = await within(group).findByText(/Oriented edge|Unoriented edge|Dot|Line|Angle|Cross|corners/);
+  const subgroup = property.closest('details')!;
+  subgroup.open = true; fireEvent(subgroup, new Event('toggle'));
   await screen.findByRole('img', { name: `${category} 1 case` });
   return group;
 }
@@ -71,7 +74,7 @@ test.each(['F2L', 'AF2L', 'OLL', 'PLL'])('a direct %s link renders and reveals o
   const image = await screen.findByRole('img', { name: `${category} 1 case` });
   const target = image.closest('article')!;
   expect(target.closest('details')!.open).toBe(true);
-  expect(document.querySelectorAll('details[open]')).toHaveLength(1);
+  expect(document.querySelectorAll('details[open]')).toHaveLength(2);
   expect(document.querySelectorAll('.database-case')).toHaveLength(1);
   expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' });
   expect(target.classList.contains('database-case--linked')).toBe(true);

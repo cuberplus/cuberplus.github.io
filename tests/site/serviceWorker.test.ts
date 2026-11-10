@@ -4,17 +4,18 @@ import { runInNewContext } from 'node:vm';
 import { transpileModule, ModuleKind } from 'typescript';
 
 type WorkerEvent = { request?: Request; data?: string; waitUntil(work: Promise<void>): void; respondWith(response: Promise<Response>): void };
-function worker(clients = 1) {
+function worker(clients = 1, precache = ['/index.html', '/assets/app.js']) {
   const handlers = new Map<string, (event: WorkerEvent) => void>(), entries = new Map<string, Response>();
   const cache = {
     addAll: jest.fn(async (_urls: string[]) => {}),
+    add: jest.fn(async (_url: string) => {}),
     match: jest.fn(async (request: Request | string, _options?: CacheQueryOptions) => entries.get(typeof request === 'string' ? request : new URL(request.url).pathname)?.clone()),
     put: jest.fn(async (request: Request, response: Response) => { entries.set(new URL(request.url).pathname, response); }),
   };
   const caches = { open: jest.fn(async () => cache), match: jest.fn(async (_request: Request, _options?: CacheQueryOptions) => undefined), keys: jest.fn(async () => ['cuberplus-old', 'unrelated']), delete: jest.fn(async () => true) };
   const scope = { addEventListener: (name: string, handler: (event: WorkerEvent) => void) => handlers.set(name, handler), location: { origin: 'https://cuberplus.com' }, clients: { matchAll: async () => Array.from({ length: clients }), claim: jest.fn(async () => {}) }, skipWaiting: jest.fn() };
   const fetch = jest.fn(async (_request: Request) => new Response('network'));
-  const code = transpileModule(readFileSync('src/pwa/service-worker.ts', 'utf8'), { compilerOptions: { module: ModuleKind.ESNext } }).outputText.replace('export {};', '').replace('__CACHE_VERSION__', 'test').replace('__PRECACHE__', JSON.stringify(['/index.html', '/assets/app.js']));
+  const code = transpileModule(readFileSync('src/pwa/service-worker.ts', 'utf8'), { compilerOptions: { module: ModuleKind.ESNext } }).outputText.replace('export {};', '').replace('__CACHE_VERSION__', 'test').replace('__PRECACHE__', JSON.stringify(precache));
   runInNewContext(code, { self: scope, caches, fetch, URL, Response });
   async function fire(name: string, payload: Partial<WorkerEvent> = {}) {
     const pending: Promise<void>[] = [];
@@ -35,7 +36,19 @@ test('installation precaches the full build without skipping a waiting update', 
   await app.fire('message', { data: 'SKIP_WAITING' });
   expect(app.scope.skipWaiting).toHaveBeenCalledTimes(1);
 });
-test.each(['/', '/timer/', '/timer/index.html', '/smartcubeanalyzer/', '/scrambler/', '/database/', '/database/index.html'])('offline navigation to %s returns the cached single-app shell', async path => {
+test('case images cache sequentially after the shell, so offline cases need no runtime SVG renderer', async () => {
+  const app = worker(1, ['/index.html', '/case-images/F2L.svg', '/case-images/OLL-27.svg']);
+  let release!: () => void;
+  app.cache.add.mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
+  const installing = app.fire('install');
+  await new Promise(resolve => setImmediate(resolve));
+  expect(app.cache.addAll).toHaveBeenCalledWith(['/index.html']);
+  expect(app.cache.add.mock.calls).toEqual([['/case-images/F2L.svg']]);
+  release();
+  await installing;
+  expect(app.cache.add.mock.calls).toEqual([['/case-images/F2L.svg'], ['/case-images/OLL-27.svg']]);
+});
+test.each(['/', '/timer/', '/timer/index.html', '/smartcubeanalyzer/', '/scrambler/', '/database/', '/database/index.html', '/trainer/', '/trainer/index.html'])('offline navigation to %s returns the cached single-app shell', async path => {
   const app = worker();
   app.entries.set('/index.html', new Response('offline shell'));
   app.fetch.mockRejectedValue(new Error('Offline'));

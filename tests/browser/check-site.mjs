@@ -4,8 +4,8 @@ import { readFileSync } from 'node:fs';
 const APP_VERSION = readFileSync(new URL('../../shared/config/version.ts', import.meta.url), 'utf8').match(/APP_VERSION = '([^']+)'/)[1];
 const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : undefined });
 const base = process.env.SITE_URL ?? 'http://127.0.0.1:4173';
-const routes = ['/', '/timer/', '/smartcubeanalyzer/', '/scrambler/', '/database/', '/options/'];
-const links = [['Home', '/'], ['Timer', '/timer/'], ['Smartcube Analyzer', '/smartcubeanalyzer/'], ['Scrambler', '/scrambler/'], ['Database', '/database/'], ['Options', '/options/']];
+const routes = ['/', '/timer/', '/smartcubeanalyzer/', '/scrambler/', '/database/', '/trainer/', '/options/'];
+const links = [['Home', '/'], ['Timer', '/timer/'], ['Smartcube Analyzer', '/smartcubeanalyzer/'], ['Trainer', '/trainer/'], ['Scrambler', '/scrambler/'], ['Database', '/database/'], ['Options', '/options/']];
 const errors = [];
 function contrast(first, second) {
   const luminance = color => {
@@ -32,7 +32,7 @@ try {
       await page.goto(`${base}${route}`);
       const nav = page.getByRole('navigation', { name: 'CuberPlus', exact: true });
       await expect(nav).toBeVisible();
-      await expect(nav.getByRole('link')).toHaveCount(6);
+      await expect(nav.getByRole('link')).toHaveCount(7);
       for (const [name, href] of links) {
         const link = nav.getByRole('link', { name, exact: true });
         await expect(link).toBeVisible();
@@ -113,7 +113,7 @@ try {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(base);
   const cards = page.locator('.tool-card');
-  await expect(cards).toHaveCount(4);
+  await expect(cards).toHaveCount(5);
   await expect(cards.last()).toHaveAttribute('href', '/database/');
   await expect.poll(() => cards.last().getByRole('img').evaluate(image => image.complete && image.naturalWidth === 1440 && image.naturalHeight === 900)).toBe(true);
   await expect(cards.first()).toHaveAttribute('href', '/timer/');
@@ -132,7 +132,10 @@ try {
   for (const [i, count] of [41, 54, 57, 21].entries()) {
     const group = groups.nth(i);
     await expect(group).not.toHaveAttribute('open');
-    await group.locator('summary').click();
+    await group.locator(':scope > summary').click();
+    const properties = group.locator('.database-property > summary');
+    await expect(properties.first()).toBeVisible();
+    for (const summary of await properties.all()) await summary.click();
     await expect(group.getByRole('article')).toHaveCount(count);
     await expect(group.getByRole('img')).toHaveCount(count);
     await expect(group.getByRole('img').first()).toBeVisible();
@@ -150,7 +153,8 @@ try {
   await expect(firstCase.locator('.database-algorithm')).toHaveCount(3);
   await expect(firstCase.locator('.database-algorithm p').first()).toHaveText(fourthAlgorithm);
   await page.reload();
-  await groups.first().locator('summary').click();
+  await groups.first().locator(':scope > summary').click();
+  for (const summary of await groups.first().locator('.database-property > summary').all()) await summary.click();
   await expect(firstCase.locator('.database-algorithm p').first()).toHaveText(fourthAlgorithm);
   await firstCase.locator('.database-algorithm').first().getByRole('button', { name: /^Unfavorite / }).click();
   await page.getByRole('button', { name: 'Add your own algorithm', exact: true }).click();
@@ -168,7 +172,8 @@ try {
   const customRow = removeCustom.locator('..');
   await customRow.getByRole('button', { name: /^Favorite / }).click();
   await page.reload();
-  await groups.first().locator('summary').click();
+  await groups.first().locator(':scope > summary').click();
+  for (const summary of await groups.first().locator('.database-property > summary').all()) await summary.click();
   await expect(removeCustom).toBeVisible();
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
@@ -214,7 +219,7 @@ try {
   const cold = await browser.newContext(), coldPage = await cold.newPage(), requests = [];
   coldPage.on('request', request => requests.push(request.url()));
   await coldPage.goto(`${base}/database/#OLL-27`);
-  await expect(coldPage.locator('#OLL-27 svg.database-case-image')).toBeVisible();
+  await expect(coldPage.locator('#OLL-27 img.database-case-image')).toBeVisible();
   expect(requests.some(url => /\/(?:puzzle-|cubing-core-|timer\/src\/puzzle|node_modules\/\.vite\/deps\/cubing)/.test(url))).toBe(false);
   await cold.close();
   for (const width of [1440, 390, 320]) {

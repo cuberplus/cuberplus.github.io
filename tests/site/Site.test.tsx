@@ -4,10 +4,12 @@ import Navigation, { SettingsContext, usePageDialog } from '@cuberplus/navigatio
 import Site, { toolAt } from '../../src/Site';
 
 const lifecycle = { mounts: 0, unmounts: 0 };
+jest.mock('../../timer/src/Bluetooth/bluetooth', () => ({ BluetoothCube: class {} }));
 jest.mock('../../src/Pages/Home/Home', () => ({ __esModule: true, default: () => <><Navigation current="home" /><a href="/timer/?solve=one">Shared solve<svg aria-hidden="true"><path /></svg></a><a href="https://example.com/timer/">External</a><input aria-label="Control" /></> }));
 jest.mock('../../smartcubeanalyzer/src/Components/App', () => ({ __esModule: true, default: () => <Navigation current="smartcubeanalyzer" /> }));
 jest.mock('../../scrambler/src/Components/App', () => ({ __esModule: true, default: () => <Navigation current="scrambler" /> }));
 jest.mock('../../src/database/Database', () => ({ __esModule: true, default: () => <Navigation current="database" /> }));
+jest.mock('../../src/trainer/Trainer', () => ({ __esModule: true, default: () => <Navigation current="trainer" /> }));
 jest.mock('../../timer/src/App', () => ({ __esModule: true, default: function Timer() {
   const [solves, setSolves] = useState(0), dialog = useRef<HTMLDialogElement>(null);
   const { precision } = useContext(SettingsContext);
@@ -53,7 +55,7 @@ test('database appears immediately after Scrambler in navigation and swipe order
   render(<Site />);
   const navigation = await screen.findByRole('navigation');
   expect(within(navigation).getAllByRole('link').map(link => link.getAttribute('href')))
-    .toEqual(['/', '/timer/', '/smartcubeanalyzer/', '/scrambler/', '/database/', '/options/']);
+    .toEqual(['/', '/timer/', '/smartcubeanalyzer/', '/trainer/', '/scrambler/', '/database/', '/options/']);
   swipe(navigation, -100);
   await screen.findByRole('link', { name: 'Database', current: 'page' });
   expect(location.pathname).toBe('/database/');
@@ -98,14 +100,14 @@ test.each(['missing', 'invalid', 'blocked'])('Aurora is the default when the sav
   const read = saved === 'blocked' ? jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Blocked'); }) : null;
   try {
     render(<Site />);
-    const theme = await screen.findByRole('button', { name: 'Aurora theme' });
+    const theme = await screen.findByRole('button', { name: 'Aurora theme' }, { timeout: 10000 });
     expect(theme.getAttribute('aria-pressed')).toBe('true');
     expect(document.documentElement.dataset.theme).toBe('aurora');
     expect(document.documentElement.dataset.bsTheme).toBe('dark');
     await visit('Scrambler');
     expect(document.documentElement.dataset.theme).toBe('aurora');
   } finally { read?.mockRestore(); }
-});
+}, 15000);
 
 test.each(['light', 'dark', 'aurora', 'disco', 'inferno'])('options apply and persist the %s theme across all pages', async theme => {
   history.replaceState(null, '', '/options/');

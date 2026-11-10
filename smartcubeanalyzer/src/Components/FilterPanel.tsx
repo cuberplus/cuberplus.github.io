@@ -7,8 +7,8 @@ import { MultiSelect } from "react-multi-select-component";
 import { CrossColor, FilterPanelProps, FilterPanelState, Filters, getStep, KeysOfType, MethodName, Option, OptionGroup, Solve, SolveCleanliness, SolveLuckiness, Step, StepName } from "../Models/Types";
 import { ChartPanel } from "./ChartPanel";
 import { GroupedMultiSelect } from "./GroupedMultiSelect";
-import { calculateMovingAverage, calculateMovingStdDev } from "../Helpers/MathHelpers";
-import { markMistakes } from "../Analysis/MistakeAnalysis";
+import { getMistakeMap, markMistakes } from "../Analysis/MistakeAnalysis";
+import { DebouncedNumber } from '../../../shared/Components/DebouncedNumber';
 import { FormControl, Card, Row, Offcanvas, Col, Button, Tooltip, OverlayTrigger, Alert, Container, Spinner } from 'react-bootstrap';
 import { Const } from "../Models/Constants";
 import { CalculateAllSessionOptions, CalculateBenchmarkTimes, CalculateWindowSize } from "../Helpers/CubeHelpers";
@@ -31,6 +31,22 @@ function datePickerFormat(): string {
         return 'MM/dd/yyyy';
     }
     return 'dd/MM/yyyy';
+}
+
+function DebouncedDate({ value, onChange, id, container }: { value: Date; onChange: (date: Date) => void; id: string; container: HTMLElement }) {
+    const pending = React.useRef<ReturnType<typeof setTimeout>>();
+    React.useEffect(() => {
+        clearTimeout(pending.current);
+        return () => clearTimeout(pending.current);
+    }, [value]);
+    return <DatePicker id={id} selected={value} dateFormat={datePickerFormat()}
+        onChangeRaw={() => clearTimeout(pending.current)}
+        onChange={date => {
+            clearTimeout(pending.current);
+            if (date) pending.current = setTimeout(() => onChange(date), 450);
+        }}
+        popperContainer={({ children }) => createPortal(children, container)}
+        popperProps={{ strategy: "fixed" }} />;
 }
 
 const COLOR_OPTIONS: Option<CrossColor>[] =
@@ -83,6 +99,7 @@ function defaultSelections(method: MethodName, sessions: Option[], bench: { good
 
 export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelState> {
     static contextType = PageVisible;
+    filterRevision = 0;
     state: FilterPanelState = {
         allSolves: [],
         filteredSolves: [],
@@ -126,15 +143,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         return true;
     }
 
-    static getMistakeMap(values: number[], windowSize: number): boolean[] {
-        const average = calculateMovingAverage(values, windowSize);
-        const stdDev = calculateMovingStdDev(values, windowSize);
-
-        return values.map((value, i) => {
-            const index = Math.max(0, i - windowSize);
-            return value > average[index] + (3 * stdDev[index]);
-        });
-    }
+    static getMistakeMap = getMistakeMap;
 
     static markAllLuckiness(allSolves: Solve[]): Solve[] {
         for (const solve of allSolves) {
@@ -281,9 +290,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
     setLuckiness(selectedList: Option[]) { this.setMulti('solveLuckiness', 'solveLuckiness', selectedList); }
 
     windowSizeChanged(newWindowSize: number) {
-        this.setState({
-            windowSize: newWindowSize
-        })
+        this.setState({ windowSize: newWindowSize });
     }
 
     chosenStepsChanged(selectedList: Option<StepName>[]) {
@@ -356,12 +363,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         this.setField('chopPercentage', Math.max(0, Math.min(49, Number(event.target.value) || 0)));
     }
 
-    setWindowSize(event: React.ChangeEvent<HTMLInputElement>) {
-        const parsedWindowSize = parseInt(event.target.value);
-        this.setState({
-            windowSize: Number.isFinite(parsedWindowSize) ? Math.max(5, parsedWindowSize) : 5
-        })
-    }
+    setWindowSize(event: React.ChangeEvent<HTMLInputElement>) { this.setField('windowSize', Math.max(5, Number(event.target.value) || 5)); }
 
     setAutoWindowSize(checked: boolean) {
         this.setState((prevState) => {
@@ -406,6 +408,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
     hideFilters() { this.setField('showFilters', false); }
 
     resetFilters() {
+        this.filterRevision++;
         const solves = this.state.allSolves;
         this.setState(defaultSelections(this.state.method.value as MethodName, CalculateAllSessionOptions(solves), CalculateBenchmarkTimes(solves)));
     }
@@ -476,7 +479,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
             <div className="row">
                 {[low, high].map((f) => (
                     <div className="form-outline col-6" key={f.id}>
-                        <FormControl min="0" max={max} type="number" id={f.id} value={f.value} onChange={f.onChange} />
+                        <DebouncedNumber min="0" max={max} id={f.id} value={f.value} onChange={f.onChange} />
                     </div>
                 ))}
             </div>,
@@ -502,7 +505,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                 </div>
                 {fields.map((f) => (
                     <div className="col" key={f.id}>
-                        <FormControl min={min} max={max} type="number" id={f.id} value={f.value} onChange={f.onChange} disabled={auto.checked} />
+                        <DebouncedNumber min={min} max={max} id={f.id} value={f.value} onChange={f.onChange} disabled={auto.checked} />
                     </div>
                 ))}
             </div>,
@@ -616,7 +619,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                     )}
 
                     {this.createFilterHtml(
-                        <FormControl min="5" max="10000" type="number" id="pointsPerGraph" value={this.state.pointsPerGraph} onChange={this.setPointsPerGraph.bind(this)} />,
+                        <DebouncedNumber min="5" max="10000" id="pointsPerGraph" value={this.state.pointsPerGraph} onChange={this.setPointsPerGraph.bind(this)} />,
                         "Points Per Graph",
                         "Choose how many points to show on each chart. If this value is set too high, you may see performance issues."
                     )}
@@ -645,35 +648,17 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                     {this.createFilterHtml(
                         <div className="row align-items-center g-2">
                             <div className="col-auto d-flex align-items-center"><ReactSwitch id="chopAverages" aria-label="Chop rolling average" checked={this.state.chopAverages} onChange={checked => this.setField('chopAverages', checked)} /></div>
-                            <div className="col"><FormControl id="chopPercentage" aria-label="Chop percentage per end" type="number" min="0" max="49" step="1" value={this.state.chopPercentage} disabled={!this.state.chopAverages} onChange={this.setChopPercentage.bind(this)} /></div>
+                            <div className="col"><DebouncedNumber id="chopPercentage" aria-label="Chop percentage per end" min="0" max="49" step="1" value={this.state.chopPercentage} disabled={!this.state.chopAverages} onChange={this.setChopPercentage.bind(this)} /></div>
                         </div>,
                         "Chop Rolling Average",
                         "Remove this percentage of the fastest and slowest solves from each rolling-average window, rounded up. At least one solve is retained. Does not change standard Ao5/Ao12/Ao100/Ao1000 records."
                     )}
 
-                    {this.createFilterHtml(
-                        <DatePicker
-                            selected={this.state.filters.startDate}
-                            onChange={this.setStartDate.bind(this)}
-                            dateFormat={datePickerFormat()}
-                            popperContainer={({ children }) => createPortal(children, container)}
-                            popperProps={{ strategy: "fixed" }}
-                        />,
-                        "Pick Start Date",
-                        "Choose start date"
-                    )}
-
-                    {this.createFilterHtml(
-                        <DatePicker
-                            selected={this.state.filters.endDate}
-                            onChange={this.setEndDate.bind(this)}
-                            dateFormat={datePickerFormat()}
-                            popperContainer={({ children }) => createPortal(children, container)}
-                            popperProps={{ strategy: "fixed" }}
-                        />,
-                        "Pick End Date",
-                        "Choose end date"
-                    )}
+                    {([['startDate', 'Start'], ['endDate', 'End']] as const).map(([field, label]) =>
+                        <React.Fragment key={field}>{this.createFilterHtml(
+                            <DebouncedDate id={field} value={this.state.filters[field]} onChange={date => this.setFilter(field, date)} container={container} />,
+                            `Pick ${label} Date`, `Choose ${label.toLowerCase()} date`
+                        )}</React.Fragment>)}
                 </Container>
             )
         }
@@ -729,7 +714,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                                 Reset filters
                             </Button>
                         </Offcanvas.Header>
-                        <Offcanvas.Body>
+                        <Offcanvas.Body key={this.filterRevision}>
                             {filters}
                         </Offcanvas.Body>
                     </Offcanvas>

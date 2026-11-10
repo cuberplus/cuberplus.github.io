@@ -27,14 +27,14 @@ beforeEach(() => {
 function emit(data: GenerationEvent) {
   act(() => { onmessage?.({ data } as MessageEvent<GenerationEvent>); });
 }
-function addRows() {
+function addRows(attempts = 2, elapsedMs = 30) {
   for (const [id, count] of [[1, 7], [2, 3]]) {
     emit({ type: 'row', row: {
       id, scramble: 'R U F2', moves: Array(count).fill(0), algorithm: Array(count).fill('U').join(' '),
       cross: 'White', pairs: ['Blue / Red'], nodes: 50, elapsedMs: 2,
     } });
   }
-  emit({ type: 'done', attempts: 2, elapsedMs: 30 });
+  emit({ type: 'done', attempts, elapsedMs });
 }
 
 test('branding is CuberPlus with shared navigation and without a cube logo', () => {
@@ -64,6 +64,23 @@ test('initial generation requests 20 optimal X-Cross scrambles in a worker and k
   expect(screen.getByRole('button', { name: /Generate worksheet/ })).toBeDisabled();
   expect(screen.getByText('Columns')).toBeEnabled();
   expect(screen.getByRole('progressbar')).toHaveAttribute('max', '20');
+});
+
+test('worksheet counts, tested scrambles and calculation time share one summary without extra copy', () => {
+  const { container } = render(<App />);
+  emit({ type: 'progress', attempts: 21, accepted: 0, elapsedMs: 1200 });
+  const summary = container.querySelector<HTMLElement>('.row-summary')!;
+  expect(summary).toHaveTextContent('21 scrambles tested');
+  expect(within(summary).getByText('1.2s')).toBeInTheDocument();
+  addRows(23, 3200);
+  expect(summary).toHaveTextContent('02 / 20 scrambles');
+  expect(within(summary).getByText('23 scrambles tested')).toBeInTheDocument();
+  expect(within(summary).getByText('3.2s')).toHaveClass('elapsed');
+  expect(screen.getAllByText('23 scrambles tested')).toHaveLength(1);
+  expect(container.querySelector('.generation-status, .solver-note, .sheet-footer')).toBeNull();
+  for (const copy of [/A full cross/i, /Aim for an even mix/i, /Optimal, not approximate/i, /Progress one turn/i, /Worksheet ready/i, /100% on your device/i]) {
+    expect(screen.queryByText(copy)).not.toBeInTheDocument();
+  }
 });
 
 test('rows are sorted by HTM, diagrams are inline SVGs, and column subsets and blank custom columns work', () => {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { markMistakes, MISTAKES, mistakeKey, mistakeLabel, rankedMistakes } from '../../../smartcubeanalyzer/src/Analysis/MistakeAnalysis';
-import type { Solve as AnalyzedSolve } from '../../../smartcubeanalyzer/src/Models/Types';
+import { StepName, type Solve as AnalyzedSolve } from '../../../smartcubeanalyzer/src/Models/Types';
 import { type Solve } from '../Core/engine';
 import type { Cube } from '../Core/puzzle';
 import { useAlgorithmPreferences } from '../../../src/database/favorites';
@@ -10,6 +10,7 @@ import { getAlgorithms } from '../../../src/database/customAlgorithms';
 import { InfoTip } from '../../../shared/Components/InfoTip';
 import { CFOP_STEPS } from '../Analysis/cfop';
 import { persistAnalysis, solveAnalysis } from '../Analysis/analysis';
+import { potentialGain } from '../Analysis/mistakeSummary';
 
 const emptyHistory: Solve[] = [];
 export function SolveMistakes({ solve, cube, history = emptyHistory, brief = false }: { solve: Solve; cube: Cube; history?: Solve[]; brief?: boolean }) {
@@ -51,15 +52,19 @@ export function SolveMistakes({ solve, cube, history = emptyHistory, brief = fal
     ? getAlgorithms().filter(entry => use.caseKeys.includes(`${entry.category}-${entry.id}`)).flatMap(entry =>
       entry.options.filter(algorithm => !unlearn.has(`${entry.category}-${entry.id}:${algorithm}`)))
     : [...favorites].filter(id => use.caseKeys.some(key => id.startsWith(`${key}:`))).map(id => id.slice(id.indexOf(':') + 1)));
-  const totalGain = [
-    ...unlearned.map(use => cost(use, true)),
-    ...nonFavorites.map(use => cost(use)),
-    ...mistakes.map(mistake => mistake.estimatedSeconds ?? 0),
-  ].reduce((total, seconds) => total + seconds, 0);
+  const algorithmCosts = [
+    ...unlearned.map(use => ({ use, seconds: cost(use, true), label: `${CFOP_STEPS[use.step]}: Unlearn algorithm (${use.caseKey.replace('-', ' ')})` })),
+    ...nonFavorites.map(use => ({ use, seconds: cost(use), label: favoriteLabel(use) })),
+  ];
+  const worst = [...algorithmCosts, ...mistakes.map(mistake => ({ seconds: mistake.estimatedSeconds ?? 0, label: mistakeLabel(mistake) }))]
+    .sort((a, b) => b.seconds - a.seconds)[0];
+  const steps = [StepName.Cross, StepName.F2L_1, StepName.F2L_2, StepName.F2L_3, StepName.F2L_4, StepName.OLL, StepName.PLL];
+  const totalGain = analysis ? potentialGain(analysis, algorithmCosts.map(({ use, seconds }) => ({ step: steps[use.step], seconds }))) : 0;
   const loss = (seconds: number) => `~${seconds.toFixed(2)}s estimated loss`;
   return <section ref={feedback} className="mt-3" aria-label="Solve mistakes" aria-live="polite">
     <p className="mb-1">{solve.status !== 'complete' ? 'Incomplete solve - mistakes could not be fully assessed.' : failure === solve ? 'Solve mistakes could not be assessed.' : !analysis ? 'Analyzing solve mistakes...' : unlearned.length || nonFavorites.length || mistakes.length
-      ? <><strong>Potential time gain: </strong>~{totalGain.toFixed(2)}s <InfoTip>The sum of the estimated time losses listed below. Estimates use excess recognition time, wasted moves at your recorded execution speed, or time above your rolling baseline. Algorithm preferences use potential move savings, not an assumed speed advantage. Overlapping mistakes can overstate the total.</InfoTip></> : 'No clear mistakes detected.'}</p>
+      ? brief ? <><strong>Worst mistake: </strong>{worst.label} ({loss(worst.seconds)})</>
+        : <><strong>Potential time gain: </strong>~{totalGain.toFixed(2)}s <InfoTip>Only the largest estimated loss per step is counted, excluding unusually slow solve. The estimate is capped at the solve time. Estimates use excess recognition time, wasted moves at your recorded execution speed, or time above your rolling baseline. Algorithm preferences use potential move savings, not an assumed speed advantage.</InfoTip></> : 'No clear mistakes detected.'}</p>
     {!brief && !!(unlearned.length || nonFavorites.length || mistakes.length) && <ul>
       {unlearned.map(use => <li key={`unlearn-${use.step}`}><strong>{CFOP_STEPS[use.step]}: Unlearn algorithm ({use.caseKey.replace('-', ' ')})</strong> ({loss(cost(use, true))})</li>)}
       {nonFavorites.map(use => <li key={`favorite-${use.step}`}><strong>{favoriteLabel(use)}</strong>{' '}

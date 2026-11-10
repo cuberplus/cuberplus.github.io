@@ -10,7 +10,6 @@ import { getPenaltyReasons, setPenalty, type Solve } from '../../timer/src/Core/
 import { averageDetails, cubeastCSV, dailyStreak, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats, solveEndDate } from '../../timer/src/Data/storage';
 import { loadCube, SOLVED, Cube, inverse, isMove, movesOf, locations, sameAxis, simplifyMoves, crossRotation } from '../../timer/src/Core/puzzle';
 import { PageLocation, SettingsProvider } from '@cuberplus/navigation';
-import Options from '../../src/Pages/Options/Options';
 
 const cube = await loadCube();
 const generate = jest.fn<() => Promise<string>>();
@@ -54,6 +53,8 @@ await jest.unstable_mockModule('../../timer/src/Components/Replay', () => ({
     change && createElement('button', { onClick: () => change({ ...solve, status: solve.dnfReason === 'manual' ? 'complete' : 'incomplete', dnfReason: solve.dnfReason === 'manual' ? undefined : 'manual' }) }, 'Toggle manual DNF')),
 }));
 const { default: App } = await import('../../timer/src/App');
+const { default: Options } = await import('../../src/Pages/Options/Options');
+const { cubeConnection } = await import('../../shared/cube/connection');
 const app = (options = false) => createElement(SettingsProvider, null, createElement(App), options && createElement(Options));
 async function openSiteOptions() { await act(async () => root.render(app(true))); }
 
@@ -95,7 +96,7 @@ beforeEach(async () => {
   root = createRoot(container);
   await act(async () => { root.render(app()); });
 });
-afterEach(async () => { await act(async () => root.unmount()); container.remove(); jest.useRealTimers(); jest.restoreAllMocks(); });
+afterEach(async () => { await act(async () => root.unmount()); await cubeConnection.disconnect(); container.remove(); jest.useRealTimers(); jest.restoreAllMocks(); });
 
 async function click(name: string) {
   const button = Array.from(container.querySelectorAll('button')).find(element => element.textContent === name || element.getAttribute('aria-label') === name);
@@ -174,12 +175,13 @@ test('failed local saves do not count toward automatic cloud backups', async () 
   expect(localStorage.getItem('cuberplus-cloud-progress')).toBeNull();
 });
 
-test('shows total potential time gain after finishing and clears it during the next solve', async () => {
+test('shows only the worst mistake after finishing and clears it during the next solve', async () => {
   await click('Connect cube');
   await act(async () => { move('R', 100); move('U2', 200); move('U', 300); move("U'", 500); move('U2', 700); move("R'", 900); });
   const feedback = container.querySelector('[aria-label="Solve mistakes"]')!;
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
-  expect(feedback.textContent).toContain('Potential time gain:');
+  expect(feedback.textContent).toContain('Worst mistake:');
+  expect(feedback.textContent).not.toContain('Potential time gain:');
   expect(feedback.textContent).toMatch(/~\d+\.\d{2}s/);
   expect(feedback.querySelector('ul')).toBeNull();
   await act(async () => resolveNext('F L2'));
@@ -198,6 +200,7 @@ test('the first solve advances to a usable next scramble without extra turns or 
 
 async function showHistory(solves: Solve[]) {
   await act(async () => root.unmount());
+  await cubeConnection.disconnect();
   recovered = solves;
   root = createRoot(container);
   await act(async () => root.render(app()));
@@ -1752,7 +1755,8 @@ test('options change timer and CFOP precision immediately and remember the prefe
   await finishFirst();
   const dialog = container.querySelector('dialog')!;
   expect(dialog.open).toBe(false);
-  expect(container.querySelector('header select')).toBeNull();
+  expect(container.querySelector('header select[aria-label="My cube"]')).not.toBeNull();
+  expect(container.querySelector('header select[aria-label="Session"]')).toBeNull();
   expect(container.textContent).not.toContain('Saved locally');
   expect(container.querySelectorAll('select[aria-label="Session"]')).toHaveLength(2);
   expect(dialog.querySelector<HTMLSelectElement>('select[aria-label="Session"]')?.value).toBe('Default');

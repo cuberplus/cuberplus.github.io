@@ -113,17 +113,6 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
       <div className="d-flex gap-2">
         <button autoFocus className="btn-close" aria-label="Close replay" disabled={deleting} onClick={dismiss} />
       </div>
-      <div className="d-flex gap-2 mb-3" role="group" aria-label="Solve penalties and deletion">
-        {change && <>
-          <button className={`btn ${getPenaltyReasons(solve).includes('manual') ? 'btn-warning' : 'btn-outline-warning'}`}
-            aria-pressed={getPenaltyReasons(solve).includes('manual')} disabled={deleting || (solve.status !== 'complete' && solve.dnfReason !== 'manual')}
-            onClick={() => change(setPenalty({ ...solve }, 'manual', !getPenaltyReasons(solve).includes('manual')))}>+2</button>
-          <button className={`btn ${solve.dnfReason === 'manual' ? 'btn-warning' : 'btn-outline-warning'}`}
-            aria-pressed={solve.dnfReason === 'manual'} disabled={deleting || (solve.status !== 'complete' && solve.dnfReason !== 'manual')}
-            onClick={() => change({ ...solve, status: solve.dnfReason === 'manual' ? 'complete' : 'incomplete', dnfReason: solve.dnfReason === 'manual' ? undefined : 'manual' })}>DNF</button>
-        </>}
-        <button className="btn btn-outline-danger" disabled={deleting} onClick={removeSolve}>{deleting ? 'Deleting...' : 'Delete'}</button>
-      </div>
     </div>
     {deleteError && <p className="alert alert-danger" role="alert">{deleteError}</p>}
     {saveError && <p className="alert alert-danger" role="alert">{saveError}</p>}
@@ -179,6 +168,17 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
     </div>}
     {analysisError && <p role="alert" className="alert alert-warning">{analysisError}</p>}
     {caseKey && <CaseModal caseKey={caseKey} close={() => setCaseKey('')} />}
+    <div className="d-flex gap-2 mt-3" role="group" aria-label="Solve penalties and deletion">
+      {change && <>
+        <button className={`btn ${getPenaltyReasons(solve).includes('manual') ? 'btn-warning' : 'btn-outline-warning'}`}
+          aria-pressed={getPenaltyReasons(solve).includes('manual')} disabled={deleting || (solve.status !== 'complete' && solve.dnfReason !== 'manual')}
+          onClick={() => change(setPenalty({ ...solve }, 'manual', !getPenaltyReasons(solve).includes('manual')))}>+2</button>
+        <button className={`btn ${solve.dnfReason === 'manual' ? 'btn-warning' : 'btn-outline-warning'}`}
+          aria-pressed={solve.dnfReason === 'manual'} disabled={deleting || (solve.status !== 'complete' && solve.dnfReason !== 'manual')}
+          onClick={() => change({ ...solve, status: solve.dnfReason === 'manual' ? 'complete' : 'incomplete', dnfReason: solve.dnfReason === 'manual' ? undefined : 'manual' })}>DNF</button>
+      </>}
+      <button className="btn btn-outline-danger" disabled={deleting} onClick={removeSolve}>{deleting ? 'Deleting...' : 'Delete'}</button>
+    </div>
     <div className="d-flex align-items-baseline gap-3 flex-wrap small text-secondary text-break mt-3">
       <span aria-label="Solve ID">Solve ID: <span className="font-monospace">{solve.id}</span></span>
       <span aria-label="Solve source">{sourceLabel(solve)}{solve.imported && <InfoTip>{hasReplay ? 'Replay rebuilt from exported moves and timestamps; original device clock data is not available. Imported step analysis is preserved.' : 'Imported step analysis is preserved. This CSV has no valid timed recording to replay.'}</InfoTip>}</span>

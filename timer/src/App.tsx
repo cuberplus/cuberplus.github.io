@@ -1,7 +1,8 @@
 import { useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import Navigation, { Footer, PageLocation, SettingsContext, usePageDialog } from '@cuberplus/navigation';
 import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
-import { BluetoothCube } from './Bluetooth/bluetooth';
+import { cubeConnection, useCubeConnection } from '../../shared/cube/connection';
+import { CubePicker } from '../../shared/Components/CubeConnection';
 import { TimerEngine, inspectionPenalty, solveTime, type Solve } from './Core/engine';
 import { generateScramble, inverse, loadCube, movesOf, simplifyMoves, SOLVED, type Cube } from './Core/puzzle';
 import { averageDetails, backupJSON, cubeastCSV, dailyStreak, deleteSolve, formatTime, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, saveSolves, sessionStats, solveEndDate, turns, validateBackup } from './Data/storage';
@@ -34,6 +35,10 @@ function SolvePenalty({ solve }: { solve: Solve | null | undefined }) {
 
 export default function App() {
   const address = useContext(PageLocation);
+  const trainerActive = /^\/trainer(?:\/|$)/.test(address || location.pathname);
+  const acceptingMoves = useRef(!trainerActive);
+  acceptingMoves.current = !trainerActive;
+  const sharedCube = useCubeConnection();
   useScreenWakeLock();
   const [, render] = useReducer((n: number) => n + 1, 0);
   const [cube, setCube] = useState<Cube | null>(null);
@@ -75,7 +80,7 @@ export default function App() {
   const dailyRecords = useRef<{ date: string; records: string[] } | null>(null);
   const optionsDialog = useRef<HTMLDialogElement>(null);
   usePageDialog(optionsDialog, false);
-  const bluetooth = useRef(new BluetoothCube());
+  const bluetooth = useRef(cubeConnection.adapter);
   const writes = useRef(Promise.resolve());
   const pending = useRef(0);
   const failedSaves = useRef(new Set<string>());
@@ -95,6 +100,10 @@ export default function App() {
   inspectionRef.current = inspection;
   const showEveryLongPbRef = useRef(showEveryLongPb);
   showEveryLongPbRef.current = showEveryLongPb;
+  useEffect(() => {
+    const selected = sharedCube.cubes.find(cube => cube.id === sharedCube.selected);
+    if (selected) setMac(selected.mac);
+  }, [sharedCube.selected, sharedCube.cubes]);
 
   function updateHistory(items: Solve[]) { historyRef.current = items; setHistory(items); }
   function createSession(name: string) {
@@ -229,10 +238,29 @@ export default function App() {
       setCube(model); console.info('[Timer Bluetooth] Puzzle loaded; connection controls ready');
     }).catch((failure: Error) => { console.error('[Timer Bluetooth] Puzzle initialization failed', failure); setError(errorText(failure)); });
     const interval = setInterval(render, 30);
-    const adapter = bluetooth.current;
     const checks = recordChecks.current;
-    return () => { mounted.current = false; window.removeEventListener('timer-solve-deleted', removeSavedSolve); window.removeEventListener('timer-solves-changed', refreshHistory); clearInterval(interval); checks.forEach(check => clearTimeout(check.timeout)); checks.clear(); void adapter.disconnect(); };
+    const unsubscribe = cubeConnection.onEvent(event => {
+      if (!acceptingMoves.current && event.type !== 'DISCONNECT') return;
+      const connection = cubeConnection.getSnapshot().connection;
+      if (connection && engine.current?.phase === 'disconnected') engine.current.connect(connection.deviceName);
+      receive(event);
+    });
+    return () => { mounted.current = false; unsubscribe(); window.removeEventListener('timer-solve-deleted', removeSavedSolve); window.removeEventListener('timer-solves-changed', refreshHistory); clearInterval(interval); checks.forEach(check => clearTimeout(check.timeout)); checks.clear(); };
   }, []);
+
+  useEffect(() => {
+    const timer = engine.current;
+    if (!cube || !timer) return;
+    if (trainerActive) {
+      if (sharedCube.connection && timer.phase !== 'disconnected') { cancelPreparation(); timer.disconnect(); }
+      return;
+    }
+    if (sharedCube.connection && (timer.phase === 'disconnected' || timer.device !== sharedCube.connection.deviceName)) {
+      timer.connect(sharedCube.connection.deviceName);
+      setDemo(false);
+      if (sharedCube.connection.capabilities?.facelets) void bluetooth.current.refresh().catch((failure: Error) => setError(errorText(failure)));
+    } else if (!sharedCube.connection && !demo && timer.phase !== 'disconnected') { cancelPreparation(); timer.disconnect(); }
+  }, [cube, trainerActive, sharedCube.connection, demo]);
 
   useEffect(() => {
     if (!cube) return;
@@ -296,7 +324,6 @@ export default function App() {
         setBattery(null);
         timer.disconnect();
         finishRetry();
-        void bluetooth.current.disconnect().catch((failure: Error) => setError(errorText(failure)));
       }
     } catch (failure) {
       console.error('[Timer Bluetooth] Timer rejected a cube event', { event, phase: timer.phase }, failure); timer.fail(failure instanceof Error ? failure.message : 'Invalid cube event.');
@@ -307,9 +334,7 @@ export default function App() {
   function connect() {
     console.info('[Timer Bluetooth] Connect requested', { mac: mac.trim() || null, puzzleReady: !!cube, busy, connecting, connected: !!connected, bluetoothAvailable: !!navigator.bluetooth, secureContext: window.isSecureContext, userActivation: navigator.userActivation?.isActive }); if (!canConnect) { console.warn('[Timer Bluetooth] Connection blocked: check the flags above'); return; }
     setError(''); setConnecting(true); setDemo(false);
-    void bluetooth.current.connect(mac, receive, connection => {
-      engine.current?.connect(connection.deviceName); if (connection.deviceMAC) setMac(connection.deviceMAC);
-    }, setStatus).then(() => { console.info('[Timer Bluetooth] Timer connected successfully'); setStatus(''); }).catch((failure: Error) => {
+    void cubeConnection.connect(mac).then(() => { console.info('[Timer Bluetooth] Timer connected successfully'); setStatus(''); }).catch((failure: Error) => {
       console.error('[Timer Bluetooth] Connection/setup failed', failure); setError(errorText(failure)); setStatus('');
       if (!bluetooth.current.connection) { engine.current?.disconnect(); finishRetry(); }
     }).finally(() => setConnecting(false));
@@ -317,7 +342,7 @@ export default function App() {
 
   async function disconnect() {
     cancelPreparation();
-    await bluetooth.current.disconnect().catch((failure: Error) => setError(errorText(failure)));
+    await cubeConnection.disconnect().catch((failure: Error) => setError(errorText(failure)));
     engine.current?.disconnect(); finishRetry(); setDemo(false); setBattery(null);
   }
 
@@ -439,17 +464,18 @@ export default function App() {
   const someVisualsHidden = hiddenVisuals.timer || hiddenVisuals.cube || hiddenVisuals.progressBar;
   const currentMoveClass = timer?.isPartialTurn ? 'current partial' : 'current';
   const connected = timer && timer.phase !== 'disconnected';
-  const canConnect = !!cube && !busy && !connecting && !connected && !!navigator.bluetooth && window.isSecureContext;
+  const canConnect = !!cube && !busy && !connecting && !sharedCube.connecting && !connected && !!navigator.bluetooth && window.isSecureContext;
   const simulate = (move: string) => receive({ type: 'MOVE', timestamp: performance.now(), move, face: 'URFDLB'.indexOf(move[0]), direction: move.endsWith("'") ? 1 : 0, localTimestamp: performance.now(), cubeTimestamp: null });
   return <div className="cuberplus-page">
     <header className="cuberplus-header">
       <Navigation current="timer" />
       <div className="cuberplus-header-controls">
         <button className="btn btn-outline-secondary" onClick={() => optionsDialog.current?.showModal()}>Options</button>
+        <CubePicker disabled={!!connected || connecting || sharedCube.connecting} change={setMac} />
         {connected ? <button className="btn btn-outline-secondary" onClick={() => void disconnect()}>Disconnect</button> :
-          <><button className="btn btn-primary d-inline-flex align-items-center gap-2" disabled={!canConnect} onClick={connect}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M7 7l10 10-5 5V2l5 5L7 17" /></svg>{connecting ? 'Connecting...' : 'Connect cube'}</button>
+          <><button className="btn btn-primary d-inline-flex align-items-center gap-2" disabled={!canConnect} onClick={connect}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M7 7l10 10-5 5V2l5 5L7 17" /></svg>{connecting || sharedCube.connecting ? 'Connecting...' : 'Connect cube'}</button>
           <button hidden className="btn btn-outline-secondary" disabled={!cube || busy || connecting} onClick={startDemo}>Try simulated cube</button></>}
-        {battery !== null && <span className="badge text-bg-secondary">{battery}% battery</span>}
+        {(sharedCube.battery ?? battery) !== null && <span className="badge text-bg-secondary">{sharedCube.battery ?? battery}% battery</span>}
       </div>
     </header>
     <main className="container py-4">

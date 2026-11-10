@@ -20,7 +20,7 @@ export const MISTAKES = {
     slowSolve: { label: 'Unusually slow solve', rule: 'Solve time exceeds its rolling average plus 3 standard deviations, using the selected window.' },
 } as const;
 export type MistakeKind = keyof typeof MISTAKES;
-export interface Mistake { kind: MistakeKind; step?: StepName; auf?: boolean; estimatedSeconds?: number; }
+export interface Mistake { kind: MistakeKind; step?: StepName; auf?: boolean; estimatedSeconds?: number; stepCosts?: Partial<Record<StepName, number>>; }
 export interface MistakeSummary { sampleCount: number; windowSize: number; counts: (Mistake & { count: number })[]; }
 export const mistakeKey = ({ kind, step, auf }: Mistake) => `${kind}:${step ?? ''}:${auf ? 'auf' : ''}`;
 export const mistakeLabel = ({ kind, step, auf }: Mistake) => kind === 'slowStep' ? `Unusually slow ${step}` : `${step ? `${step}${auf ? ' AUF' : ''}: ` : ''}${MISTAKES[kind].label}`;
@@ -83,7 +83,7 @@ export function markMistakes(solves: Solve[], windowSize: number): Solve[] {
         const key = `${solve.id}:${solve.time}:${solve.method}:${solve.source}:${solve.date.getTime()}:${solve.crossColor}:${solve.executionTime}:${solve.turns}:${solve.steps.map(s => `${s.name},${s.case},${s.time},${s.turns},${s.recognitionTime},${s.executionTime},${s.postAufTime},${moveHash(s.moves)}`).join(';')}`;
         for (let i = 0; i < key.length; i++) hash = multiply(hash ^ key.charCodeAt(i), 16777619);
     }
-    const context = `2:${windowSize}:${hash}`;
+    const context = `3:${windowSize}:${hash}`;
     if (valid.every(solve => solve.mistakeContext === context && solve.mistakes)) return solves;
     if (latest?.context === context) {
         valid.forEach((solve, i) => Object.assign(solve, latest!.reasons[i], { mistakeContext: context }));
@@ -108,32 +108,34 @@ export function markMistakes(solves: Solve[], windowSize: number): Solve[] {
     examples.forEach((values, key) => { if (values.length >= 5) thresholds.set(key, typicalCaseMoves(values.sort((a, b) => a - b)) + 2); });
     const slowSolves = getMistakeMap(valid.map(s => s.time), windowSize);
     const average = calculateMovingAverage(valid.map(s => s.time), windowSize);
-    const slowSteps = Array.from(stepTimes, ([step, times]) => ({ step: PAIRS.has(step) ? StepName.F2L : step, times, average: calculateMovingAverage(times, windowSize), map: getMistakeMap(times, windowSize) }));
+    const slowSteps = Array.from(stepTimes, ([actualStep, times]) => ({ actualStep, step: PAIRS.has(actualStep) ? StepName.F2L : actualStep, times, average: calculateMovingAverage(times, windowSize), map: getMistakeMap(times, windowSize) }));
     valid.forEach((solve, i) => {
         const reasons = new Map<string, Mistake>();
-        const add = (kind: MistakeKind, step?: StepName, auf?: boolean, cost?: number) => {
+        const add = (kind: MistakeKind, step?: StepName, auf?: boolean, cost?: number, actualStep = step) => {
             const mistake = { kind, step, auf, estimatedSeconds: 0 };
             mistake.estimatedSeconds = Math.min(solve.time, Math.max(0, cost ?? estimateMistakeCost(solve, mistake)));
             const key = mistakeKey(mistake), previous = reasons.get(key);
-            reasons.set(key, { ...mistake, estimatedSeconds: Math.min(solve.time, (previous?.estimatedSeconds ?? 0) + mistake.estimatedSeconds) });
+            const stepCosts = { ...previous?.stepCosts };
+            if (actualStep) stepCosts[actualStep] = (stepCosts[actualStep] ?? 0) + mistake.estimatedSeconds;
+            reasons.set(key, { ...mistake, stepCosts, estimatedSeconds: Math.min(solve.time, (previous?.estimatedSeconds ?? 0) + mistake.estimatedSeconds) });
         };
         if (slowSolves[i]) add('slowSolve', undefined, undefined, solve.time - (average[Math.max(0, i - windowSize)] ?? solve.time));
-        slowSteps.forEach(({ step, map, times, average }) => { if (map[i]) add('slowStep', step, undefined, times[i] - (average[Math.max(0, i - windowSize)] ?? times[i])); });
+        slowSteps.forEach(({ actualStep, step, map, times, average }) => { if (map[i]) add('slowStep', step, undefined, times[i] - (average[Math.max(0, i - windowSize)] ?? times[i]), actualStep); });
         const auf = getAufMovesForSolve(solve);
         for (const { name, turns, moves, case: caseName, recognitionTime, time, postAufTime, executionTime } of solve.steps) {
             const pair = PAIRS.has(name), ll = LAST_LAYER.has(name);
             const turnTime = executionTime > 0 && turns > 0 ? executionTime / turns : 0.2;
-            if (name === StepName.Cross && Number.isFinite(turns) && turns > 8) add('crossMoves', undefined, undefined, (turns - 8) * turnTime);
-            if (pair && Number.isFinite(turns) && turns > 12) add('f2lMoves', undefined, undefined, (turns - 12) * turnTime);
+            if (name === StepName.Cross && Number.isFinite(turns) && turns > 8) add('crossMoves', undefined, undefined, (turns - 8) * turnTime, name);
+            if (pair && Number.isFinite(turns) && turns > 12) add('f2lMoves', undefined, undefined, (turns - 12) * turnTime, name);
             if (Number.isFinite(recognitionTime) && recognitionTime > 2 && recognitionTime <= time) {
-                if (pair) add('f2lPause', undefined, undefined, recognitionTime - 2);
-                if (name === StepName.OLL) add('ollRecognition', undefined, undefined, recognitionTime - 2);
-                if (name === StepName.PLL) add('pllRecognition', undefined, undefined, recognitionTime - 2);
+                if (pair) add('f2lPause', undefined, undefined, recognitionTime - 2, name);
+                if (name === StepName.OLL) add('ollRecognition', undefined, undefined, recognitionTime - 2, name);
+                if (name === StepName.PLL) add('pllRecognition', undefined, undefined, recognitionTime - 2, name);
             }
             const threshold = thresholds.get(`${solve.method}:${name}:${caseName}`);
             const facts = moveFacts(moves, auf);
-            if (threshold !== undefined && moves && facts.core > threshold) add(name === StepName.OLL ? 'ollMoves' : 'pllMoves', undefined, undefined, (facts.core - threshold + 2) * turnTime);
-            if (ll && Number.isFinite(postAufTime) && postAufTime > 0.5 && postAufTime <= executionTime) add('slowAuf', undefined, undefined, postAufTime - 0.5);
+            if (threshold !== undefined && moves && facts.core > threshold) add(name === StepName.OLL ? 'ollMoves' : 'pllMoves', undefined, undefined, (facts.core - threshold + 2) * turnTime, name);
+            if (ll && Number.isFinite(postAufTime) && postAufTime > 0.5 && postAufTime <= executionTime) add('slowAuf', undefined, undefined, postAufTime - 0.5, name);
             for (const issue of facts.issues) add(issue.kind, name, ll && issue.auf, issue.wastedMoves * turnTime);
         }
         solve.mistakes = Array.from(reasons.values());

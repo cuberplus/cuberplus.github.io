@@ -4,9 +4,12 @@ declare const self: ServiceWorkerGlobalScope;
 declare const __PRECACHE__: string[];
 const CACHE = 'cuberplus-__CACHE_VERSION__';
 const PRECACHE = __PRECACHE__;
-const page = /^\/(?:(?:timer|smartcubeanalyzer|scrambler|database|options)\/?)?(?:index\.html)?$/;
+const page = /^\/(?:(?:timer|smartcubeanalyzer|scrambler|database|trainer|options)\/?)?(?:index\.html)?$/;
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PRECACHE)));
+  event.waitUntil(caches.open(CACHE).then(async cache => {
+    await cache.addAll(PRECACHE.filter(file => !file.startsWith('/case-images/')));
+    for (const file of PRECACHE.filter(file => file.startsWith('/case-images/'))) await cache.add(file);
+  }));
 });
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {

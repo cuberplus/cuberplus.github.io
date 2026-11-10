@@ -8,6 +8,13 @@
 .database-category-image .database-case-image { width: 64px; height: 64px; flex-basis: 64px; }
 .database-count { margin-left: auto; font-size: .9rem; font-weight: 400; color: var(--cp-muted); }
 .database-group-content { padding: 0 24px 12px; }
+.database-property { border-top: 1px solid var(--cp-border); }
+.database-property > summary { display: flex; align-items: center; gap: .75rem; padding: 16px 0; cursor: pointer; font-weight: 600; list-style: none; }
+.database-property > summary::-webkit-details-marker { display: none; }
+.database-property > summary::before { content: '\203a'; color: var(--cp-accent); transition: transform .15s; }
+.database-property[open] > summary::before { transform: rotate(90deg); }
+.case-dialog .database-property { border: 0; }
+.case-dialog .database-property > summary { display: none; }
 .database-case { display: flex; align-items: center; gap: 24px; padding: 16px 0; border-top: 1px solid var(--cp-border); }
 @keyframes database-case-flash {
   50% { background-color: color-mix(in srgb, var(--cp-accent) 12%, transparent); }

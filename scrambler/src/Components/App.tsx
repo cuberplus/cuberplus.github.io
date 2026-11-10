@@ -53,8 +53,9 @@ function App() {
     }
     if (data.type === 'done') {
       setStatus('complete');
+      setAttempts(data.attempts);
       setElapsed(data.elapsedMs);
-      setMessage(`Worksheet ready · ${data.attempts} scrambles tested`);
+      setMessage('');
     }
     if (data.type === 'error') { setStatus('error'); setMessage(data.message); }
   };
@@ -131,7 +132,6 @@ function App() {
     <div className="app cuberplus-page">
       <header className="topbar cuberplus-header">
         <Navigation current="scrambler" />
-        <div className="local-badge"><span />100% on your device</div>
       </header>
       <main>
         <div className="workspace">
@@ -144,12 +144,6 @@ function App() {
                 <select id="mode" value={settings.mode} onChange={e => update('mode', e.target.value as Mode)}>
                   {Object.entries(MODE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
-                <p className="field-hint">{{
-                  cross: 'Four edges, aligned with their centers.',
-                  xcross: 'A full cross + one solved F2L pair.',
-                  block: 'Two cross edges + the F2L pair between them.',
-                  xxcross: 'A full cross + two solved F2L pairs.',
-                }[settings.mode]}</p>
                 <label htmlFor="cross">Cross / base color</label>
                 <select id="cross" value={settings.cross} onChange={e => changeCross(e.target.value as Color | 'any')}>
                   <option value="any">Color neutral · any color</option>
@@ -185,7 +179,6 @@ function App() {
                     <option value="QTM">QTM</option>
                   </select>
                 </div>
-                <p className="field-hint">Aim for an even mix of shortest-solution lengths in this inclusive range.</p>
                 <label htmlFor="count">Number of scrambles</label>
                 <input id="count" type="number" min="1" required value={settings.count} onChange={e => update('count', e.target.valueAsNumber)} />
                 <button className="primary-button" type="submit">Generate worksheet <span aria-hidden="true">↗</span></button>
@@ -195,7 +188,6 @@ function App() {
               worker.current?.terminate(); worker.current = undefined;
               setStatus('cancelled'); setMessage('Generation stopped. Completed rows are kept.');
             }}>Stop generation</button>}
-            <div className="solver-note"><span aria-hidden="true">◎</span><p><strong>Optimal, not approximate.</strong> Every solution is the shortest for your selected target and constraints. Ties return one optimal choice. XX-Cross can take longer.</p></div>
           </aside>
           <section className="worksheet-panel" aria-labelledby="worksheet-title">
             <div className="worksheet-heading">
@@ -204,7 +196,11 @@ function App() {
               <button className="print-button" disabled={!rows.length} onClick={() => window.print()}><span aria-hidden="true">▤</span> Print sheet</button>
             </div>
             <div className="sheet-toolbar">
-              <div className="row-summary"><strong>{rows.length.toString().padStart(2, '0')}</strong><span> / {batchSettings.count} scrambles</span></div>
+              <div className="row-summary">
+                <span><strong>{rows.length.toString().padStart(2, '0')}</strong> / {batchSettings.count} scrambles</span>
+                {attempts > 0 && <span>{attempts} scrambles tested</span>}
+                {elapsed > 0 && <span className="elapsed"><span className="sr-only">Calculation time: </span>{(elapsed / 1000).toFixed(1)}s</span>}
+              </div>
               <details className="columns-menu"><summary>Columns <span>{visible.length + custom.length}</span><span aria-hidden="true">⌄</span></summary>
                 <div className="columns-popover">
                   <p className="popover-title">Make it your own</p>
@@ -215,10 +211,9 @@ function App() {
                 </div>
               </details>
             </div>
-            <div className={`generation-status ${status === 'error' ? 'has-error' : ''}`} role={status === 'error' ? 'alert' : 'status'} aria-live="polite">
+            {message && <div className={`generation-status ${status === 'error' ? 'has-error' : ''}`} role={status === 'error' ? 'alert' : 'status'} aria-live="polite">
               <span className={busy ? 'status-dot pulsing' : 'status-dot'} /><span>{message}</span>
-              {elapsed > 0 && <span className="elapsed">{(elapsed / 1000).toFixed(1)}s</span>}
-            </div>
+            </div>}
             {busy && <progress value={rows.length} max={batchSettings.count} aria-label="Worksheet generation progress" />}
             <div className="table-scroll">
               {visible.length + custom.length > 0 ? <table className="worksheet" style={printStyle}>
@@ -234,7 +229,6 @@ function App() {
               </table> : <div className="empty-state">Choose a column above to display your worksheet.</div>}
               {!rows.length && visible.length + custom.length > 0 && <div className="empty-state"><h3>{busy ? 'Good starts are worth finding.' : 'A fresh start awaits.'}</h3><p>{busy ? 'Your browser is searching for truly optimal solutions.' : 'Generate a worksheet to fill this space.'}</p>{busy && <small>You can stop at any time. No data leaves your device.</small>}</div>}
             </div>
-            <div className="sheet-footer"><span>{attempts ? `${attempts} scrambles tested` : 'Made for deliberate practice'}</span><span>{ascending ? 'Shortest' : 'Longest'} first. Progress one turn at a time.</span></div>
           </section>
         </div>
       </main>

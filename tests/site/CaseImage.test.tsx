@@ -1,5 +1,5 @@
 import { cleanup, render, screen } from '@testing-library/react';
-import CaseImage, { CategoryImage } from '../../src/database/CaseImage';
+import CaseImage, { CategoryImage } from '../../src/database/CaseDiagram';
 import { applyMoves, FACES, HEX, inverseMoves, parseAlgorithm, ROTATIONS, solvedCube, stickers } from '../../scrambler/src/cube/cube';
 
 afterEach(cleanup);
@@ -59,7 +59,7 @@ test('OLL uses yellow for top-face stickers on both the top face and side ring',
   expect(image.querySelectorAll('rect[fill="#697384"]')).toHaveLength(12);
   expect(image.querySelectorAll(`g rect[fill="${HEX[3]}"]`).length).toBeGreaterThan(0);
   expect(image.querySelectorAll(`rect[fill="${HEX[0]}"]`)).toHaveLength(0);
-  expect(image.querySelector('title')!.textContent).toContain('top-face stickers yellow');
+  expect(image.querySelector('title')!.textContent).toContain('top-face stickers highlighted, other stickers gray');
 });
 
 test('PLL uses a yellow top and physically consistent side colors above a white cross', () => {

@@ -154,9 +154,9 @@ describe('loading the bundled dev stats through the UI', () => {
             };
             // Capture values, not references: mistake classification mutates source solves.
             const baseline = snapshot();
-            const changeAndRestore = async (change: () => void, restore: () => void) => {
+            const changeAndRestore = async (change: () => void | Promise<void>, restore: () => void) => {
                 let requests = mockWorkerResults.length;
-                change();
+                await change();
                 await waitFor(() => expect(mockWorkerResults.length).toBeGreaterThan(requests));
                 expect(snapshot().charts === baseline.charts).toBe(false);
                 requests = mockWorkerResults.length;
@@ -209,9 +209,9 @@ describe('loading the bundled dev stats through the UI', () => {
                 () => fireEvent.change(input('slowestSolve'), { target: { value: '300' } })
             );
             await changeAndRestore(
-                () => {
+                async () => {
                     fireEvent.change(input('fastestSolve'), { target: { value: '300' } });
-                    expect(screen.getByText(/Showing .* solves/).textContent).toContain('Showing 1 /');
+                    await waitFor(() => expect(screen.getByText(/Showing .* solves/).textContent).toContain('Showing 1 /'));
                 },
                 () => fireEvent.change(input('fastestSolve'), { target: { value: '0' } })
             );

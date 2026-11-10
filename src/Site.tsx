@@ -9,6 +9,7 @@ const pages = {
   smartcubeanalyzer: lazy(() => import('../smartcubeanalyzer/src/Components/App')),
   scrambler: lazy(() => import('../scrambler/src/Components/App')),
   database: lazy(() => import('./database/Database')),
+  trainer: lazy(() => import('./trainer/Trainer')),
   options: lazy(() => import('./Pages/Options/Options')),
 };
 export function toolAt(path: string): Tool | null {

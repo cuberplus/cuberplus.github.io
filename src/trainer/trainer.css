@@ -1,0 +1,21 @@
+.trainer-main { max-width: 1000px; }
+.trainer-drills { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; }
+.trainer-drill { align-items: center; padding: 2rem; color: var(--bs-body-color); text-align: center; gap: .75rem; }
+.trainer-drill:hover { border-color: var(--bs-primary); }
+.trainer-case-queue { display: flex; justify-content: center; align-items: center; gap: 1.5rem; min-height: 180px; }
+.trainer-case-queue > div { display: grid; justify-items: center; }
+.trainer-case-queue p { margin-bottom: .25rem; }
+.trainer-case-queue .database-case-image { width: 90px; height: 90px; flex-basis: auto; }
+.trainer-case-current .database-case-image { width: 130px; height: 130px; }
+.trainer-case-current strong { color: var(--bs-primary); }
+.trainer-clock { font-size: clamp(2.5rem, 8vw, 4rem); font-variant-numeric: tabular-nums; }
+.trainer-splits td { vertical-align: middle; }
+.trainer-splits .database-case-image { width: 64px; height: 64px; flex: 0 0 64px; }
+.trainer-run-settings { display: flex; gap: 1rem 2rem; flex-wrap: wrap; font-size: .9rem; }
+.trainer-run-settings dd { margin: 0; }
+.trainer-settings label { margin-bottom: 0; }
+@media (max-width: 480px) {
+  .trainer-case-queue { gap: .5rem; }
+  .trainer-case-queue .database-case-image { width: 70px; height: 70px; }
+  .trainer-case-current .database-case-image { width: 100px; height: 100px; }
+}

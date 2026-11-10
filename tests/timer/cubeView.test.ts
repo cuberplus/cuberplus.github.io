@@ -3,13 +3,15 @@ import { jest } from '@jest/globals';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { deserialize, serialize } from 'node:v8';
-import { loadCube, SOLVED } from '../../timer/src/Core/puzzle';
+import { loadCube, locations, SOLVED } from '../../timer/src/Core/puzzle';
+import { blitzOrientations } from '../../src/trainer/blitz';
 import type { KTransformation } from 'cubing/kpuzzle';
 import type { TwistyPlayerConfig } from 'cubing/twisty';
 
 const setup = jest.fn<(value: KTransformation | null) => void>();
 const timeline = jest.fn<(value: { animLeaf: { toString(): string }; start: number; end: number }[]) => void>();
 const pause = jest.fn();
+const stickering = jest.fn<(value: TwistyPlayerConfig['experimentalStickeringMaskOrbits']) => void>();
 let timestamps: number[] = [];
 const construct = jest.fn<(config: TwistyPlayerConfig) => HTMLElement>(() => {
   const element = Object.assign(document.createElement('div'), {
@@ -17,6 +19,7 @@ const construct = jest.fn<(config: TwistyPlayerConfig) => HTMLElement>(() => {
     pause,
   });
   Object.defineProperty(element, 'timestamp', { set: (value: number) => timestamps.push(value) });
+  Object.defineProperty(element, 'experimentalStickeringMaskOrbits', { set: stickering });
   return element;
 });
 await jest.unstable_mockModule('cubing/twisty', () => ({ TwistyPlayer: construct }));
@@ -27,7 +30,7 @@ let frames: Map<number, FrameRequestCallback>;
 beforeEach(() => {
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true });
   Object.defineProperty(globalThis, 'structuredClone', { configurable: true, value: <T>(value: T): T => deserialize(serialize(value)) as T });
-  setup.mockClear(); timeline.mockClear(); construct.mockClear(); pause.mockClear(); timestamps = [];
+  setup.mockClear(); timeline.mockClear(); construct.mockClear(); pause.mockClear(); stickering.mockClear(); timestamps = [];
   clock = 0; nextFrame = 0; frames = new Map();
   jest.spyOn(performance, 'now').mockImplementation(() => clock);
   jest.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => {
@@ -65,13 +68,15 @@ test('live bursts retain and animate every raw turn, including repeated and oppo
   expect(timeline.mock.calls.at(-1)![0].map(leaf => [leaf.animLeaf.toString(), leaf.start, leaf.end])).toEqual([
     ['R', 0, 1000], ['R', 1000, 2000], ['L', 2000, 3000],
   ]);
-  frame(); expect(timestamps.at(-1)).toBe(250);
+  frame(); expect(timestamps.at(-1)).toBe(750);
   // Appending while a turn is in flight must preserve its progress.
   moves.push("U'");
   await draw(moves, 4, true);
-  expect(timestamps.at(-1)).toBe(250);
+  expect(timestamps.at(-1)).toBe(750);
   for (let i = 0; i < 15; i++) frame();
-  expect(timestamps).toEqual(expect.arrayContaining([500, 1000, 1500, 2000, 2500, 3000, 3500, 4000]));
+  expect(timestamps.at(-1)).toBe(4000);
+  const advancing = timestamps.filter((position, index) => index > 0 && position !== timestamps[index - 1]);
+  for (let i = 1; i < advancing.length; i++) expect(advancing[i] - advancing[i - 1]).toBeLessThan(1000);
   expect(frames.size).toBe(0);
   expect(setup).toHaveBeenCalledTimes(1);
 });
@@ -165,6 +170,62 @@ test('changing replay yaw resets the setup and keeps every animated position in 
   }
 });
 
+test('trainer color frame changes sticker colors without rotating the case or its Bluetooth moves', async () => {
+  const moves = ['R', 'U', "R'"], start = cube.solved().applyAlg("R U' R'");
+  const facelets = cube.facelets(start.applyAlg(moves.join(' ')));
+  await act(async () => root.render(createElement(CubeView, { cube, facelets, moves, cross: 3, colorFrame: 'z2' })));
+  const initial = setup.mock.calls.at(-1)![0]!.toKPattern();
+  const expected = cube.solved().applyAlg('z2').applyTransformation(start.experimentalToTransformation()!);
+  expect(initial.patternData).toEqual(expected.patternData);
+  expect(timeline.mock.calls.at(-1)![0].map(leaf => leaf.animLeaf.toString())).toEqual(moves);
+  for (let i = 0; i <= moves.length; i++) {
+    expect(initial.applyAlg(moves.slice(0, i).join(' ')).patternData)
+      .toEqual(expected.applyAlg(moves.slice(0, i).join(' ')).patternData);
+  }
+});
+test('OLL mask grays only the twelve PLL stickers in all color frames, without recreating the player', async () => {
+  const moves: string[] = [];
+  for (const { colorFrame } of blitzOrientations(cube)) {
+    await act(async () => root.render(createElement(CubeView, { cube, facelets: SOLVED, moves, colorFrame, hidePLL: true })));
+    const mask = stickering.mock.calls.at(-1)![0]!;
+    if (typeof mask === 'string') throw new Error('Expected per-sticker masking');
+    const frame = cube.solved().applyAlg(colorFrame).patternData;
+    const topColor = 'ULFRBD'[frame.CENTERS.pieces[0]];
+    let gray = 0;
+    for (const orbit of ['EDGES', 'CORNERS'] as const) {
+      mask.orbits[orbit].pieces.forEach((piece, id) => {
+        piece!.facelets.forEach((sticker, index) => {
+          const topPiece = frame[orbit].pieces.slice(0, 4).includes(id);
+          const color = SOLVED[locations[orbit][id][index]];
+          expect(sticker).toBe(topPiece && color !== topColor ? 'ignored' : 'regular');
+          if (sticker === 'ignored') gray++;
+        });
+      });
+    }
+    expect(gray).toBe(12);
+  }
+  expect(construct).toHaveBeenCalledTimes(1);
+});
+test('gray stickers follow animated turns and can be restored without resetting the cube', async () => {
+  const moves: string[] = [], start = cube.solved().applyAlg("R U' R'");
+  await act(async () => root.render(createElement(CubeView, { cube, facelets: cube.facelets(start), moves, hidePLL: true, animateSeeks: true })));
+  const mask = stickering.mock.calls.at(-1)![0];
+  moves.push('R');
+  await act(async () => root.render(createElement(CubeView, { cube, facelets: cube.facelets(start.applyMove('R')), moves, hidePLL: true, animateSeeks: true })));
+  frame(25);
+  expect(timestamps.at(-1)).toBe(250);
+  expect(stickering).toHaveBeenCalledTimes(1);
+  expect(stickering.mock.calls.at(-1)![0]).toBe(mask);
+  await act(async () => root.render(createElement(CubeView, { cube, facelets: cube.facelets(start.applyMove('R')), moves, hidePLL: false, animateSeeks: true })));
+  const restored = stickering.mock.calls.at(-1)![0]!;
+  if (typeof restored === 'string') throw new Error('Expected per-sticker masking');
+  expect(Object.values(restored.orbits).flatMap(orbit => orbit.pieces).flatMap(piece => piece?.facelets ?? []).every(sticker => sticker === 'regular')).toBe(true);
+  expect(construct).toHaveBeenCalledTimes(1);
+  expect(setup).toHaveBeenCalledTimes(1);
+  frame(25);
+  expect(timestamps.at(-1)).toBe(500);
+});
+
 test('resynchronization cancels stale animation, and a delayed frame cannot skip a whole turn', async () => {
   const moves: string[] = [];
   await draw(moves, 0, true);
@@ -176,6 +237,19 @@ test('resynchronization cancels stale animation, and a delayed frame cannot skip
   expect(timestamps.at(-1)).toBe(0);
   expect(setup).toHaveBeenLastCalledWith(cube.parse(start).experimentalToTransformation());
   expect(frames.size).toBe(0);
+});
+test('fast live turns catch up without accumulating a fixed ten-turn-per-second backlog', async () => {
+  const moves: string[] = [];
+  await draw(moves, 0, true);
+  for (let i = 0; i < 20; i++) {
+    moves.push(['R', 'U', "R'", "U'"][i % 4]);
+    await draw(moves, moves.length, true);
+    frame(25);
+  }
+  for (let i = 0; i < 20 && frames.size; i++) frame(25);
+  expect(timestamps.at(-1)).toBe(20000);
+  expect(frames.size).toBe(0);
+  expect(setup).toHaveBeenCalledTimes(1);
 });
 
 test('unmount cancels the animation and removes the player', async () => {
