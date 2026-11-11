@@ -3,10 +3,15 @@ export function movingAverages(values: number[], window: number, chop = Math.cei
   if (chop < 0 || chop * 2 >= window) throw new Error('Bad chop');
   if (values.length < window) return [];
   const sorted = values.slice(0, window).sort((a, b) => a - b), result: number[] = [];
-  let sum = 0, dnfs = 0;
+  let sum = 0, correction = 0, dnfs = 0;
   const adjust = (value: number, direction: number) => {
     if (value === dnf) dnfs += direction;
-    else sum += direction * value;
+    else {
+      // Compensate rolling additions/removals so seconds and milliseconds round consistently.
+      const delta = direction * value - correction, next = sum + delta;
+      correction = (next - sum) - delta;
+      sum = next;
+    }
   };
   const position = (value: number) => {
     let low = 0, high = sorted.length;

@@ -97,6 +97,28 @@ export async function deleteSolve(id: string): Promise<void> {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('timer-solve-deleted', { detail: id }));
 }
 
+export async function updateSession(ids: string[], name: string | null): Promise<void> {
+  if (!ids.length) return;
+  const db = await database();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('solves', 'readwrite'), store = tx.objectStore('solves');
+      ids.forEach(id => {
+        if (name === null) { store.delete(id); return; }
+        const request = store.get(id);
+        request.onsuccess = () => {
+          if (request.result) store.put({ ...request.result as Solve, session: name });
+        };
+      });
+      tx.oncomplete = () => resolve();
+      tx.onabort = () => reject(tx.error ?? new Error('Session changes could not be saved.'));
+    });
+  } finally { db.close(); }
+  if (name === null && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('timer-solve-deleted', { detail: ids }));
+  }
+}
+
 const finite = (n: number): boolean => typeof n === 'number' && Number.isFinite(n);
 const text = (s: string, max = 1000): boolean => typeof s === 'string' && s.length <= max;
 

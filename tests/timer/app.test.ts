@@ -14,12 +14,20 @@ import { PageLocation, SettingsProvider } from '@cuberplus/navigation';
 const cube = await loadCube();
 const generate = jest.fn<() => Promise<string>>();
 const calibrate = jest.fn<() => Promise<void>>();
-const save = jest.fn<(solves: Solve[]) => Promise<void>>().mockResolvedValue();
+const save = jest.fn<(solves: Solve[], derivedOnly?: boolean | 'reanalysis') => Promise<void>>().mockResolvedValue();
+const read = jest.fn<() => Promise<Solve[]>>().mockImplementation(async () => recovered);
 const statistics = jest.fn(sessionStats), streakStatistics = jest.fn(dailyStreak), backup = jest.fn<(solves: Solve[]) => string>().mockReturnValue('');
 const erase = jest.fn<(id: string) => Promise<void>>().mockImplementation(async id => {
   recovered = recovered.filter(solve => solve.id !== id);
   window.dispatchEvent(new CustomEvent('timer-solve-deleted', { detail: id }));
 });
+const changeSession = jest.fn<(ids: string[], name: string | null) => Promise<void>>();
+async function persistSession(ids: string[], name: string | null): Promise<void> {
+  const selected = new Set(ids);
+  recovered = name === null ? recovered.filter(solve => !selected.has(solve.id))
+    : recovered.map(solve => selected.has(solve.id) ? { ...solve, session: name } : solve);
+  if (name === null) window.dispatchEvent(new CustomEvent('timer-solve-deleted', { detail: ids }));
+}
 let recovered: Solve[] = [];
 let emit: (event: SmartCubeEvent) => void;
 let physicalFacelets = SOLVED, physicalSerial: number | undefined;
@@ -38,7 +46,7 @@ await jest.unstable_mockModule('../../timer/src/Bluetooth/bluetooth', () => ({ B
   calibrate = calibrate;
 } }));
 await jest.unstable_mockModule('../../timer/src/Data/storage', () => ({
-  saveSolves: save, deleteSolve: erase, readSolves: async () => recovered, recoverLocalSolves: async () => recovered, backupJSON: backup, validateBackup: () => recovered,
+  saveSolves: save, deleteSolve: erase, updateSession: changeSession, readSolves: read, recoverLocalSolves: async () => recovered, backupJSON: backup, validateBackup: () => recovered,
   cubeastCSV, averageDetails, dailyStreak: streakStatistics, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats: statistics, solveEndDate, turns: (solve: Solve) => solve.moves.length,
   formatTime: (ms: number, precision: 2 | 3 = 2) => (ms / 1000).toFixed(precision),
 }));
@@ -46,7 +54,7 @@ await jest.unstable_mockModule('../../timer/src/Components/CubeView', () => ({
   CubeView: ({ facelets }: { facelets: string }) => createElement('div', { role: 'img', 'aria-label': 'Live 3x3 cube state', 'data-facelets': facelets }),
 }));
 await jest.unstable_mockModule('../../timer/src/Components/Replay', () => ({
-  Replay: ({ solve, close, change, remove, retry, retryDisabled }: { solve: Solve; close: () => void; change?: (solve: Solve) => void; remove?: (solve: Solve) => Promise<void>; retry?: (solve: Solve) => void; retryDisabled?: boolean }) => createElement('div', { 'aria-label': 'Solve replay', 'data-solve-id': solve.id },
+  Replay: ({ solve, close, change, remove, retry, retryDisabled }: { solve: Solve; close: () => void; change?: (solve: Solve) => void; remove?: (solve: Solve) => Promise<void>; retry?: (solve: Solve) => void; retryDisabled?: boolean }) => createElement('div', { 'aria-label': 'Solve replay', 'data-solve-id': solve.id, 'data-session': solve.session },
     remove && createElement('button', { onClick: () => void remove(solve) }, 'Delete'),
     createElement('button', { onClick: close }, 'Close'),
     retry && createElement('button', { onClick: () => retry(solve), disabled: retryDisabled }, 'Retry'),
@@ -92,6 +100,8 @@ beforeEach(async () => {
     return movesOf(alg).reverse().map(inverse);
   });
   save.mockReset().mockResolvedValue(); statistics.mockClear(); streakStatistics.mockClear(); backup.mockClear(); erase.mockClear(); generate.mockReset(); calibrate.mockReset().mockResolvedValue();
+  changeSession.mockReset().mockImplementation(persistSession);
+  read.mockClear();
   generate.mockResolvedValueOnce('R U2').mockImplementationOnce(() => new Promise<string>((resolve, reject) => { resolveNext = resolve; rejectNext = reject; })).mockResolvedValue('B R2');
   container = document.createElement('div'); document.body.appendChild(container);
   root = createRoot(container);
@@ -294,6 +304,149 @@ test('creating a session can be cancelled and whitespace names cannot be submitt
   await click('Cancel');
   expect(picker.querySelector('input')).toBeNull();
   expect(select.value).toBe('Default');
+});
+
+async function renameSession(name: string) {
+  await click('Rename session');
+  const input = container.querySelector<HTMLInputElement>('[aria-label="Rename session to"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, name);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await click('Save session name');
+}
+test('session management is only offered in Timer options and renames all solves without merging sessions', async () => {
+  const solves = [historySolve(1, 2000, 10, 'Practice'), historySolve(2, 1000, 10, 'Practice'), historySolve(3, 500, 10, 'Other')];
+  await showHistory(solves);
+  await chooseSession('Practice');
+  await click('Options');
+  const dialog = container.querySelector('dialog.options-dialog')!;
+  expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent === 'Rename session')).toHaveLength(1);
+  expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Rename session')!.closest('dialog')).toBe(dialog);
+  await renameSession(' Evening ');
+  expect(changeSession).toHaveBeenCalledWith(['2', '1'], 'Evening');
+  expect(Array.from(container.querySelectorAll<HTMLSelectElement>('select[aria-label="Session"]')).map(select => select.value)).toEqual(['Evening', 'Evening']);
+  expect(historyNumbers()).toEqual([2, 1]);
+  expect(container.querySelector('[aria-label="View best Single"]')!.textContent).toBe('1.00');
+  expect(recovered).toEqual(solves.map(solve => solve.session === 'Practice' ? { ...solve, session: 'Evening' } : solve));
+  expect(JSON.parse(localStorage.getItem('timer-sessions')!)).toEqual(['Other', 'Evening']);
+  await showHistory(recovered);
+  await chooseSession('Evening');
+  expect(historyNumbers()).toEqual([2, 1]);
+  await openSiteOptions();
+  const siteOptions = container.querySelectorAll(':scope > .cuberplus-page')[1];
+  expect(siteOptions).toBeDefined();
+  expect(Array.from(siteOptions.querySelectorAll('button')).some(button => ['Rename session', 'Delete session'].includes(button.textContent!))).toBe(false);
+});
+test('rename rejects existing and reserved names, and preserves empty renamed sessions after remounting', async () => {
+  await chooseSession('Practice');
+  await click('Options');
+  await renameSession('Default');
+  expect(changeSession).not.toHaveBeenCalled();
+  expect(container.querySelector('.session-picker [role="alert"]')!.textContent).toContain('unique session name');
+  await click('Cancel');
+  await renameSession('Retries');
+  expect(changeSession).not.toHaveBeenCalled();
+  await click('Cancel');
+  await renameSession('Evening');
+  expect(JSON.parse(localStorage.getItem('timer-sessions')!)).toEqual(['Evening']);
+  await showHistory([]);
+  const select = container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!;
+  expect(Array.from(select.options).some(option => option.value === 'Evening')).toBe(true);
+  expect(Array.from(select.options).some(option => option.value === 'Practice')).toBe(false);
+});
+test('session deletion confirms the full solve count and cancellation leaves names and solves untouched', async () => {
+  const solves = Array.from({ length: 125 }, (_, i) => historySolve(i, 1000, 10, 'Practice'));
+  await showHistory(solves);
+  await chooseSession('Practice');
+  await click('Options');
+  const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
+  read.mockClear();
+  await click('Delete session');
+  expect(confirm).toHaveBeenCalledWith('Are you sure you want to delete session "Practice" and its 125 solves? This cannot be undone.');
+  expect(changeSession).not.toHaveBeenCalled();
+  expect(recovered).toEqual(solves);
+  expect(container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!.value).toBe('Practice');
+  confirm.mockReturnValue(true);
+  await click('Delete session');
+  expect(changeSession).toHaveBeenCalledWith(solves.map(solve => solve.id).reverse(), null);
+  expect(recovered).toEqual([]);
+  expect(historyNumbers()).toEqual([]);
+  expect(container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!.value).toBe('Default');
+  expect(JSON.parse(localStorage.getItem('timer-sessions')!)).toEqual([]);
+  expect(read).not.toHaveBeenCalled();
+});
+test('deleting a session clears its open replay and statistics, preserves other sessions, and removes empty names', async () => {
+  await showHistory([historySolve(1, 2000, 10, 'Practice'), historySolve(2, 1000, 10, 'Other')]);
+  await chooseSession('Practice');
+  await click('View');
+  await click('Options');
+  const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
+  await click('Delete session');
+  expect(confirm.mock.calls[0][0]).toContain('1 solve?');
+  expect(container.querySelector('[aria-label="Solve replay"]')).toBeNull();
+  expect(container.querySelector('[aria-label="View best Single"]')).toBeNull();
+  expect(recovered.map(solve => solve.id)).toEqual(['2']);
+  await chooseSession('Empty');
+  await click('Delete session');
+  expect(confirm.mock.calls.at(-1)![0]).toContain('0 solves?');
+  await showHistory(recovered);
+  expect(Array.from(container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!.options).map(option => option.value)).not.toContain('Empty');
+  await chooseSession('Other');
+  expect(historyNumbers()).toEqual([1]);
+});
+test.each(['rename', 'delete'])('failed session %s rolls back saved names and keeps the selected session and history', async action => {
+  await showHistory([historySolve(1, 2000, 10, 'Practice')]);
+  await chooseSession('Empty');
+  await chooseSession('Practice');
+  await click('Options');
+  jest.spyOn(window, 'confirm').mockReturnValue(true);
+  changeSession.mockRejectedValueOnce(new Error('Local database failed'));
+  const names = localStorage.getItem('timer-sessions');
+  if (action === 'rename') await renameSession('Evening');
+  else await click('Delete session');
+  expect(container.querySelector('.session-picker [role="alert"]')!.textContent).toBe('Local database failed');
+  expect(localStorage.getItem('timer-sessions')).toBe(names);
+  expect(container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!.value).toBe('Practice');
+  expect(historyNumbers()).toEqual([1]);
+});
+test('session management is disabled during solves and retries', async () => {
+  await click('Options');
+  await click('Connect cube');
+  await act(async () => { move('R', 100); move('U2', 200); move('U', 300); });
+  const actions = () => Array.from(container.querySelectorAll<HTMLButtonElement>('.options-dialog button')).filter(button => ['Rename session', 'Delete session'].includes(button.textContent!));
+  expect(actions().map(button => button.disabled)).toEqual([true, true]);
+  await click('Abort solve');
+  await click('View');
+  await click('Retry');
+  expect(actions().map(button => button.disabled)).toEqual([true, true]);
+});
+test.each(['rename', 'delete'])('session %s waits for queued saves and prevents late result updates from restoring the old session', async action => {
+  jest.useFakeTimers({ doNotFake: ['performance'] });
+  await enableExtraTurnPenalty();
+  await chooseSession('Practice');
+  let finishSave!: () => void;
+  save.mockImplementationOnce(() => new Promise(resolve => { finishSave = resolve; }));
+  await finishFirst();
+  await click('Options');
+  jest.spyOn(window, 'confirm').mockReturnValue(true);
+  if (action === 'rename') await renameSession('Evening');
+  else await click('Delete session');
+  expect(changeSession).not.toHaveBeenCalled();
+  expect(Array.from(container.querySelectorAll<HTMLSelectElement>('select[aria-label="Session"]')).every(select => select.disabled)).toBe(true);
+  await act(async () => finishSave());
+  expect(changeSession).toHaveBeenCalledWith([save.mock.calls.at(-1)![0][0].id], action === 'rename' ? 'Evening' : null);
+  const saves = save.mock.calls.length;
+  await act(async () => { move('R', 1000); jest.advanceTimersByTime(600); });
+  if (action === 'rename') {
+    expect(save.mock.calls.filter(([, derivedOnly]) => !derivedOnly).at(-1)![0][0]).toMatchObject({ session: 'Evening', penalty: 2000 });
+    expect(historyNumbers()).toHaveLength(1);
+  } else {
+    expect(save).toHaveBeenCalledTimes(saves);
+    expect(historyNumbers()).toEqual([]);
+    expect(container.querySelector('[aria-label="Dismiss personal best"]')).toBeNull();
+  }
+  expect(Array.from(container.querySelectorAll<HTMLSelectElement>('select[aria-label="Session"]')).every(select => !Array.from(select.options).some(option => option.value === 'Practice'))).toBe(true);
 });
 
 test('deleting from replay refreshes history, Current and Best statistics without changing other solves', async () => {
@@ -603,6 +756,32 @@ test('new PB celebrations wait for the penalty window and stay until dismissed w
   expect(container.querySelector('[aria-label="Personal best"]')).not.toBeNull();
   await click('Dismiss personal best');
   expect(container.querySelector('[aria-label="Personal best"]')).toBeNull();
+});
+
+test.each(['rename', 'delete'])('session %s during the penalty window keeps PB notifications consistent with the saved session', async action => {
+  await timedApp([10000, 12000, 14000, 16000].map((duration, i) => historySolve(4 - i, duration, 2, 'Practice')));
+  await chooseSession('Practice');
+  await finishFirst();
+  await click('Options');
+  jest.spyOn(window, 'confirm').mockReturnValue(true);
+  if (action === 'rename') await renameSession('Evening');
+  else await click('Delete session');
+  await click('Close options');
+  await act(async () => jest.advanceTimersByTime(501));
+  if (action === 'rename') {
+    expect(container.querySelector('[aria-label="View PB Single"]')?.textContent).toContain('Single: 0.60s');
+    await click('View PB Single');
+    expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe(save.mock.calls[0][0][0].id);
+    expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-session')).toBe('Evening');
+    expect(container.querySelectorAll<HTMLSelectElement>('select[aria-label="Session"]')[0].value).toBe('Evening');
+    await click('Close');
+    await click('View PB Ao5');
+    expect(container.querySelector('.average-dialog h2')?.textContent).toBe('Ao5: 12.00s');
+    expect(Array.from(container.querySelectorAll('[aria-label="Average solves"] tbody tr'), row => row.children[0].textContent)).toEqual(['1', '2', '3', '4', '5']);
+  } else {
+    expect(container.querySelector('[aria-label="Personal best"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Daily streak"]')).toBeNull();
+  }
 });
 
 test('the retries session keeps current times and history but never shows records or PB celebrations', async () => {

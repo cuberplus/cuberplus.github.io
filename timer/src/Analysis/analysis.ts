@@ -1,7 +1,7 @@
 import { parseCsv } from '../../../smartcubeanalyzer/src/Data/CsvParser';
 import type { Solve as Analysis } from '../../../smartcubeanalyzer/src/Models/Types';
 import type { Cube } from '../Core/puzzle';
-import type { Solve } from '../Core/engine';
+import { solveTime, type Solve } from '../Core/engine';
 import { cubeastCSV, readSolves, saveSolves } from '../Data/storage';
 import { importedAnalysis, validImported } from '../Data/csvImport';
 import { loadCube, SOLVED } from '../Core/puzzle';
@@ -28,8 +28,10 @@ export function validAnalysis(solve: Solve): boolean {
 
 export function solveAnalysis(solve: Solve, cube: Cube): Analysis {
   const key = analysisKey(solve);
-  if (solve.analysis?.version === ANALYSIS_VERSION && solve.analysis.key === key) return restore(solve.analysis.data);
-  const data = solve.imported ? importedAnalysis(solve) : { ...parseCsv(cubeastCSV([solve], cube), ',')[0], source: 'timer' as const, rawSource: 'timer', isCorrupt: false };
+  // CSV interchange rounds milliseconds and dates; local statistics must retain Timer's original precision, including older caches.
+  const timing = { time: solveTime(solve) / 1000, date: new Date(solve.createdAt), inspectionTime: solve.inspection === undefined ? null : solve.inspection / 1000 };
+  if (solve.analysis?.version === ANALYSIS_VERSION && solve.analysis.key === key) return { ...restore(solve.analysis.data), ...timing };
+  const data = solve.imported ? importedAnalysis(solve) : { ...parseCsv(cubeastCSV([solve], cube), ',')[0], ...timing, source: 'timer' as const, rawSource: 'timer', isCorrupt: false };
   if (!solve.imported) solve.cfop = { ...analyzeCFOP(solve, cube), version: 1, key: cfopKey(solve) };
   rememberAnalysis(solve, data);
   return data;

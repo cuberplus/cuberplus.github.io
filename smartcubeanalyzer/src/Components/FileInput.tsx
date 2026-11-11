@@ -36,8 +36,8 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
     }
 
     private removeSolve = (event: Event) => {
-        const id = (event as CustomEvent<string>).detail;
-        this.setState(state => ({ solves: state.solves.filter(solve => solve.id !== id || (solve.source !== 'timer' && !solve.id.startsWith(`${solve.source}:`))) }));
+        const detail = (event as CustomEvent<string | string[]>).detail, ids = new Set(Array.isArray(detail) ? detail : [detail]);
+        this.setState(state => ({ solves: state.solves.filter(solve => !ids.has(solve.id) || (solve.source !== 'timer' && !solve.id.startsWith(`${solve.source}:`))) }));
     };
     private refresh = (event?: Event) => {
         if (event instanceof CustomEvent && (event as CustomEvent<{ reanalyzed?: boolean }>).detail?.reanalyzed) this.setState({ savedAnalysisChanged: true });

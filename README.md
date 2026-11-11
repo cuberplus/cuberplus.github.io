@@ -163,6 +163,16 @@ current records, and record history. Step drilldowns show case timings,
 algorithm success/efficiency, orientation/permutation groups, and relative
 step proportions. Some charts depend on the selected method and steps.
 
+Standard records use the same trimming, penalties, and DNF rules as Timer;
+Ao1000 excludes the fastest and slowest 50 attempts. Local analysis retains
+native timing precision, and both pages default to two displayed decimal places.
+Compare Analyzer's **Current Records** with Timer's **Best**, not **Current**,
+using the same solves: Analyzer initially selects all sessions (including
+Retries), the most-used method, the past five years, and solve/inspection times
+up to 300 seconds. Timer uses the selected session and excludes Retries from
+best records. Analyzer's rolling-chart window adjusts automatically, up to 1000;
+its standard Ao1000 record always uses 1000 attempts regardless of that window.
+
 The fastest-solves table sorts by every column, with Full Step immediately
 after Time. Mistake drilldowns separate unusually slow Cross, F2L, OLL, PLL,
 and other method steps. Other signals include excess moves, long recognition

@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { deserialize, serialize } from 'node:v8';
 import React from 'react';
 import { FileInput } from '../../smartcubeanalyzer/src/Components/FileInput';
 import { DEMO_DATASETS, DEFAULT_DEMO_FILE } from '../../smartcubeanalyzer/src/Data/SampleData';
@@ -28,6 +29,7 @@ jest.mock('../../timer/src/Analysis/analyzer-data', () => ({
 
 beforeEach(() => {
     requested.length = 0;
+    Object.defineProperty(globalThis, 'structuredClone', { configurable: true, value: <T,>(value: T): T => deserialize(serialize(value)) as T });
     if (!('ResizeObserver' in globalThis)) {
         Object.assign(globalThis, { ResizeObserver: class { observe() { } unobserve() { } disconnect() { } } });
     }
@@ -65,6 +67,20 @@ test('deleted Timer solves leave the loaded Analyzer data without removing other
     expect(ref.current!.state.savedAnalysisChanged).toBe(true);
     expect(ref.current!.state.solves).toEqual([external]);
     expect(screen.getByText('Load saved solves')).not.toBeNull();
+    unmount();
+});
+
+test('a session deletion removes all matching Timer solves in a single update', async () => {
+    const ref = React.createRef<FileInput>();
+    const { unmount } = render(React.createElement(FileInput, { ref }));
+    await waitFor(() => expect(ref.current!.state.isParsing).toBe(false));
+    const [sample] = parseCsv('id,date,dnf,time,solving_method\nsame,2024-01-01 00:00:00 UTC,false,10000,CFOP', ',');
+    const keep = { ...sample, id: 'keep', source: 'timer' as const }, external = { ...sample, source: 'cubeast' as const };
+    act(() => ref.current!.setState({ solves: [{ ...sample, source: 'timer' }, { ...sample, id: 'second', source: 'timer' }, keep, external] }));
+    const update = jest.spyOn(ref.current!, 'setState');
+    act(() => window.dispatchEvent(new CustomEvent('timer-solve-deleted', { detail: [sample.id, 'second'] })));
+    expect(ref.current!.state.solves).toEqual([keep, external]);
+    expect(update).toHaveBeenCalledTimes(1);
     unmount();
 });
 

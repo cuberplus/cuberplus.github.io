@@ -1,9 +1,10 @@
 import 'fake-indexeddb/auto';
-import { IDBFactory } from 'fake-indexeddb';
+import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
+import { jest } from '@jest/globals';
 import { TimerEngine, setPenalty, type Solve } from '../../timer/src/Core/engine';
 import { parseCsv } from '../../smartcubeanalyzer/src/Data/CsvParser';
 import { Cube, inverse, loadCube, SOLVED } from '../../timer/src/Core/puzzle';
-import { average, averageDetails, backupJSON, cubeastCSV, dailyStreak, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, recoverLocalSolves, saveSolves, sessionStats, turns, validateBackup } from '../../timer/src/Data/storage';
+import { average, averageDetails, backupJSON, cubeastCSV, dailyStreak, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, recoverLocalSolves, saveSolves, sessionStats, turns, updateSession, validateBackup } from '../../timer/src/Data/storage';
 import { readTimerData } from '../../timer/src/Analysis/analyzer-data';
 import { APP_VERSION } from '@cuberplus/navigation';
 
@@ -16,6 +17,44 @@ function sample(): Solve {
   ['R', 'U2', 'U2', "R'"].forEach((move, i) => timer.turn({ move, hostTime: i * 100, localTimestamp: i * 100, cubeTimestamp: null }));
   return timer.result!;
 }
+test('session rename and deletion persist every matching solve without changing other sessions or solve data', async () => {
+  const previous = indexedDB;
+  globalThis.indexedDB = new IDBFactory();
+  try {
+    const seed = sample();
+    const selected = Array.from({ length: 125 }, (_, i) => ({ ...seed, id: `practice-${i}`, session: 'Practice' }));
+    const other = { ...seed, id: 'other', session: 'Other' };
+    await saveSolves([...selected, other]);
+    const ids = selected.map(solve => solve.id);
+    await updateSession(ids, 'Evening');
+    const renamed = await readSolves();
+    expect(renamed.find(solve => solve.id === other.id)).toEqual(other);
+    selected.forEach(solve => expect(renamed.find(item => item.id === solve.id)).toEqual({ ...solve, session: 'Evening' }));
+    await updateSession([], null);
+    await updateSession(ids, null);
+    expect(await readSolves()).toEqual([other]);
+  } finally { globalThis.indexedDB = previous; }
+});
+
+test('deleting three solves issues only three keyed deletes and never reads or scans recordings', async () => {
+  const previous = indexedDB;
+  globalThis.indexedDB = new IDBFactory();
+  try {
+    const seed = sample();
+    await saveSolves(Array.from({ length: 1000 }, (_, i) => ({ ...seed, id: String(i) })));
+    const scans = jest.spyOn(IDBObjectStore.prototype, 'openCursor');
+    const bulkReads = jest.spyOn(IDBObjectStore.prototype, 'getAll');
+    const reads = jest.spyOn(IDBObjectStore.prototype, 'get');
+    const deletes = jest.spyOn(IDBObjectStore.prototype, 'delete');
+    await updateSession(['1', '2', '3'], null);
+    expect(deletes.mock.calls).toEqual([['1'], ['2'], ['3']]);
+    expect(scans).not.toHaveBeenCalled();
+    expect(bulkReads).not.toHaveBeenCalled();
+    expect(reads).not.toHaveBeenCalled();
+    expect(await readSolves()).toHaveLength(997);
+  } finally { jest.restoreAllMocks(); globalThis.indexedDB = previous; }
+});
+
 test('history numbering preserves chronological order, time-zone offsets, and stable ties without active solves', () => {
   const seed = sample(), history = [
     { ...seed, id: 'later', createdAt: '2026-01-01T01:00:00Z' },

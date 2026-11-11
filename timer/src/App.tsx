@@ -5,7 +5,7 @@ import { cubeConnection, useCubeConnection } from '../../shared/cube/connection'
 import { CubePicker } from '../../shared/Components/CubeConnection';
 import { TimerEngine, inspectionPenalty, solveTime, type Solve } from './Core/engine';
 import { generateScramble, inverse, loadCube, movesOf, simplifyMoves, SOLVED, type Cube } from './Core/puzzle';
-import { averageDetails, backupJSON, cubeastCSV, dailyStreak, deleteSolve, formatTime, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, recoverLocalSolves, saveSolves, sessionStats, solveEndDate, turns, validateBackup } from './Data/storage';
+import { averageDetails, backupJSON, cubeastCSV, dailyStreak, deleteSolve, formatTime, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, recoverLocalSolves, saveSolves, sessionStats, solveEndDate, turns, updateSession, validateBackup } from './Data/storage';
 import { AverageDetails } from './Components/AverageDetails';
 import { CubeView } from './Components/CubeView';
 import { Replay } from './Components/Replay';
@@ -70,6 +70,8 @@ export default function App() {
     } catch { return { timer: false, cube: false, progressBar: false }; }
   });
   const [session, setSession] = useState('Default');
+  const [changingSession, setChangingSession] = useState(false);
+  const sessionChange = useRef(false);
   const [createdSessions, setCreatedSessions] = useState<string[]>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('timer-sessions') ?? '[]') as string[];
@@ -115,6 +117,50 @@ export default function App() {
     setCreatedSessions(next); setSession(name);
     try { localStorage.setItem('timer-sessions', JSON.stringify(next)); }
     catch { setError('Session created, but its name could not be saved in this browser.'); }
+  }
+  async function manageSession(name: string | null): Promise<boolean> {
+    if (sessionChange.current || !historyReady || engine.current?.phase === 'solving' || retry.current) return false;
+    const previous = sessionRef.current;
+    if (name === previous) return true;
+    if (name !== null && (!name.trim() || name.length > 100 || name === 'Retries' || sessions.includes(name) || name === 'Default')) {
+      throw new Error('Choose a unique session name of 1 to 100 characters. Retries is reserved for retry attempts.');
+    }
+    const affected = new Set(historyRef.current.filter(solve => solve.session === previous).map(solve => solve.id));
+    if (name === null && !window.confirm(`Are you sure you want to delete session "${previous}" and its ${affected.size.toLocaleString()} solve${affected.size === 1 ? '' : 's'}? This cannot be undone.`)) return false;
+    sessionChange.current = true; setChangingSession(true);
+    const task = writes.current.then(async () => {
+      if (engine.current?.phase === 'solving' || retry.current) throw new Error('Finish or abort the current solve before changing sessions.');
+      const next = [...new Set([...sessions.filter(session => session !== previous), ...(name === null ? [] : [name])])];
+      const stored = localStorage.getItem('timer-sessions');
+      localStorage.setItem('timer-sessions', JSON.stringify(next));
+      try { await updateSession([...affected], name); }
+      catch (failure) {
+        if (stored === null) localStorage.removeItem('timer-sessions');
+        else localStorage.setItem('timer-sessions', stored);
+        throw failure;
+      }
+      const target = name ?? 'Default';
+      const relabel = (solve: Solve): Solve => solve.session === previous ? { ...solve, session: target } : solve;
+      if (name === null) affected.forEach(id => deletedSolves.current.add(id));
+      queuedWrites.current.forEach((solve, id) => queuedWrites.current.set(id, relabel(solve)));
+      const timer = engine.current;
+      if (timer?.active) timer.active = relabel(timer.active);
+      if (timer?.result) timer.result = name === null && affected.has(timer.result.id) ? null : relabel(timer.result);
+      recordChecks.current.forEach((check, id) => {
+        if (name === null && affected.has(id)) { clearTimeout(check.timeout); recordChecks.current.delete(id); }
+        else { check.solve = relabel(check.solve); check.previous = check.previous.filter(solve => name !== null || !affected.has(solve.id)).map(relabel); }
+      });
+      if (name === null) affected.forEach(id => failedSaves.current.delete(id));
+      updateHistory(historyRef.current.filter(solve => name !== null || !affected.has(solve.id)).map(relabel));
+      setReplay(current => current && (name !== null || !affected.has(current.id)) ? relabel(current) : null);
+      setAverage(null); setCelebrations([]); setStreaks([]);
+      setCreatedSessions(next); sessionRef.current = target; setSession(target);
+      if (pending.current === 0) setStorage(failedSaves.current.size ? 'Some solves not saved - export a backup now' : 'Saved locally');
+      return true;
+    });
+    writes.current = task.then(() => {}, () => {});
+    try { return await task; }
+    finally { sessionChange.current = false; setChangingSession(false); }
   }
   function finishRetry() {
     if (!retry.current) return;
@@ -212,16 +258,18 @@ export default function App() {
   useEffect(() => {
     mounted.current = true; console.info('[Timer Bluetooth] Initializing Timer', { browser: navigator.userAgent, bluetoothAvailable: !!navigator.bluetooth, secureContext: window.isSecureContext });
     const removeSavedSolve = (event: Event) => {
-      const id = (event as CustomEvent<string>).detail;
-      deletedSolves.current.add(id);
-      const check = recordChecks.current.get(id);
-      if (check) clearTimeout(check.timeout);
-      recordChecks.current.delete(id);
-      recordChecks.current.forEach(candidate => { candidate.previous = candidate.previous.filter(solve => solve.id !== id); });
-      failedSaves.current.delete(id);
-      updateHistory(historyRef.current.filter(solve => solve.id !== id));
-      setReplay(current => current?.id === id ? null : current);
-      setAverage(null); setCelebrations([]); setStreaks(current => current.filter(streak => streak.id !== id));
+      const detail = (event as CustomEvent<string | string[]>).detail, ids = new Set(Array.isArray(detail) ? detail : [detail]);
+      ids.forEach(id => {
+        deletedSolves.current.add(id);
+        const check = recordChecks.current.get(id);
+        if (check) clearTimeout(check.timeout);
+        recordChecks.current.delete(id);
+        failedSaves.current.delete(id);
+      });
+      recordChecks.current.forEach(candidate => { candidate.previous = candidate.previous.filter(solve => !ids.has(solve.id)); });
+      updateHistory(historyRef.current.filter(solve => !ids.has(solve.id)));
+      setReplay(current => current && ids.has(current.id) ? null : current);
+      setAverage(null); setCelebrations([]); setStreaks(current => current.filter(streak => !ids.has(streak.id)));
       if (pending.current === 0) setStorage(failedSaves.current.size ? 'Some solves not saved - export a backup now' : 'Saved locally');
     };
     window.addEventListener('timer-solve-deleted', removeSavedSolve);
@@ -517,7 +565,7 @@ export default function App() {
         <h2 id="options-title" className="mb-0">Options</h2>
         <button className="btn-close" aria-label="Close options" onClick={() => optionsDialog.current?.close()} />
       </div>
-      <SessionPicker value={session} sessions={sessions} disabled={timer?.phase === 'solving' || !!retry.current} change={setSession} create={createSession} />
+      <SessionPicker value={session} sessions={sessions} disabled={!historyReady || changingSession || timer?.phase === 'solving' || !!retry.current} change={setSession} create={createSession} manage={manageSession} />
       <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="all-session-history-help" checked={allSessions} onChange={event => {
         setAllSessions(event.target.checked);
         try { localStorage.setItem('timer-all-session-history', String(event.target.checked)); } catch { setError('History preference could not be saved in this browser.'); }
@@ -623,7 +671,7 @@ export default function App() {
       </div>
     </section>
     <section className="panel mt-3">
-      <div className="d-flex justify-content-between flex-wrap gap-2"><SessionPicker value={session} sessions={sessions} disabled={!!solving || !!retry.current} change={setSession} create={createSession} /><div className="d-flex gap-2">
+      <div className="d-flex justify-content-between flex-wrap gap-2"><SessionPicker value={session} sessions={sessions} disabled={changingSession || !!solving || !!retry.current} change={setSession} create={createSession} /><div className="d-flex gap-2">
         <button className="btn btn-outline-secondary" onClick={() => exportHistory('csv')}>Export CSV</button>
         <button hidden className="btn btn-outline-secondary" onClick={() => exportHistory('json')}>Export JSON</button>
         <label hidden className={`btn btn-outline-secondary mb-0 ${timer?.phase === 'solving' ? 'disabled' : ''}`}>Import JSON<input type="file" className="visually-hidden" accept=".json,application/json" disabled={timer?.phase === 'solving'} onChange={event => { void importBackup(event.target.files?.[0]); event.target.value = ''; }} /></label>
