@@ -1,0 +1,30 @@
+{
+  "cases": [
+    { "id": "1", "algorithm": "L' R U L U' R'", "pair": 4 },
+    { "id": "2", "algorithm": "L' R U' R' U L", "pair": 5 },
+    { "id": "3", "algorithm": "R U L' U' L R'", "pair": 4 },
+    { "id": "4", "algorithm": "L' U' R U L R'", "pair": 5 },
+    { "id": "5", "algorithm": "y' R' U R2 U2 R2 U R y", "pair": 4 },
+    { "id": "6", "algorithm": "y' R U' R2 U2 R2 U' R' y", "pair": 5 },
+    { "id": "7", "algorithm": "y' R U' F R F' R2 U' R y", "pair": 4 },
+    { "id": "8", "algorithm": "R' F R U' F' R U' R'", "pair": 4 },
+    { "id": "9", "algorithm": "L F' L' U F L' U L", "pair": 5 },
+    { "id": "10", "algorithm": "L F2 L' F U' F", "pair": 4 },
+    { "id": "11", "algorithm": "R' F2 R F' U F'", "pair": 5 },
+    { "id": "12", "algorithm": "F r U2 r' F'", "pair": 4 },
+    { "id": "13", "algorithm": "F' l' U2 l F", "pair": 5 },
+    { "id": "14", "algorithm": "R U L' U2 L R'", "pair": 4 },
+    { "id": "15", "algorithm": "L' U' R U2 L R'", "pair": 5 },
+    { "id": "16", "algorithm": "R U' L' U' L U' R'", "pair": 4 },
+    { "id": "18", "algorithm": "F U r U' r' F'", "pair": 4 },
+    { "id": "19", "algorithm": "F r U r' U' F'", "pair": 5 },
+    { "id": "20", "algorithm": "R U' R2 u' R' u R", "pair": 4 },
+    { "id": "21", "algorithm": "L' U L2 u L u' L'", "pair": 5 },
+    { "id": "22", "algorithm": "F U2 R' F' R2 U R'", "pair": 4 },
+    { "id": "23", "algorithm": "F' U2 L F L2 U' L", "pair": 5 },
+    { "id": "36", "algorithm": "R' U R' u' R2 u R2", "pair": 7 },
+    { "id": "37", "algorithm": "R2 U' L U L' R2", "pair": 4 },
+    { "id": "38", "algorithm": "R2 L U' L' U R2", "pair": 4 },
+    { "id": "39", "algorithm": "R2 F R U' F' R", "pair": 7 }
+  ]
+}

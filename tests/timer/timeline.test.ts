@@ -5,6 +5,7 @@ import { deserialize, serialize } from 'node:v8';
 import { Cube, inverse, loadCube } from '../../timer/src/Core/puzzle';
 import type { Solve } from '../../timer/src/Core/engine';
 import { SolveTimeline } from '../../timer/src/Components/SolveTimeline';
+import { GetEmptySolve } from '../../smartcubeanalyzer/src/Helpers/CubeHelpers';
 
 let cube: Cube, root: Root, container: HTMLDivElement, solve: Solve;
 const pll = "R U R' U' R' F R2 U' R' U' R U R' F'", oll = "R U R' U R U2 R'";
@@ -32,6 +33,33 @@ async function draw(elapsed: number, precision: 2 | 3 = 2) {
   await act(async () => root.render(createElement(SolveTimeline, { cube, solve, elapsed, precision })));
 }
 const segments = () => Array.from(container.querySelectorAll<HTMLElement>('.trail-segment'));
+test('clock ticks advance timings without rescanning the recording, while appended turns invalidate analysis', async () => {
+  append('U');
+  let reads = 0;
+  Object.defineProperty(solve.moves[0], 'move', { enumerable: true, get: () => { reads++; return 'U'; } });
+  await draw(150);
+  expect(reads).toBeGreaterThan(0);
+  reads = 0;
+  await draw(250);
+  expect(reads).toBe(0);
+  expect(segments().at(-1)?.dataset.end).toBe('250');
+  append("U' D'");
+  await draw(350);
+  expect(reads).toBeGreaterThan(0);
+  expect(container.querySelector('.trail-duration[data-step="0"][data-status="done"]')).not.toBeNull();
+  solve.status = 'incomplete';
+  await draw(solve.duration);
+  expect(container.querySelector('.trail-tip')).toBeNull();
+});
+test('imported step timings do not replay the raw recording for redundant CFOP analysis', async () => {
+  const { date, endDate, ...data } = GetEmptySolve();
+  solve.imported = { ...data, date: date.toISOString(), endDate: endDate?.toISOString() };
+  solve.status = 'complete';
+  append('U');
+  Object.defineProperty(solve.moves[0], 'move', { get: () => { throw new Error('Imported recording should not be replayed.'); } });
+  await draw(150);
+  expect(container.querySelector('.trail-duration[data-step="0"]')!.textContent).toBe('Cross 0.00s');
+});
 
 test('moving tip leaves the old step color intact and separates recognition from execution', async () => {
   append('U');

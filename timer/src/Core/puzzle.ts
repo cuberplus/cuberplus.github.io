@@ -91,7 +91,12 @@ export class Cube {
     return new KPattern(this.puzzle, data);
   }
   equals(a: KPattern, b: KPattern): boolean { return this.facelets(a) === this.facelets(b); }
-  isSolved(pattern: KPattern): boolean { return pattern.experimentalIsSolved({ ignoreCenterOrientation: true, ignorePuzzleOrientation: true }); }
+  isSolved(pattern: KPattern): boolean {
+    const { EDGES, CORNERS, CENTERS } = pattern.patternData;
+    if (EDGES.orientationMod || CORNERS.orientationMod || CENTERS.pieces.some((piece, i) => piece !== i))
+      return pattern.experimentalIsSolved({ ignoreCenterOrientation: true, ignorePuzzleOrientation: true });
+    return [EDGES, CORNERS].every(({ pieces, orientation }) => pieces.every((piece, i) => piece === i && orientation[i] === 0));
+  }
   async solution(facelets: string): Promise<string[]> {
     return movesOf((await experimentalSolve3x3x3IgnoringCenters(this.parse(facelets))).toString());
   }

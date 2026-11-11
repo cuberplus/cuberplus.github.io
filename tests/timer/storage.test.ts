@@ -3,7 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { TimerEngine, setPenalty, type Solve } from '../../timer/src/Core/engine';
 import { parseCsv } from '../../smartcubeanalyzer/src/Data/CsvParser';
 import { Cube, inverse, loadCube, SOLVED } from '../../timer/src/Core/puzzle';
-import { average, averageDetails, backupJSON, cubeastCSV, dailyStreak, newPersonalBests, personalBestNotifications, readSolves, saveSolves, sessionStats, turns, validateBackup } from '../../timer/src/Data/storage';
+import { average, averageDetails, backupJSON, cubeastCSV, dailyStreak, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, recoverLocalSolves, saveSolves, sessionStats, turns, validateBackup } from '../../timer/src/Data/storage';
 import { readTimerData } from '../../timer/src/Analysis/analyzer-data';
 import { APP_VERSION } from '@cuberplus/navigation';
 
@@ -16,6 +16,48 @@ function sample(): Solve {
   ['R', 'U2', 'U2', "R'"].forEach((move, i) => timer.turn({ move, hostTime: i * 100, localTimestamp: i * 100, cubeTimestamp: null }));
   return timer.result!;
 }
+test('history numbering preserves chronological order, time-zone offsets, and stable ties without active solves', () => {
+  const seed = sample(), history = [
+    { ...seed, id: 'later', createdAt: '2026-01-01T01:00:00Z' },
+    { ...seed, id: 'b', createdAt: '2026-01-01T01:00:00+01:00' },
+    { ...seed, id: 'active', status: 'active' as const },
+    { ...seed, id: 'a', createdAt: '2026-01-01T00:00:00Z' },
+  ];
+  expect(numberedSolves(history).map(({ solve, number }) => [solve.id, number])).toEqual([['a', 1], ['b', 2], ['later', 3]]);
+  expect(history.map(solve => solve.id)).toEqual(['later', 'b', 'active', 'a']);
+});
+test.each([false, true])('local startup only replays interrupted attempts, active=%s', async active => {
+  const previous = indexedDB;
+  globalThis.indexedDB = new IDBFactory();
+  try {
+    expect(await recoverLocalSolves(cube)).toEqual([]);
+    const seed = sample(), completed = Array.from({ length: 251 }, (_, i) => ({ ...seed, id: `saved-${i}` }));
+    const interrupted: Solve = { ...seed, id: 'interrupted', status: 'active' };
+    await saveSolves([...completed, ...(active ? [interrupted] : [])]);
+    let parsed = 0;
+    const trackedCube = Object.assign(Object.create(cube), {
+      parse: (facelets: string) => { parsed++; return cube.parse(facelets); },
+    }) as Cube;
+    const recovered = await recoverLocalSolves(trackedCube);
+    expect(parsed).toBe(active ? 1 : 0);
+    expect(recovered.filter(solve => solve.id.startsWith('saved-'))).toEqual(completed.sort((a, b) => a.id.localeCompare(b.id)));
+    expect(await readSolves()).toEqual(recovered);
+    if (active) expect(recovered.find(solve => solve.id === 'interrupted')).toEqual({
+      ...interrupted, status: 'incomplete', reason: 'Interrupted attempt recovered from backup.', dnfReason: 'solve interrupted',
+    });
+    expect(() => validateBackup(backupJSON([{ ...seed, startFacelets: 'invalid' }]), cube)).toThrow();
+  } finally { globalThis.indexedDB = previous; }
+});
+test('startup recovery leaves a solve begun during history loading active and persisted', async () => {
+  const previous = indexedDB;
+  globalThis.indexedDB = new IDBFactory();
+  try {
+    const active: Solve = { ...sample(), status: 'active' };
+    await saveSolves([active]);
+    expect(await recoverLocalSolves(cube, id => id === active.id)).toEqual([active]);
+    expect(await readSolves()).toEqual([active]);
+  } finally { globalThis.indexedDB = previous; }
+});
 test('new solve versions and finish dates roundtrip through backup and CSV without inventing legacy versions', () => {
   const solve = { ...sample(), createdAt: new Date(2026, 10, 4, 23, 59, 59, 950).toISOString() };
   expect(solve.appVersion).toBe(APP_VERSION);

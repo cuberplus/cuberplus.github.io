@@ -14,13 +14,13 @@ jest.mock('../../timer/src/Analysis/favoriteAlgorithms', () => ({
   learnAlgorithms: jest.fn().mockResolvedValue(new Set()),
 }));
 jest.mock('../../src/database/algorithms', () => ({
-  algorithms: ['F2L', 'AF2L', 'OLL', 'PLL'].map(category => ({
+  algorithms: ['F2L', 'AF2L', 'OF2L', 'OLL', 'PLL'].map(category => ({
     category, id: '1', algorithm: "R U R'",
     options: category === 'F2L' || category === 'PLL' ? ["R U R'", "R U2 R'", "R U' R'", "R2 U R2", "F U F'"] : ["R U R'", "R U2 R'"],
   })),
-  categories: ['F2L', 'AF2L', 'OLL', 'PLL'],
+  categories: ['F2L', 'AF2L', 'OF2L', 'OLL', 'PLL'],
 }));
-jest.mock('../../src/database/caseImages.json', () => Object.fromEntries(['F2L', 'AF2L', 'OLL', 'PLL'].map(category => [
+jest.mock('../../src/database/caseImages.json', () => Object.fromEntries(['F2L', 'AF2L', 'OF2L', 'OLL', 'PLL'].map(category => [
   `${category}-1`, { facelets: 'UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB', visibleStickers: [] },
 ])));
 const scrollIntoView = jest.fn();
@@ -59,7 +59,7 @@ test('an embedded case shows only that case and ignores page hashes without scro
 });
 async function openGroup(category = 'F2L') {
   const group = Array.from(document.querySelectorAll('details')).find(group =>
-    group.querySelector('summary')!.textContent!.startsWith(category === 'AF2L' ? 'Advanced F2L' : category))!;
+    group.querySelector('summary')!.textContent!.startsWith(category === 'AF2L' ? 'Advanced F2L' : category === 'OF2L' ? 'Other F2L' : category))!;
   group.open = true; fireEvent(group, new Event('toggle'));
   const property = await within(group).findByText(/Oriented edge|Unoriented edge|Dot|Line|Angle|Cross|corners/);
   const subgroup = property.closest('details')!;
@@ -68,7 +68,7 @@ async function openGroup(category = 'F2L') {
   return group;
 }
 
-test.each(['F2L', 'AF2L', 'OLL', 'PLL'])('a direct %s link renders and reveals only its group without loading a cube', async category => {
+test.each(['F2L', 'AF2L', 'OF2L', 'OLL', 'PLL'])('a direct %s link renders and reveals only its group without loading a cube', async category => {
   history.replaceState(null, '', `/database/#${category}-1`);
   render(<Database />);
   const image = await screen.findByRole('img', { name: `${category} 1 case` });
@@ -82,7 +82,7 @@ test.each(['F2L', 'AF2L', 'OLL', 'PLL'])('a direct %s link renders and reveals o
 });
 test('collapsed groups do not render case rows or run cube algorithms on page load', async () => {
   render(<Database />);
-  expect(document.querySelectorAll('details')).toHaveLength(4);
+  expect(document.querySelectorAll('details')).toHaveLength(5);
   expect(document.querySelectorAll('.database-case')).toHaveLength(0);
   const group = await openGroup();
   expect(within(group).getByText("R U R'")).toBeDefined();

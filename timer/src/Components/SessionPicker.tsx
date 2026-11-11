@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 export function SessionPicker({ value, sessions, disabled, change, create }: {
   value: string; sessions: string[]; disabled: boolean; change: (session: string) => void; create: (session: string) => void;
 }) {
   const [creating, setCreating] = useState(false), [name, setName] = useState('');
-  const options = [...new Set(['Default', ...sessions, value])];
+  const options = useMemo(() => [...new Set(['Default', ...sessions, value])], [sessions, value]);
   let createValue = '__create__';
   while (options.includes(createValue)) createValue += '_';
   return <div className="session-picker">

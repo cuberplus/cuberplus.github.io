@@ -17,16 +17,16 @@ function recording(algorithm: string, id = algorithm): Solve {
     status: 'complete', reason: '', timingBasis: 'host', moves,
   };
 }
-test.each(algorithms.filter(entry => entry.category !== 'AF2L').flatMap(entry =>
+test.each(algorithms.filter(entry => entry.pair === undefined).flatMap(entry =>
   entry.options.map(algorithm => ({ ...entry, selected: algorithm }))))('$category $id matches recorded $selected', entry => {
   const uses = usedAlgorithms(recording(entry.selected), cube);
   expect(uses.some(use => use.caseKey === `${entry.category}-${entry.id}` &&
     use.matches.includes(favoriteId(entry, entry.selected)))).toBe(true);
 });
-test.each(algorithms.filter(entry => entry.category === 'AF2L').flatMap(entry =>
-  entry.options.map(algorithm => ({ ...entry, algorithm }))))('advanced F2L $id: $algorithm is recognized with occupied neighboring slots', async entry => {
+test.each(algorithms.filter(entry => entry.pair !== undefined).flatMap(entry =>
+  entry.options.map(algorithm => ({ ...entry, algorithm }))))('$category $id: $algorithm is recognized with occupied neighboring slots', async entry => {
   const solve = recording(entry.algorithm);
-  const start = cube.solved().applyAlg(entry.setup!);
+  const start = entry.setup ? cube.solved().applyAlg(entry.setup) : casePattern(cube, entry.algorithm);
   solve.startFacelets = cube.facelets(start);
   const remaining = await cube.solution(cube.facelets(start.applyAlg(solve.moves.map(move => move.move).join(' '))));
   for (const move of remaining) {
@@ -34,7 +34,7 @@ test.each(algorithms.filter(entry => entry.category === 'AF2L').flatMap(entry =>
     solve.moves.push({ move, elapsed: time, hostTime: time, localTimestamp: time, cubeTimestamp: null });
   }
   const uses = usedAlgorithms(solve, cube);
-  expect(uses.some(use => use.caseKeys.includes(`AF2L-${entry.id}`) && use.matches.includes(favoriteId(entry, entry.algorithm)))).toBe(true);
+  expect(uses.some(use => use.caseKeys.includes(`${entry.category}-${entry.id}`) && use.matches.includes(favoriteId(entry, entry.algorithm)))).toBe(true);
   expect(nonFavoriteAlgorithms(solve, cube, new Set([favoriteId(entry, entry.algorithm)]), { F2L: false, OLL: true, PLL: true })).toEqual([]);
 }, 15000);
 test('only checks cases with favorites and accepts any favorited alternative', () => {

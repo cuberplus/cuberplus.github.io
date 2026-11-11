@@ -338,11 +338,11 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
         plot('runningTps', "Average Turns Per Second", "This chart shows your average turns per second. 'TPS During Execution' only counts your TPS while actively turning the cube");
         plot('runningTurns', "Average Turns", "This chart shows your average number of turns, in quarter turn metric", ChartType.Line, 'Solve Number', 'Turns');
         charts.push(<MistakeChart key="mistakes" summary={c.mistakes} select={mistake => this.openMistakes(mistake)} />);
-        plot('runningEfficiency', "Solve Efficiency", "This chart shows move efficiency ratio (after cancelling redundant same-face moves; 100% = no wasted moves), OLL/PLL success rates, and a combined solve efficiency (move efficiency minus failure rates).", ChartType.Line, 'Solve Number', 'Percentage');
+        plot('runningEfficiency', "Solve Efficiency", "Move efficiency measures redundant moves, not optimal solution length. OLL/PLL success and combined efficiency require case labels; missing recordings or cases produce gaps, not perfect scores. Import and re-analyze saved recordings in Options to fill missing cases.", ChartType.Line, 'Solve Number', 'Percentage');
         charts.push(buildChartHtml(<SortableGrid rows={c.bestSolvesData} columns={BEST_SOLVES_COLS} className="clickable-grid" onCellClick={({ row }) => this.openSolveSource(row)} />, `Top ${Const.FastestSolvesCount} Fastest Solves`, `This shows your ${Const.FastestSolvesCount} fastest solves, given the filters`));
         plot('runningStdDev', "Average Standard Deviation", "This chart shows your running average's standard deviation");
         plot('runningColorPercentages', "Percentage of Solves by Cross Color", "This chart shows what percentage of solves started with cross on White/Yellow/etc...", ChartType.Line, 'Solve Number', 'Percentage');
-        plot('runningFirstPairPercentages', "First F2L Pair", "The four F2L pairs for your most-used cross axis (opposite cross colors are combined). Percentages use all solves; unidentified pairs are not plotted.", ChartType.Line, 'Solve Number', 'Percentage');
+        plot('runningFirstPairPercentages', "First F2L Pair", "The four F2L pairs for your most-used cross axis (opposite cross colors are combined). Each window totals 100% among identified pairs on that axis; windows without identified pairs are gaps.", ChartType.Line, 'Solve Number', 'Percentage');
         plot('inspection', "Average solve time by inspection time", "This chart shows your average, grouped up by how much inspection time (For example, the left bar is the 1/7 of your solves with the lowest inspection time, and the right bar is the 1/7 of your solves with the most inspection time)", ChartType.Bar, 'Inspection Time (s)', 'Solve Time (s)');
         if (hasStepTimings) plot('stepAverages', "Average Time by Step", "This chart shows what percentage of your solve each step takes");
         plot('runningInspection', "Average Inspection Time", "This chart shows how much inspection time you use on average");
@@ -353,8 +353,8 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
             if (dataset?.data.length) this.openAverage('recordHistory', { datasetIndex, index: dataset.data.length - 1 } as ActiveElement);
         }} />, "Current Records", "Your current records for Single, Ao5, Ao12, Ao100, and Ao1000. Click to view the record solve or average."));
 
-        if (hasOll) plot('ollCategory', "OLL Edge Orientation", "This chart shows your percentage of OLL cases by edge orientation", ChartType.Line, 'Solve Number', 'Percentage');
-        if (hasPll) plot('pllCategory', "PLL Corner Permutation", "This chart shows your percentage of PLL cases by corner permutation", ChartType.Line, 'Solve Number', 'Percentage');
+        if (hasOll) plot('ollCategory', "OLL Edge Orientation", "Percentages among recognized OLL cases in each window. Missing case data produces gaps; import and re-analyze saved recordings in Options to reconstruct it.", ChartType.Line, 'Solve Number', 'Percentage');
+        if (hasPll) plot('pllCategory', "PLL Corner Permutation", "Percentages among recognized PLL cases in each window. Missing case data produces gaps; import and re-analyze saved recordings in Options to reconstruct it.", ChartType.Line, 'Solve Number', 'Percentage');
 
         if (hasStepTimings && p.methodName === MethodName.CFOP && p.steps.length === Const.MethodSteps[MethodName.CFOP].length) {
             plot('typicalCompare', "Time Per Step, Compared to Typical Solver", "This chart shows how long each step takes, compared to a typical solver at your average. The 'typical' data is calculated based on a tool provided from Felix Zemdegs's CubeSkills blog", ChartType.Bar, 'Step Name', 'Time (s)', false);

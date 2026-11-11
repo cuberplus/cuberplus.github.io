@@ -191,7 +191,7 @@ describe('specific mistake reasons', () => {
 
     test('uses the legacy Acubemy AUF face, not an assumed U face', () => {
         const solve = makeSolve({
-            source: 'acubemy', date: new Date('2025-01-01'), crossColor: CrossColor.Yellow,
+            source: 'acubemy', date: new Date('2025-01-01'), crossColor: CrossColor.White,
             steps: [makeStep(StepName.PLL, 3, { moves: "D D' R U R'" })],
         });
         markMistakes([solve], 5);

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
+import { PageVisible } from '@cuberplus/navigation';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
-import { markMistakes, MISTAKES, mistakeKey, mistakeLabel, rankedMistakes } from '../../../smartcubeanalyzer/src/Analysis/MistakeAnalysis';
+import { MISTAKES, mistakeKey, mistakeLabel, rankedMistakes } from '../../../smartcubeanalyzer/src/Analysis/MistakeAnalysis';
 import { StepName, type Solve as AnalyzedSolve } from '../../../smartcubeanalyzer/src/Models/Types';
 import { type Solve } from '../Core/engine';
 import type { Cube } from '../Core/puzzle';
@@ -9,12 +10,13 @@ import { algorithmTimeCost, nonFavoriteAlgorithms, unlearnAlgorithms, type Algor
 import { getAlgorithms } from '../../../src/database/customAlgorithms';
 import { InfoTip } from '../../../shared/Components/InfoTip';
 import { CFOP_STEPS } from '../Analysis/cfop';
-import { persistAnalysis, solveAnalysis } from '../Analysis/analysis';
+import { solveFeedback } from '../../../shared/workers/dataClient';
 import { potentialGain } from '../Analysis/mistakeSummary';
 
 const emptyHistory: Solve[] = [];
 export function SolveMistakes({ solve, cube, history = emptyHistory, brief = false }: { solve: Solve; cube: Cube; history?: Solve[]; brief?: boolean }) {
   const feedback = useRef<HTMLElement>(null);
+  const visible = useContext(PageVisible);
   const { favorites, unlearn, enabled, categories } = useAlgorithmPreferences();
   const [result, setResult] = useState<{ solve: Solve; analysis: AnalyzedSolve; nonFavorites: AlgorithmUse[]; unlearned: AlgorithmUse[] } | null>(null);
   const [failure, setFailure] = useState<Solve | null>(null);
@@ -22,31 +24,19 @@ export function SolveMistakes({ solve, cube, history = emptyHistory, brief = fal
   const nonFavorites = result?.solve === solve ? result.nonFavorites : [], unlearned = result?.solve === solve ? result.unlearned : [];
   const favoriteLabel = (use: typeof nonFavorites[number]) => `${CFOP_STEPS[use.step]}: Non-favorite algorithm (${use.caseKey.replace('-', ' ')})`;
   useEffect(() => {
-    if (solve.status !== 'complete') return;
+    if (!visible || solve.status !== 'complete') return;
     let active = true;
     setFailure(null); setResult(null);
-    const yieldToBrowser = () => new Promise(resolve => setTimeout(resolve, 0));
     async function analyze() {
-      await yieldToBrowser();
-      const solves: AnalyzedSolve[] = [], session = [...history.filter(item => item.id !== solve.id), solve]
-        .filter(item => item.session === solve.session && item.status !== 'active');
-      for (let i = 0; i < session.length; i++) {
-        if (!active) return;
-        const item = session[i];
-        solves.push(solveAnalysis(item, cube));
-        if (i % 20 === 19) await yieldToBrowser();
-      }
-      if (!active) return;
-      solves.sort((a, b) => a.date.getTime() - b.date.getTime());
-      markMistakes(solves, 100);
-      await persistAnalysis(session, solves);
+      const result = await solveFeedback(solve, history, () => active);
+      if (!active || !('analysis' in result) || !result.analysis) return;
       const nonFavorites = enabled && !solve.imported ? nonFavoriteAlgorithms(solve, cube, favorites, categories) : [];
       const unlearned = solve.imported ? [] : unlearnAlgorithms(solve, cube, unlearn);
-      if (active) setResult({ solve, analysis: solves.find(item => item.id === solve.id)!, nonFavorites, unlearned });
+      setResult({ solve, analysis: result.analysis, nonFavorites, unlearned });
     }
     void analyze().catch(() => { if (active) setFailure(solve); });
     return () => { active = false; };
-  }, [solve, solve.status, solve.penalty, cube, history, favorites, enabled, categories, unlearn]);
+  }, [solve, solve.status, solve.penalty, cube, history, favorites, enabled, categories, unlearn, visible]);
   const mistakes = analysis ? rankedMistakes(analysis) : [];
   const cost = (use: AlgorithmUse, avoid = false) => algorithmTimeCost(use, analysis?.steps[use.step], cube, avoid
     ? getAlgorithms().filter(entry => use.caseKeys.includes(`${entry.category}-${entry.id}`)).flatMap(entry =>

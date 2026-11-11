@@ -35,7 +35,8 @@ test('multiple sources merge into native storage with provenance, skip duplicate
     expect(stored.map(solve => solve.id).sort()).toEqual(['acubemy:same', 'cubeast:same', 'native']);
     expect(stored.find(solve => solve.id === 'native')).toEqual(native);
     const imported = stored.find(solve => solve.id === 'cubeast:same')!;
-    expect(imported).toMatchObject({ moves: [], startFacelets: SOLVED, duration: 12000, imported: { source: 'cubeast', rawSourceId: 'same', session: 'Practice' } });
+    expect(imported).toMatchObject({ session: 'Practice - Cubeast', moves: [], startFacelets: SOLVED, duration: 12000, imported: { source: 'cubeast', rawSourceId: 'same', session: 'Practice' } });
+    expect(stored.find(solve => solve.id === 'acubemy:same')!.session).toBe('Default - Acubemy');
     expect(imported.imported!.steps[0]).toMatchObject({ name: 'Cross', time: 1, turns: 4, recognitionTime: 0.2, executionTime: 0.8 });
     expect(turns(imported)).toBe(imported.imported!.turns);
     expect(refresh).toHaveBeenCalledTimes(1);
@@ -52,12 +53,27 @@ test('JSON backups and CSV exports preserve imported analysis and source without
   expect(validateBackup(backupJSON(stored), cube)).toEqual(stored);
   const exported = parseCsv(cubeastCSV(stored, cube), ',');
   expect(exported.map(solve => solve.source).sort()).toEqual(['acubemy', 'cubeast']);
+  expect(exported.map(solve => solve.session).sort()).toEqual(['Default - Acubemy', 'Practice - Cubeast']);
   expect(exported.find(solve => solve.source === 'cubeast')!.steps[0]).toMatchObject({ time: 1, turns: 4, moves: "R U R' U'" });
   const solve = stored.find(solve => solve.imported?.source === 'cubeast')!;
   expect(importedAnalysis({ ...solve, penalty: 2000 }).time).toBe(14);
   expect(importedAnalysis({ ...solve, status: 'incomplete', dnfReason: 'manual' }).dnf).toBe(true);
   const bad = { ...solve, imported: { ...solve.imported!, time: -1 } };
   expect(() => validateBackup(backupJSON([bad]), cube)).toThrow();
+});
+
+test.each(['Practice', 'Practice - Cubeast', 'x'.repeat(100)])('source session suffixes survive JSON and repeated CSV imports: %s', async session => {
+  await importSolveCSVs([file('session.csv', cubeast.replace('Practice', session))]);
+  const [original] = await readSolves(), expected = session.endsWith(' - Cubeast') ? session : `${session} - Cubeast`;
+  expect(original.session).toBe(expected);
+  expect(original.imported!.session).toBe(session);
+  expect(validateBackup(backupJSON([original]), cube)).toEqual([original]);
+  const csv = cubeastCSV([original], cube);
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: new IDBFactory() });
+  await importSolveCSVs([file('roundtrip.csv', csv)]);
+  const [restored] = await readSolves();
+  expect(restored.session).toBe(expected);
+  expect(validateBackup(backupJSON([restored]), cube)).toEqual([restored]);
 });
 
 test.each([

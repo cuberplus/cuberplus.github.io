@@ -4,7 +4,7 @@ import { applyMoves, FACES, HEX, inverseMoves, parseAlgorithm, ROTATIONS, solved
 
 afterEach(cleanup);
 
-function renderF2L(algorithm: string, category: 'F2L' | 'AF2L' = 'F2L') {
+function renderF2L(algorithm: string, category: 'F2L' | 'AF2L' | 'OF2L' = 'F2L') {
   const facelets = Array<string>(54);
   const visibleStickers: number[] = [];
   stickers(applyMoves(solvedCube(), inverseMoves(parseAlgorithm(algorithm)))).forEach(({ face, row, col, color }, i) => {
@@ -31,8 +31,8 @@ test('F2L stickers meet at the correct physical edges and front-right corner', (
   expect(vertices(8).filter(point => vertices(20).includes(point) && vertices(9).includes(point))).toEqual(['55,55']);
 });
 
-test('advanced F2L uses the projected cube and masks unused stickers rather than showing a full-color top view', () => {
-  const { image, tile } = renderF2L("U R U' R'", 'AF2L');
+test.each(['AF2L', 'OF2L'] as const)('%s uses the projected cube and masks unused stickers rather than showing a full-color top view', category => {
+  const { image, tile } = renderF2L("U R U' R'", category);
   expect(image.querySelectorAll('polygon')).toHaveLength(27);
   expect(tile(0).getAttribute('fill')).toBe('#697384');
   expect(tile(4).getAttribute('fill')).toBe(HEX[3]);

@@ -117,13 +117,15 @@ export function buildRunningEfficiencyData(
 
     const ollMap = caseMap(needOll, StepName.OLL), pllMap = caseMap(needPll, StepName.PLL);
     const effList = solves.map(solve => computeSolveEfficiency(solve, ollMap, pllMap));
-    const efficiencies = effList.map(e => e.moveEfficiency * 100);
+    const recorded = (solve: Solve) => solve.steps.some(step => !!step.moves);
+    const efficiencies = effList.map((e, i) => recorded(solves[i]) ? e.moveEfficiency * 100 : 0);
 
-    let movingAvg = calculateMovingAverage(efficiencies, windowSize);
-    const labels = makeLabels(movingAvg.length, pointsPerGraph, windowSize);
-    movingAvg = reduceDataset(movingAvg, pointsPerGraph);
+    const coverage = reduceDataset(calculateMovingPercentage(solves, windowSize, recorded), pointsPerGraph);
+    const averages = calculateMovingAverage(efficiencies, windowSize);
+    const labels = makeLabels(averages.length, pointsPerGraph, windowSize);
+    const movingAvg = reduceDataset(averages, pointsPerGraph).map((value, i) => coverage[i] ? value * 100 / coverage[i] : null);
 
-    const datasets: { label: string; data: number[] }[] = [
+    const datasets: { label: string; data: (number | null)[] }[] = [
         { label: `Move Efficiency % (avg of ${windowSize})`, data: movingAvg },
     ];
 
@@ -133,9 +135,14 @@ export function buildRunningEfficiencyData(
             { name: 'PLL', needed: needPll, failed: (e: typeof effList[number]) => e.hadPllFailure },
         ].filter(stage => stage.needed).map(stage => ({
             ...stage, rates: reduceDataset(calculateMovingPercentage(effList, windowSize, stage.failed), pointsPerGraph),
+            coverage: reduceDataset(calculateMovingPercentage(solves, windowSize, solve =>
+                (stage.name === 'OLL' ? Const.OllEdgeOrientationMapping : Const.PllCornerPermutationMapping).has(getStep(solve, stage.name === 'OLL' ? StepName.OLL : StepName.PLL)?.case ?? '')), pointsPerGraph),
         }));
-        datasets.push({ label: 'Solve efficiency', data: movingAvg.map((eff, i) => eff - failures.reduce((sum, stage) => sum + stage.rates[i], 0)) });
-        datasets.push(...failures.map(stage => ({ label: `${stage.name} success % (last ${windowSize})`, data: stage.rates.map(rate => 100 - rate) })));
+        const rate = (stage: typeof failures[number], i: number) => stage.rates[i] * 100 / stage.coverage[i];
+        datasets.push({ label: 'Solve efficiency', data: movingAvg.map((eff, i) =>
+            eff === null || failures.some(stage => !stage.coverage[i]) ? null : eff - failures.reduce((sum, stage) => sum + rate(stage, i), 0)) });
+        datasets.push(...failures.map(stage => ({ label: `${stage.name} success % (last ${windowSize})`,
+            data: stage.rates.map((_, i) => stage.coverage[i] ? 100 - rate(stage, i) : null) })));
     }
 
     return { labels, datasets };

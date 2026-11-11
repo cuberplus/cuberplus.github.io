@@ -70,8 +70,11 @@ test('live bursts retain and animate every raw turn, including repeated and oppo
   ]);
   frame(); expect(timestamps.at(-1)).toBe(750);
   // Appending while a turn is in flight must preserve its progress.
+  const previous = timeline.mock.calls.at(-1)![0].map(leaf => leaf.animLeaf);
   moves.push("U'");
   await draw(moves, 4, true);
+  expect(timeline.mock.calls.at(-1)![0].slice(0, 3).map(leaf => leaf.animLeaf)).toEqual(previous);
+  expect(timeline.mock.calls.at(-1)![0][0].animLeaf).toBe(previous[0]);
   expect(timestamps.at(-1)).toBe(750);
   for (let i = 0; i < 15; i++) frame();
   expect(timestamps.at(-1)).toBe(4000);
@@ -79,6 +82,16 @@ test('live bursts retain and animate every raw turn, including repeated and oppo
   for (let i = 1; i < advancing.length; i++) expect(advancing[i] - advancing[i - 1]).toBeLessThan(1000);
   expect(frames.size).toBe(0);
   expect(setup).toHaveBeenCalledTimes(1);
+});
+test('shortening a live move list and appending again does not retain discarded animation turns', async () => {
+  const moves = ['R', 'U', 'F'];
+  await draw(moves, 3, true);
+  moves.length = 1;
+  await draw(moves, 1, true);
+  expect(timeline.mock.calls.at(-1)![0].map(leaf => leaf.animLeaf.toString())).toEqual(['R']);
+  moves.push('L', "B'");
+  await draw(moves, 3, true);
+  expect(timeline.mock.calls.at(-1)![0].map(leaf => leaf.animLeaf.toString())).toEqual(['R', 'L', "B'"]);
 });
 
 test('replay animates single forward and backward moves, respects speed, and snaps larger seeks', async () => {

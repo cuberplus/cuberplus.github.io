@@ -48,7 +48,7 @@ export function validImported(solve: Solve): boolean {
     text(data.date, 100) && Number.isFinite(Date.parse(data.date)) && data.date === solve.createdAt &&
     (data.endDate === undefined || (text(data.endDate, 100) && Number.isFinite(Date.parse(data.endDate)))) &&
     Object.values(MethodName).includes(data.method) && Object.values(CrossColor).includes(data.crossColor) &&
-    text(data.scramble) && data.scramble === solve.scramble && text(data.session, 100) && text(data.firstF2LPair ?? '', 100) &&
+    text(data.scramble) && data.scramble === solve.scramble && text(data.session, / - (Acubemy|Cubeast)$/.test(data.session) ? 110 : 100) && text(data.firstF2LPair ?? '', 100) &&
     ['isCorrupt', 'isFullStep', 'isMistake'].every(key => typeof data[key as 'isCorrupt'] === 'boolean') &&
     (data.dnf === undefined || typeof data.dnf === 'boolean') &&
     [data.time, data.tps, data.turns, data.recognitionTime, data.executionTime, data.preAufTime, data.postAufTime].every(number) &&
@@ -80,9 +80,10 @@ export async function importSolveCSVs(files: File[]): Promise<{ added: number; d
     if (endDate && !Number.isFinite(endDate.getTime())) throw new Error(`Invalid ${data.source} solve ${data.id}. No solves were imported.`);
     analysis.steps = analysis.steps.filter(step => step.name || step.moves || step.case ||
       [step.time, step.turns, step.tps, step.recognitionTime, step.executionTime, step.preAufTime, step.postAufTime].some(value => value !== 0));
+    const device = data.source === 'cubeast' ? 'Cubeast' : 'Acubemy', session = data.session || 'Default', suffix = ` - ${device}`;
     const solve: Solve = {
-      version: 1, id, session: data.session || 'Default', createdAt: Number.isFinite(date.getTime()) ? date.toISOString() : '',
-      device: data.source === 'cubeast' ? 'Cubeast' : 'Acubemy', scramble: data.scramble, startFacelets: SOLVED,
+      version: 1, id, session: session.endsWith(suffix) ? session : session + suffix, createdAt: Number.isFinite(date.getTime()) ? date.toISOString() : '',
+      device, scramble: data.scramble, startFacelets: SOLVED,
       duration: data.time * 1000, inspection: data.inspectionTime === null ? undefined : data.inspectionTime * 1000,
       status: data.dnf ? 'incomplete' : 'complete', dnfReason: data.dnf ? 'manual' : undefined,
       reason: '', timingBasis: 'host', moves: [],

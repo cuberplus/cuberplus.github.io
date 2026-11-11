@@ -19,6 +19,7 @@ import { parseCsv } from '../../smartcubeanalyzer/src/Data/CsvParser';
 import { FilterPanel } from '../../smartcubeanalyzer/src/Components/FilterPanel';
 import { Const } from '../../smartcubeanalyzer/src/Models/Constants';
 import { DEMO_DATASETS, DEFAULT_DEMO_FILE } from '../../smartcubeanalyzer/src/Data/SampleData';
+import { buildFirstPairPercentages } from '../../smartcubeanalyzer/src/Charts/ChartDataBuilders';
 import {
     CrossColor,
     Filters,
@@ -229,7 +230,25 @@ describe('the demo dataset registry', () => {
     test('every offered dataset parses into solves', () => {
         for (const dataset of DEMO_DATASETS) {
             const raw = readFileSync(join(process.cwd(), "smartcubeanalyzer", "public", dataset.file), 'utf8');
-            expect(parseCsv(raw, ',').length).toBeGreaterThan(0);
+            const solves = parseCsv(raw, ',');
+            expect(solves.length).toBeGreaterThan(0);
+            if (dataset.id === 'cubeast-full' || dataset.id === 'acubemy-all') {
+                expect(solves).toHaveLength(dataset.id === 'cubeast-full' ? 36_281 : 14_977);
+                const cfop = solves.filter(solve => !solve.dnf && solve.method === MethodName.CFOP);
+                expect(cfop.every(solve => Const.OllEdgeOrientationMapping.has(getStep(solve, StepName.OLL)!.case))).toBe(true);
+                expect(cfop.every(solve => Const.PllCornerPermutationMapping.has(getStep(solve, StepName.PLL)!.case))).toBe(true);
+                if (dataset.id === 'acubemy-all') expect(solves.every(solve => solve.inspectionTime === null)).toBe(true);
+                cfop.sort((a, b) => a.date.getTime() - b.date.getTime());
+                for (const windowSize of [1, 100, 1000]) for (const pointsPerGraph of [500, Infinity]) {
+                    const chart = buildFirstPairPercentages(cfop, windowSize, pointsPerGraph);
+                    const invalid = chart.labels!.filter((_, i) => {
+                        const values = chart.datasets.map(dataset => dataset.data[i]);
+                        return !values.every(value => value === null) && (values.some(value => typeof value !== 'number' || value < 0 || value > 100) ||
+                            Math.abs(values.reduce<number>((sum, value) => sum + Number(value), 0) - 100) > 1e-9);
+                    });
+                    expect({ dataset: dataset.id, windowSize, pointsPerGraph, invalid }).toEqual({ dataset: dataset.id, windowSize, pointsPerGraph, invalid: [] });
+                }
+            }
         }
     });
 });

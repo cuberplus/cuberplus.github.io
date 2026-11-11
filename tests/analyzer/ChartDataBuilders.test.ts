@@ -74,26 +74,56 @@ function makeSolves(count: number, overrides: Partial<Solve> = {}): Solve[] {
 
 // ── buildRunningAverageData ───────────────────────────────────────────────────
 
-test('first-pair rolling percentages keep the full denominator but show only four pairs', () => {
+test('first-pair rolling percentages total 100% among identified pairs and show only four pairs', () => {
     const solves = ['Red/Green', 'Orange/Blue', undefined, 'Red/Green'].map(firstF2LPair => makeSolve({ firstF2LPair }));
     const chart = buildFirstPairPercentages(solves, 2, 500);
     expect(chart.labels).toEqual(['2', '3', '4']);
     const data = Object.fromEntries(chart.datasets.map(dataset => [dataset.label!, dataset.data]));
-    expect(data['Red / Green']).toEqual([50, 0, 50]);
-    expect(data['Orange / Blue']).toEqual([50, 50, 0]);
+    expect(data['Red / Green']).toEqual([50, 0, 100]);
+    expect(data['Orange / Blue']).toEqual([50, 100, 0]);
     expect(data.Unknown).toBeUndefined();
     expect(chart.datasets).toHaveLength(4);
     expect(data['Red / Blue']).toEqual([0, 0, 0]);
-    expect(chart.datasets.reduce((sum, dataset) => sum + Number(dataset.data[1]), 0)).toBe(50);
+    chart.labels!.forEach((_, i) => expect(chart.datasets.reduce((sum, dataset) => sum + Number(dataset.data[i]), 0)).toBeCloseTo(100));
     const sampled = buildFirstPairPercentages(solves, 2, 2);
     expect(sampled.datasets.every(dataset => dataset.data.length === sampled.labels!.length)).toBe(true);
     expect(buildFirstPairPercentages([], 10, 500).datasets).toEqual([]);
+});
+test.each([1, 2, 7, 23])('every first-pair point totals 100%% or is a complete gap with a %i-solve window', windowSize => {
+    const fixtures = [
+        { crossColor: CrossColor.White, firstF2LPair: 'Red/Green' },
+        { crossColor: CrossColor.Yellow, firstF2LPair: 'Orange/Blue' },
+        { crossColor: CrossColor.White, firstF2LPair: undefined },
+        { crossColor: CrossColor.Yellow, firstF2LPair: 'not a pair' },
+        { crossColor: CrossColor.Red, firstF2LPair: 'White/Green' },
+        { crossColor: CrossColor.Red, firstF2LPair: 'Red/Green' },
+        { crossColor: CrossColor.Unknown, firstF2LPair: 'Red/Green' },
+        { crossColor: CrossColor.White, firstF2LPair: 'Red/Blue' },
+        { crossColor: CrossColor.Yellow, firstF2LPair: 'Green/Orange' },
+    ];
+    const solves = Array.from({ length: 64 }, (_, i) => makeSolve(fixtures[i % fixtures.length]));
+    for (const pointsPerGraph of [3, Infinity]) {
+        const chart = buildFirstPairPercentages(solves, windowSize, pointsPerGraph);
+        expect(chart.datasets).toHaveLength(4);
+        chart.labels!.forEach((label, i) => {
+            const window = solves.slice(Number(label) - windowSize, Number(label));
+            const hasPair = window.some(solve => [CrossColor.White, CrossColor.Yellow].includes(solve.crossColor) &&
+                ['Red/Green', 'Orange/Blue', 'Red/Blue', 'Green/Orange'].includes(solve.firstF2LPair ?? ''));
+            const values = chart.datasets.map(dataset => dataset.data[i]);
+            if (!hasPair) expect(values).toEqual([null, null, null, null]);
+            else {
+                expect(values.every(value => typeof value === 'number' && value >= 0 && value <= 100)).toBe(true);
+                expect(values.reduce<number>((sum, value) => sum + Number(value), 0)).toBeCloseTo(100, 10);
+            }
+        });
+        expect(chart.datasets.every(dataset => dataset.data.length === chart.labels!.length)).toBe(true);
+    }
 });
 test('opposite cross colors combine to select the dominant cross axis', () => {
     const solves = [
         makeSolve({ crossColor: CrossColor.White, firstF2LPair: 'Red/Green' }),
         makeSolve({ crossColor: CrossColor.Yellow, firstF2LPair: 'Red/Blue' }),
-        makeSolve({ crossColor: CrossColor.Yellow, firstF2LPair: 'Orange/Green' }),
+        makeSolve({ crossColor: CrossColor.Yellow, firstF2LPair: 'Green/Orange' }),
         makeSolve({ crossColor: CrossColor.Red, firstF2LPair: 'White/Green' }),
         makeSolve({ crossColor: CrossColor.Red, firstF2LPair: 'Yellow/Blue' }),
     ];
@@ -385,6 +415,14 @@ describe('buildStepPercentages', () => {
 // ── buildOllCategoryChart / buildPllCategoryChart ─────────────────────────────
 
 describe('buildOllCategoryChart', () => {
+    test('missing cases produce gaps and do not dilute recognized-case percentages', () => {
+        const missing = makeSolve({ steps: [makeStep(StepName.OLL, 3, '')] });
+        const known = makeSolve({ steps: [makeStep(StepName.OLL, 3, '1')] });
+        const chart = buildOllCategoryChart([missing, known], 1, 500);
+        expect(chart.datasets.every(dataset => dataset.data[0] === null)).toBe(true);
+        expect(chart.datasets[0].data[1]).toBe(100);
+        expect(buildOllCategoryChart([missing, known], 2, 500).datasets[0].data[0]).toBe(100);
+    });
     test('returns 4 datasets (Dot, Line, Angle, Cross)', () => {
         const result = buildOllCategoryChart(makeSolves(5), 5, 500);
         expect(result.datasets).toHaveLength(4);

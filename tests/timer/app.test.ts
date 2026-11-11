@@ -15,6 +15,7 @@ const cube = await loadCube();
 const generate = jest.fn<() => Promise<string>>();
 const calibrate = jest.fn<() => Promise<void>>();
 const save = jest.fn<(solves: Solve[]) => Promise<void>>().mockResolvedValue();
+const statistics = jest.fn(sessionStats), streakStatistics = jest.fn(dailyStreak), backup = jest.fn<(solves: Solve[]) => string>().mockReturnValue('');
 const erase = jest.fn<(id: string) => Promise<void>>().mockImplementation(async id => {
   recovered = recovered.filter(solve => solve.id !== id);
   window.dispatchEvent(new CustomEvent('timer-solve-deleted', { detail: id }));
@@ -37,8 +38,8 @@ await jest.unstable_mockModule('../../timer/src/Bluetooth/bluetooth', () => ({ B
   calibrate = calibrate;
 } }));
 await jest.unstable_mockModule('../../timer/src/Data/storage', () => ({
-  saveSolves: save, deleteSolve: erase, readSolves: async () => recovered, backupJSON: () => '', validateBackup: () => recovered,
-  cubeastCSV, averageDetails, dailyStreak, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats, solveEndDate, turns: (solve: Solve) => solve.moves.length,
+  saveSolves: save, deleteSolve: erase, readSolves: async () => recovered, recoverLocalSolves: async () => recovered, backupJSON: backup, validateBackup: () => recovered,
+  cubeastCSV, averageDetails, dailyStreak: streakStatistics, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats: statistics, solveEndDate, turns: (solve: Solve) => solve.moves.length,
   formatTime: (ms: number, precision: 2 | 3 = 2) => (ms / 1000).toFixed(precision),
 }));
 await jest.unstable_mockModule('../../timer/src/Components/CubeView', () => ({
@@ -90,7 +91,7 @@ beforeEach(async () => {
     if (!alg) throw new Error('Unexpected cube state in test recovery.');
     return movesOf(alg).reverse().map(inverse);
   });
-  save.mockReset().mockResolvedValue(); erase.mockClear(); generate.mockReset(); calibrate.mockReset().mockResolvedValue();
+  save.mockReset().mockResolvedValue(); statistics.mockClear(); streakStatistics.mockClear(); backup.mockClear(); erase.mockClear(); generate.mockReset(); calibrate.mockReset().mockResolvedValue();
   generate.mockResolvedValueOnce('R U2').mockImplementationOnce(() => new Promise<string>((resolve, reject) => { resolveNext = resolve; rejectNext = reject; })).mockResolvedValue('B R2');
   container = document.createElement('div'); document.body.appendChild(container);
   root = createRoot(container);
@@ -215,6 +216,47 @@ function historySolve(number: number, duration: number, count: number, session =
 function historyNumbers() {
   return Array.from(container.querySelectorAll('[aria-label="Solve history"] tbody tr')).map(row => Number(row.firstElementChild!.textContent));
 }
+test('active turns persist fresh snapshots and export the live attempt without recalculating history statistics', async () => {
+  await showHistory([historySolve(1, 2000, 10)]);
+  await click('Connect cube');
+  await act(async () => { move('R', 100); move('U2', 200); });
+  statistics.mockClear();
+  await act(async () => move('U', 300));
+  const first = save.mock.calls.at(-1)![0][0];
+  for (const time of [400, 500, 600]) await act(async () => move('U', time));
+  expect(statistics).not.toHaveBeenCalled();
+  expect(historyNumbers()).toEqual([1]);
+  expect(first).toMatchObject({ status: 'active', moves: [expect.objectContaining({ move: 'U' })] });
+  expect(save.mock.calls.at(-1)![0][0].moves).toHaveLength(4);
+  expect(container.querySelector('[aria-label="Live 3x3 cube state"]')?.getAttribute('data-facelets')).toBe(physicalFacelets);
+  Object.defineProperties(URL, {
+    createObjectURL: { configurable: true, value: jest.fn(() => 'blob:backup') },
+    revokeObjectURL: { configurable: true, value: jest.fn() },
+  });
+  jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  await click('Export JSON');
+  expect(backup.mock.calls.at(-1)![0]).toHaveLength(2);
+  expect(backup.mock.calls.at(-1)![0].find(solve => solve.status === 'active')?.moves).toHaveLength(4);
+  await act(async () => { move('U2', 700); move("R'", 900); });
+  expect(statistics).toHaveBeenCalledTimes(1);
+  expect(historyNumbers()).toEqual([2, 1]);
+  expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ status: 'complete', duration: 600 });
+  expect(save.mock.calls.at(-1)![0][0].moves).toHaveLength(6);
+});
+test('a blocked save coalesces queued turns without losing completion or the over-turn penalty', async () => {
+  await enableExtraTurnPenalty();
+  let finishSave!: () => void;
+  save.mockImplementationOnce(() => new Promise(resolve => { finishSave = resolve; }));
+  await click('Connect cube');
+  await act(async () => { move('R', 100); move('U2', 200); move('U', 300); });
+  expect(save).toHaveBeenCalledTimes(1);
+  await act(async () => { move('U', 400); move('U', 500); move('U', 600); move('U2', 700); move("R'", 900); move('R', 1000); });
+  expect(save).toHaveBeenCalledTimes(1);
+  await act(async () => finishSave());
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ status: 'complete', duration: 600, penalty: 2000, penaltyReason: 'over-turn' });
+  expect(save.mock.calls.at(-1)![0][0].moves).toHaveLength(6);
+});
 async function chooseSession(value: string) {
   const select = container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!;
   const existing = Array.from(select.options).some(option => option.value === value);
@@ -468,6 +510,7 @@ test('the first daily attempt shows an independently dismissible fire with curre
   expect(container.querySelector('[aria-label="Daily streak"]')).toBeNull();
   await act(async () => jest.advanceTimersByTime(1));
   const notice = container.querySelector('[aria-label="Daily streak"]')!;
+  expect(streakStatistics).toHaveBeenCalledTimes(1);
   expect(notice.textContent).toContain('Congratulations!');
   expect(notice.textContent).toContain('Daily Streak: 1');
   expect(notice.textContent).toContain('Best Streak: 7');
@@ -482,6 +525,7 @@ test('the first daily attempt shows an independently dismissible fire with curre
   await act(async () => resolveNext('F L2'));
   await act(async () => { move('F', 2000); move('L2', 2100); move('L2', 2200); move("F'", 2400); });
   await act(async () => jest.advanceTimersByTime(501));
+  expect(streakStatistics).toHaveBeenCalledTimes(1);
   expect(container.querySelector('[aria-label="Daily streak"]')).toBeNull();
   jest.setSystemTime(new Date(2026, 10, 3, 12));
   await act(async () => { move('B', 3000); move('R2', 3100); move('R2', 3200); move("B'", 3400); });

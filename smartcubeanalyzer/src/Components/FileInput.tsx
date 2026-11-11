@@ -39,7 +39,9 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
         const id = (event as CustomEvent<string>).detail;
         this.setState(state => ({ solves: state.solves.filter(solve => solve.id !== id || (solve.source !== 'timer' && !solve.id.startsWith(`${solve.source}:`))) }));
     };
-    private refresh = () => { void import('../../../timer/src/Data/storage').then(async ({ readSolveIds }) => {
+    private refresh = (event?: Event) => {
+        if (event instanceof CustomEvent && (event as CustomEvent<{ reanalyzed?: boolean }>).detail?.reanalyzed) this.setState({ savedAnalysisChanged: true });
+        void import('../../../timer/src/Data/storage').then(async ({ readSolveIds }) => {
         const ids = await readSolveIds();
         if (this.mounted) this.setState({ unloadedCount: ids.filter(id => !this.loadedIds.has(id)).length });
     }).catch(() => {}); };
@@ -69,6 +71,7 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
                 suggestedSessions: CalculateAllSessionOptions(solves),
                 suggestedWindowSize: CalculateWindowSize(solves.length),
                 unloadedCount: 0,
+                savedAnalysisChanged: false,
             });
             ReactGA.event({ category: 'DataLoaded', action: demo ? 'Loaded Test Data' : 'Loaded User Data', value: solves.length });
         } catch (error) {
@@ -133,7 +136,7 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
                 <HelpPanel showHelpPanel={this.state.showHelpModal} onCloseHandler={() => this.setState({ showHelpModal: false })} />
 
                 <Container className="container-fluid mt-2 mt-md-3">
-                    {!!this.state.unloadedCount && <Alert variant="warning">{this.state.unloadedCount} saved solves are not loaded. Your current data has been kept. <Button variant="outline-primary" disabled={this.state.isParsing} onClick={() => this.showTimerData()}>Load saved solves</Button></Alert>}
+                    {(!!this.state.unloadedCount || this.state.savedAnalysisChanged) && <Alert variant="warning">{this.state.savedAnalysisChanged ? 'Saved solve analysis has changed.' : `${this.state.unloadedCount} saved solves are not loaded.`} Your current data has been kept. <Button variant="outline-primary" disabled={this.state.isParsing} onClick={() => this.showTimerData()}>Load saved solves</Button></Alert>}
                     <Row className="align-items-stretch g-2 g-md-3">
                         <Col lg={6} md={12}>
                             <Card className="info-card h-100">

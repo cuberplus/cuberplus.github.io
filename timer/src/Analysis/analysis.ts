@@ -2,14 +2,17 @@ import { parseCsv } from '../../../smartcubeanalyzer/src/Data/CsvParser';
 import type { Solve as Analysis } from '../../../smartcubeanalyzer/src/Models/Types';
 import type { Cube } from '../Core/puzzle';
 import type { Solve } from '../Core/engine';
-import { cubeastCSV, saveSolves } from '../Data/storage';
+import { cubeastCSV, readSolves, saveSolves } from '../Data/storage';
 import { importedAnalysis, validImported } from '../Data/csvImport';
-import { SOLVED } from '../Core/puzzle';
+import { loadCube, SOLVED } from '../Core/puzzle';
+import type { DataProgress } from '../../../shared/workers/dataTasks';
 import { MISTAKES } from '../../../smartcubeanalyzer/src/Analysis/MistakeAnalysis';
-import { StepName } from '../../../smartcubeanalyzer/src/Models/Types';
+import { MethodName, StepName } from '../../../smartcubeanalyzer/src/Models/Types';
 import { analyzeCFOP, cfopKey, recordingKey } from './cfop';
+import { completedF2LCross } from '../../../shared/cube/f2l';
+import { COLORS } from '../../../scrambler/src/cube/cube';
 
-export const ANALYSIS_VERSION = 1;
+export const ANALYSIS_VERSION = 2;
 export const analysisKey = (solve: Solve) => JSON.stringify([solve.crossOverride, solve.status, solve.penalty, solve.duration, solve.session, solve.inspection, solve.createdAt, solve.timingBasis, solve.startFacelets, recordingKey(solve)]);
 const serialize = ({ date, endDate, ...data }: Analysis): NonNullable<Solve['imported']> => ({ ...data, date: date.toISOString(), endDate: endDate?.toISOString() });
 const restore = (data: NonNullable<Solve['imported']>): Analysis => ({ ...data, date: new Date(data.date), endDate: data.endDate ? new Date(data.endDate) : undefined });
@@ -47,16 +50,41 @@ export async function persistReplayAnalysis(solve: Solve, cube: Cube): Promise<v
 
 export function reanalyzeSolve(solve: Solve, cube: Cube, crossOverride: number | undefined): Solve {
   const updated: Solve = { ...solve, crossOverride, analysis: undefined, cfop: undefined };
-  if (updated.imported && updated.moves.length) {
-    const recording: Solve = { ...updated, imported: undefined };
+  if (updated.imported?.method === MethodName.CFOP && updated.moves.length) {
+    const recording: Solve = { ...updated, imported: undefined, crossOverride: crossOverride ?? completedF2LCross(updated.scramble,
+      updated.moves.map(move => move.move).join(' '), COLORS.indexOf(updated.imported.crossColor as typeof COLORS[number])) };
     const data = solveAnalysis(recording, cube);
-    updated.cfop = recording.cfop;
-    updated.imported = serialize({ ...data, source: updated.imported.source, rawSourceId: updated.imported.rawSourceId, rawSource: updated.imported.rawSource });
+    updated.cfop = { ...recording.cfop!, key: cfopKey(updated) };
+    const original = restore(updated.imported);
+    updated.imported = serialize({ ...original, ...data, steps: data.steps.filter(step => step.name), id: original.id, date: original.date, endDate: original.endDate,
+      inspectionTime: original.inspectionTime, source: original.source, rawSourceId: original.rawSourceId, rawSource: original.rawSource });
   } else if (updated.imported) {
     updated.imported = { ...updated.imported, mistakes: undefined, mistakeContext: undefined };
   }
   solveAnalysis(updated, cube);
   return updated;
+}
+
+export async function reanalyzeAllSolves(progress: (value: DataProgress) => void): Promise<DataProgress> {
+  const solves = await readSolves(), start = performance.now();
+  const result: DataProgress = { processed: 0, total: solves.length, analyzed: 0, skipped: 0, failed: 0, remainingMs: null };
+  progress({ ...result });
+  const cube = await loadCube();
+  let batch: Solve[] = [];
+  for (const solve of solves) {
+    if (solve.status === 'active' || !solve.moves.length || solve.imported && solve.imported.method !== MethodName.CFOP) result.skipped++;
+    else {
+      try { batch.push(reanalyzeSolve(solve, cube, solve.crossOverride)); result.analyzed++; }
+      catch { result.failed++; }
+    }
+    result.processed++;
+    if (result.processed % 50 === 0 || result.processed === result.total) {
+      await saveSolves(batch, 'reanalysis'); batch = [];
+      result.remainingMs = (performance.now() - start) / result.processed * (result.total - result.processed);
+      progress({ ...result });
+    }
+  }
+  return { ...result, remainingMs: 0 };
 }
 
 export async function persistAnalysis(solves: Solve[], records: Analysis[]): Promise<void> {

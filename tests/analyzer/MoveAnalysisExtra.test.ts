@@ -104,6 +104,10 @@ describe('coreMovesCount', () => {
 });
 
 describe('computeAufInefficiency', () => {
+    test.each([['', 0], ["U U2 U'", 3], ["R U R'", 0]] as const)('handles empty, AUF-only and unpadded recordings: %s', (moves, count) => {
+        const result = computeAufInefficiency(makeStep(StepName.PLL, 3, { moves }));
+        expect([result.preAufMoves, result.postAufMoves]).toEqual([count, count]);
+    });
     test('counts leading and trailing AUF moves separately', () => {
         const step = makeStep(StepName.PLL, 3, { moves: "U U R U R' U2" });
         const result = computeAufInefficiency(step);

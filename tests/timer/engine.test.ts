@@ -1,9 +1,26 @@
 import { jest } from '@jest/globals';
+import { KPattern } from 'cubing/kpuzzle';
 import { TimerEngine, finalizeTiming, setPenalty, solveTime, type RecordedTurn, type Solve } from '../../timer/src/Core/engine';
 import { Cube, SOLVED, inverse, loadCube, locations, movesOf, simplifyMoves } from '../../timer/src/Core/puzzle';
 
 let cube: Cube;
 beforeAll(async () => { cube = await loadCube(); });
+
+test('solved-state fast path preserves rotations, center orientation and partially specified cubies', () => {
+  for (const rotation of ['', 'x', 'x2', "x'", 'y', 'z', 'x y']) {
+    for (const algorithm of ['', 'R', "R U R'", 'M', 'R2 R2']) {
+      const pattern = cube.solved().applyAlg(`${algorithm} ${rotation}`);
+      expect(cube.isSolved(pattern)).toBe(pattern.experimentalIsSolved({ ignoreCenterOrientation: true, ignorePuzzleOrientation: true }));
+    }
+  }
+  const data = structuredClone(cube.solved().patternData);
+  data.CENTERS.orientation.fill(1);
+  expect(cube.isSolved(new KPattern(cube.puzzle, data))).toBe(true);
+  data.EDGES.orientation.fill(1);
+  data.EDGES.orientationMod = data.EDGES.orientation.map(() => 1);
+  const partial = new KPattern(cube.puzzle, data);
+  expect(cube.isSolved(partial)).toBe(partial.experimentalIsSolved({ ignoreCenterOrientation: true, ignorePuzzleOrientation: true }));
+});
 
 function create(scramble = 'R U2') {
   const records: Solve[] = [];

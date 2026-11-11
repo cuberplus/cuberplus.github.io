@@ -10,6 +10,7 @@ import { formatAlgorithm } from './formatAlgorithm';
 import { AlgorithmNotification, DiscoverAlgorithms, type AlgorithmNotice } from './DiscoverAlgorithms';
 import './database.css';
 
+const categoryName = (category: Category) => category === 'AF2L' ? 'Advanced F2L' : category === 'OF2L' ? 'Other F2L' : category;
 export default function Database({ caseKey }: { caseKey?: string } = {}) {
   usePreloadCaseImages();
   const [catalog, setCatalog] = useState(getAlgorithms);
@@ -98,7 +99,7 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
         </div>
         <label>Algorithm group<select className="form-select" value={category} onChange={event => {
           const next = event.target.value as Category; setCategory(next); setCaseId(catalog.find(entry => entry.category === next)!.id);
-        }}>{categories.map(category => <option key={category}>{category}</option>)}</select></label>
+        }}>{categories.map(category => <option key={category} value={category}>{categoryName(category)}</option>)}</select></label>
         <label className="mt-2">Case<select className="form-select" value={caseId} onChange={event => setCaseId(event.target.value)}>
           {catalog.filter(entry => entry.category === category).map(entry => <option key={entry.id}>{entry.id}</option>)}
         </select></label>
@@ -117,7 +118,7 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
         }}>
         <summary>
           <CategoryImage category={category} />
-          <span>{category === 'AF2L' ? 'Advanced F2L' : category}</span><span className="database-count">{catalog.filter(entry => entry.category === category).length} cases</span>
+          <span>{categoryName(category)}</span><span className="database-count">{catalog.filter(entry => entry.category === category).length} cases</span>
         </summary>
         <div className="database-group-content">
           {open.has(category) && [...new Set(entries.filter(entry => entry.category === category && (!caseKey || `${category}-${entry.id}` === caseKey)).sort(compareCases).map(caseGroup))].map(property => {
@@ -137,7 +138,7 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
             return <article className={`database-case${linked === key ? ' database-case--linked' : ''}`} id={key} key={key} aria-label={`${category} ${entry.id}`}>
               {entry.facelets ? <CaseImage {...entry} /> : <div className="database-case-image" />}
               <div className="database-algorithms">
-                <h3>{category} {entry.id}</h3>
+                <h3>{categoryName(category)} {entry.id}</h3>
                 {entry.options.map((algorithm, index) => ({ algorithm, index }))
                   .sort((a, b) => Number(favorites.has(favoriteId(entry, b.algorithm))) - Number(favorites.has(favoriteId(entry, a.algorithm))))
                   .slice(0, expandedCases.has(key) ? undefined : 3).map(({ algorithm, index }) => {

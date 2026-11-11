@@ -12,7 +12,9 @@ export interface DemoDataset { id: string; name: string; description: string; fi
 export const DEMO_DATASETS: DemoDataset[] = [
     { id: 'dev', name: 'Dev Solves', description: 'CFOP with full case analysis, 21,793 solves', file: 'demo/demo-solves.csv' },
     { id: 'acubemy', name: 'Acubemy', description: 'Acubemy export covering CFOP, Roux and ZZ, 10,000 solves', file: 'demo/acubemy.csv' },
+    { id: 'acubemy-all', name: 'Acubemy All', description: 'Complete Acubemy history, 14,977 solves', file: 'demo/acubemy-all-solves.csv' },
     { id: 'cfop-small', name: 'CFOP Small', description: 'CFOP with full case analysis, 467 solves', file: 'demo/cfop-small.csv' },
+    { id: 'cubeast-full', name: 'Cubeast Full', description: 'CFOP with full case analysis, 36,281 solves', file: 'demo/cubeast-full.csv' },
     { id: 'free-large', name: 'Free Large', description: 'Free-tier CFOP export, no case analysis, 34,243 solves', file: 'demo/free-large.csv' },
     { id: 'free-small', name: 'Free Small', description: 'Free-tier Roux and Layer by Layer export, 2,010 solves', file: 'demo/free-small.csv' },
     { id: 'roux-large', name: 'Roux Large', description: 'Roux, 896 solves', file: 'demo/roux-large.csv' },

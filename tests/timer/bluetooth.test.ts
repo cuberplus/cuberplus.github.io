@@ -87,7 +87,7 @@ test('a cube that does not use a MAC does not save an unverified input', async (
   await adapter.disconnect();
 });
 
-test('logs connection stages, the requested MAC, verified device, commands and notifications', async () => {
+test('logs connection diagnostics and errors without logging incoming moves', async () => {
   const stream = new Subject<SmartCubeEvent>();
   const connection = { ...verifiedConnection(), events$: stream, capabilities: { ...verifiedConnection().capabilities, facelets: true, battery: true } };
   const status = jest.fn();
@@ -110,9 +110,10 @@ test('logs connection stages, the requested MAC, verified device, commands and n
   expect(info).toHaveBeenCalledWith(expect.stringMatching(/Sending REQUEST_FACELETS$/), '');
   expect(info).toHaveBeenCalledWith(expect.stringMatching(/REQUEST_BATTERY write completed$/), '');
   const move: SmartCubeEvent = { type: 'MOVE', timestamp: 1, move: 'R', face: 1, direction: 0, localTimestamp: 1, cubeTimestamp: null };
+  for (const logger of [info, errors, warnings, debug]) logger.mockClear();
   stream.next(move);
   expect(events).toHaveBeenCalledWith(move);
-  expect(info).toHaveBeenCalledWith(expect.stringMatching(/Cube event$/), move);
+  for (const logger of [info, errors, warnings, debug]) expect(logger).not.toHaveBeenCalled();
   const gyro: SmartCubeEvent = { type: 'GYRO', timestamp: 2, quaternion: { x: 0, y: 0, z: 0, w: 1 } };
   stream.next(gyro);
   expect(events).not.toHaveBeenCalledWith(gyro);

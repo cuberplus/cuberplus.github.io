@@ -17,7 +17,7 @@ test('PLL sorting separates adjacent, diagonal and solved corners, with stable c
   const sorted = ['Z', 'Y', 'T', 'H', 'E', 'Aa'].map(id => entry('PLL', id)).sort(compareCases);
   expect(sorted.map(item => item.id)).toEqual(['Aa', 'T', 'E', 'Y', 'H', 'Z']);
 });
-test.each(['F2L', 'AF2L'])('%s groups target edge orientation consistently and sorts numeric suffixes naturally', category => {
+test.each(['F2L', 'AF2L', 'OF2L'])('%s groups target edge orientation consistently and sorts numeric suffixes naturally', category => {
   const entries = algorithms.filter(entry => entry.category === category).sort(compareCases);
   const groups = entries.map(caseGroup);
   expect(new Set(groups)).toEqual(new Set(['Oriented edge', 'Unoriented edge']));
@@ -29,7 +29,7 @@ test.each(['F2L', 'AF2L'])('%s groups target edge orientation consistently and s
 });
 test('every standard and advanced F2L category agrees with independent RULD edge reachability', () => {
   const moves = MOVES.flatMap((move, i) => /^[RULD]/.test(move) ? [i] : []);
-  for (const item of algorithms.filter(item => item.category === 'F2L' || item.category === 'AF2L')) {
+  for (const item of algorithms.filter(item => item.category.endsWith('F2L'))) {
     const target = locations.EDGES[[8, 9, 11, 10][(item.pair ?? 4) - 4]].map(i => Math.floor(i / 9));
     const home = EDGES.findIndex(edge => edge.every(face => target.includes(face)));
     const reachable = new Set([home * 2]), queue = [home * 2];

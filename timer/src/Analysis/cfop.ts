@@ -11,11 +11,12 @@ const layers = [...'URFDLB'].map((_, face) => ({
   cross: edges.flatMap((sides, i) => sides.includes(face) ? [i] : []),
   pairs: corners.flatMap((sides, i) => sides.includes(face) ? [[i, edges.findIndex(edge => !edge.includes(face) && edge.every(side => sides.includes(side)))]] : []),
 }));
+const multiply = Math.imul;
 export function recordingKey(solve: Solve): string {
   let hash = 2166136261;
   for (const move of solve.moves) {
-    const text = JSON.stringify([move.move, move.elapsed, move.hostTime, move.localTimestamp, move.cubeTimestamp, move.serial]);
-    for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
+    const text = `${move.move},${move.elapsed},${move.hostTime},${move.localTimestamp},${move.cubeTimestamp},${move.serial}`;
+    for (let i = 0; i < text.length; i++) hash = multiply(hash ^ text.charCodeAt(i), 16777619);
   }
   return `${solve.moves.length}:${hash >>> 0}`;
 }

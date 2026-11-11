@@ -5,7 +5,7 @@ import { Cube, crossRotation, locations } from '../Core/puzzle';
 import { cfopFrame } from '../Analysis/cfop';
 
 interface Animation {
-  cube: Cube; moves: readonly string[]; rotation: string; colorFrame: string; length: number;
+  cube: Cube; moves: readonly string[]; rotation: string; colorFrame: string; length: number; leaves: Move[];
   cursor: number; target: number; speed: number; playback: boolean; seekVersion: number; time: number; frame: number;
 }
 const timestamp = (position: number) => position * 1000 as ExperimentalMillisecondTimestamp;
@@ -50,11 +50,13 @@ export function CubeView({ cube, facelets, moves, position = moves.length, speed
       const prefix = new Alg(moves.slice(0, position).join(' '));
       const setup = cube.parse(facelets).applyAlg(prefix.invert()).experimentalToTransformation()!;
       element.experimentalModel.setupTransformation.set(cube.solved().applyAlg(colorFrame).applyTransformation(setup).applyAlg(rotation).experimentalToTransformation());
-      state = { cube, moves, rotation, colorFrame, length: -1, cursor: position, target: position, speed, playback, seekVersion, time: 0, frame: 0 };
+      state = { cube, moves, rotation, colorFrame, length: -1, leaves: [], cursor: position, target: position, speed, playback, seekVersion, time: 0, frame: 0 };
       animation.current = state;
     }
     if (state.length !== moves.length) {
-      const leaves = moves.map(cfopFrame(cube, rotation)).map(move => new Move(move));
+      const leaves = state.leaves.slice(0, moves.length), transform = cfopFrame(cube, rotation);
+      for (let i = leaves.length; i < moves.length; i++) leaves.push(new Move(transform(moves[i])));
+      state.leaves = leaves;
       element.alg = new Alg(leaves);
       // Explicit, non-overlapping intervals keep repeated and opposite-face turns separate.
       element.experimentalModel.animationTimelineLeavesRequest.set(leaves.map((animLeaf, index) => ({

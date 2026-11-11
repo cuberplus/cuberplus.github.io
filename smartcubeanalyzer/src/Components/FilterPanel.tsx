@@ -117,30 +117,41 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
     }
 
     static passesFilters(solve: Solve, filters: Filters) {
-        if (solve.isCorrupt) return false;
-        if (solve.method != filters.method) return false;
-        if (filters.sources.indexOf(solve.source) < 0) return false;
-        if (filters.crossColors.indexOf(solve.crossColor) < 0) return false;
-        if (solve.date < filters.startDate || solve.date > filters.endDate) return false;
-        if (!solve.dnf && (solve.time < filters.fastestTime || solve.time > filters.slowestTime)) return false;
+        return !this.filterExclusion(solve, filters);
+    }
+    static filterExclusion(solve: Solve, filters: Filters): string {
+        if (solve.isCorrupt) return 'Invalid source data';
+        if (solve.method != filters.method) return 'Solving method';
+        if (filters.sources.indexOf(solve.source) < 0) return 'Source';
+        if (filters.crossColors.indexOf(solve.crossColor) < 0) return 'Cross color';
+        if (solve.date < filters.startDate || solve.date > filters.endDate) return 'Date range';
+        if (!solve.dnf && (solve.time < filters.fastestTime || solve.time > filters.slowestTime)) return 'Solve time';
         // Acubemy exports may not report inspection time. Those solves should not be excluded by inspection filters.
-        if (solve.inspectionTime != null && (solve.inspectionTime < filters.lowestInspection || solve.inspectionTime > filters.highestInspection)) return false;
+        if (solve.inspectionTime != null && (solve.inspectionTime < filters.lowestInspection || solve.inspectionTime > filters.highestInspection)) return 'Inspection time';
         // Only filter by session when the solve has a session set; avoids excluding rows where session wasn't parsed (e.g. CSV column alignment).
-        if (filters.sessions.length > 0 && (solve.session !== '' && solve.session != null) && filters.sessions.indexOf(solve.session) < 0) return false;
+        if (filters.sessions.length > 0 && (solve.session !== '' && solve.session != null) && filters.sessions.indexOf(solve.session) < 0) return 'Session';
 
         // TODO: check case logic properly
         // Only filter by case when the export reported one. Free-tier exports leave
         // step_N_case blank, and filtering on "" would reject the whole export.
         const pllStep = getStep(solve, StepName.PLL);
-        if (solve.method == MethodName.CFOP && pllStep?.case && filters.pllCases.indexOf(pllStep.case) < 0) return false;
+        if (solve.method == MethodName.CFOP && pllStep?.case && filters.pllCases.indexOf(pllStep.case) < 0) return 'PLL case';
         const ollStep = getStep(solve, StepName.OLL);
-        if (solve.method == MethodName.CFOP && ollStep?.case && filters.ollCases.indexOf(ollStep.case) < 0) return false;
+        if (solve.method == MethodName.CFOP && ollStep?.case && filters.ollCases.indexOf(ollStep.case) < 0) return 'OLL case';
 
         // Detailed mistake reasons drive the same clean/mistake filter.
-        if (filters.solveCleanliness.indexOf(solve.isMistake ? SolveCleanliness.Mistake : SolveCleanliness.Clean) < 0) return false;
-        if (filters.solveLuckiness.indexOf(solve.isFullStep ? SolveLuckiness.FullStep : SolveLuckiness.Skip) < 0) return false;
+        if (filters.solveCleanliness.indexOf(solve.isMistake ? SolveCleanliness.Mistake : SolveCleanliness.Clean) < 0) return 'Solve cleanliness';
+        if (filters.solveLuckiness.indexOf(solve.isFullStep ? SolveLuckiness.FullStep : SolveLuckiness.Skip) < 0) return 'Solve luckiness';
 
-        return true;
+        return '';
+    }
+    static exclusionSummary(solves: Solve[], filters: Filters): string {
+        const counts = new Map<string, number>();
+        for (const solve of solves) {
+            const reason = this.filterExclusion(solve, filters);
+            if (reason) counts.set(reason, (counts.get(reason) ?? 0) + 1);
+        }
+        return counts.size ? [...counts].map(([reason, count]) => `${reason}: ${count}`).join('; ') + '. Each excluded solve is counted once.' : 'All loaded solves match the current filters.';
     }
 
     static getMistakeMap = getMistakeMap;
@@ -528,7 +539,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                     {this.createFilterHtml(
                         <></>,
                         `Showing ${this.state.filteredSolves.length} / ${this.state.allSolves.length} solves`,
-                        "If you notice that not all your solves are appearing, even when no filters are chosen, either those solves are corrupt, or the source exported a comma in its CSV incorrectly."
+                        this.state.showFilters ? FilterPanel.exclusionSummary(this.state.allSolves, this.state.filters) : 'Open filters to see why solves are excluded.'
                     )}
 
                     {this.multiFilter(
@@ -541,13 +552,13 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                     {this.groupedMultiFilter(
                         Const.PllGroups, this.state.chosenPLLs, this.pllChanged.bind(this),
                         "PLL Cases",
-                        "Choose which PLL Cases to show. This will not work if you do not have Cubeast Premium. I suggest using this simply to keep/remove skips."
+                        "Choose which PLL cases to show. Missing cases can be reconstructed from saved recordings using Re-analyze all solves in Options."
                     )}
 
                     {this.groupedMultiFilter(
                         Const.OllGroups, this.state.chosenOLLs, this.ollChanged.bind(this),
                         "OLL Cases",
-                        "Choose which OLL Cases to show. This will not work if you do not have Cubeast Premium. I suggest using this simply to keep/remove skips."
+                        "Choose which OLL cases to show. Missing cases can be reconstructed from saved recordings using Re-analyze all solves in Options."
                     )}
 
                     {this.multiFilter(

@@ -19,7 +19,7 @@ export function CategoryImage({ category, example }: { category: Category; examp
 }
 
 export default function CaseDiagram({ category, id, facelets, visibleStickers, palette = WHITE_CROSS_COLORS, topColor = palette[0], showPLL = false }: Omit<IllustratedCase, 'options'> & { palette?: string[]; topColor?: string; showPLL?: boolean }) {
-  const f2l = category === 'F2L' || category === 'AF2L';
+  const f2l = category.endsWith('F2L');
   const color = (index: number) => f2l && !visibleStickers.includes(index) ? '#697384' :
     category === 'OLL' && !showPLL ? (facelets[index] === 'U' ? topColor : '#697384') :
       palette['URFDLB'.indexOf(facelets[index])];

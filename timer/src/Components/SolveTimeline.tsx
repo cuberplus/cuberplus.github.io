@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Solve } from '../Core/engine';
 import type { Cube } from '../Core/puzzle';
 import { analyzeCFOP, CFOP_STEPS, cfopTiming } from '../Analysis/cfop';
@@ -14,7 +14,7 @@ export function SolveTimeline({ cube, solve, elapsed, precision, open, seek, see
     const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
     observer.observe(trail.current); return () => observer.disconnect();
   }, []);
-  const analysis = analyzeCFOP(solve, cube), time = Math.round(Math.max(solve.duration, elapsed));
+  const analysis = useMemo(() => solve.imported ? { ends: [] } : analyzeCFOP(solve, cube), [cube, solve, solve.startFacelets, solve.moves, solve.moves.length, solve.status, solve.crossOverride]), time = Math.round(Math.max(solve.duration, elapsed));
   const cfop = !solve.imported || solve.imported.method.startsWith('CFOP');
   const steps = (cfop ? CFOP_STEPS : solve.imported!.steps.map(step => step.name)).map((name, i) => {
     const step = solve.imported?.steps.find(step => step.name === name);

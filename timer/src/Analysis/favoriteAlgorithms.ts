@@ -40,22 +40,14 @@ export function usedAlgorithms(solve: Solve, cube: Cube): AlgorithmUse[] {
           const start = normalized(cube, states[from], `${crossRotation(cross)} ${yaw}`);
           for (let endIndex = from + 1; endIndex <= ends[4]; endIndex++) {
             const end = normalized(cube, states[endIndex], `${crossRotation(cross)} ${yaw}`);
-            const corner = entry.pair!, edge = [8, 9, 11, 10][corner - 4];
-            if (end.patternData.CORNERS.pieces[corner] !== corner || end.patternData.CORNERS.orientation[corner] ||
-              end.patternData.EDGES.pieces[edge] !== edge || end.patternData.EDGES.orientation[edge]) continue;
-            const solved = (pattern: KPattern, orbit: string, index: number) =>
-              pattern.patternData[orbit].pieces[index] === index && !pattern.patternData[orbit].orientation[index];
+            if (!pairSolved(end, entry.pair!)) continue;
             if ([4, 5, 6, 7].some(i => !solved(end, 'EDGES', i))) continue;
-            if ([4, 5, 6, 7].some(i => {
-              const edge = [8, 9, 11, 10][i - 4];
-              return solved(start, 'CORNERS', i) && solved(start, 'EDGES', edge) &&
-                (!solved(end, 'CORNERS', i) || !solved(end, 'EDGES', edge));
-            })) continue;
+            if ([4, 5, 6, 7].some(i => pairSolved(start, i) && !pairSolved(end, i))) continue;
             const algorithm = solve.moves.slice(from, endIndex).map(item => frame(item.move)).join(' ');
             const signature = matcher.signature(algorithm);
             const matches = entry.options.filter(algorithm => matcher.signature(algorithm) === signature)
               .map(algorithm => favoriteId(entry, algorithm));
-            uses.push({ endIndex, caseKey: `AF2L-${entry.id}`, signature, matches, algorithm });
+            uses.push({ endIndex, caseKey: `${entry.category}-${entry.id}`, signature, matches, algorithm });
           }
           return uses;
         });
@@ -84,9 +76,13 @@ export function usedAlgorithms(solve: Solve, cube: Cube): AlgorithmUse[] {
   cache.set(solve, { catalog: algorithms, uses: result });
   return result;
 }
+const solved = (pattern: KPattern, orbit: string, index: number) =>
+  pattern.patternData[orbit].pieces[index] === index && !pattern.patternData[orbit].orientation[index];
+const pairSolved = (pattern: KPattern, corner: number) =>
+  solved(pattern, 'CORNERS', corner) && solved(pattern, 'EDGES', [8, 9, 11, 10][corner - 4]);
 function advancedCases(cube: Cube, before: KPattern) {
-  const images = getAlgorithms().filter(entry => entry.category === 'AF2L').map(entry => ({
-    ...entry, ...caseImages[`AF2L-${entry.id}` as keyof typeof caseImages],
+  const images = getAlgorithms().filter(entry => entry.pair !== undefined).map(entry => ({
+    ...entry, ...caseImages[`${entry.category}-${entry.id}` as keyof typeof caseImages],
   }));
   const candidates: { entry: typeof images[number]; yaw: string }[] = [];
   for (const yaw of ['', 'y', 'y2', "y'"]) {
@@ -104,7 +100,7 @@ export function nonFavoriteAlgorithms(solve: Solve, cube: Cube, favorites: Set<s
   if (!favorites.size || !Object.values(categories).some(Boolean)) return [];
   const matcher = algorithmMatcher(cube);
   return usedAlgorithms(solve, cube).filter(use => {
-    if (!categories[use.caseKey.startsWith('AF2L-') ? 'F2L' : use.caseKey.split('-')[0] as keyof FavoriteCategories]) return false;
+    if (!categories[use.step < 5 ? 'F2L' : use.caseKey.split('-')[0] as keyof FavoriteCategories]) return false;
     const selected = [...favorites].filter(id => use.caseKeys.some(key => id.startsWith(`${key}:`)));
     return selected.length > 0 && !selected.some(id => matcher.signature(id.slice(id.indexOf(':') + 1)) === use.signature);
   });
@@ -166,16 +162,12 @@ export function validateUserAlgorithm(entry: AlgorithmCase, algorithm: string, c
   const matcher = algorithmMatcher(cube);
   const canonical = algorithm.trim().replace(/\s+/g, ' ');
   if (!canonical || canonical.length > 1000) throw new Error('Enter an algorithm of at most 1,000 characters.');
-  if (entry.category === 'AF2L') {
-    const image = caseImages[`AF2L-${entry.id}` as keyof typeof caseImages];
+  if (entry.pair !== undefined) {
+    const image = caseImages[`${entry.category}-${entry.id}` as keyof typeof caseImages];
     const before = cube.parse(image.facelets), after = before.applyAlg(matcher.outerMoves(canonical).moves.join(' '));
-    const solved = (pattern: KPattern, orbit: string, index: number) =>
-      pattern.patternData[orbit].pieces[index] === index && !pattern.patternData[orbit].orientation[index];
-    const pair = (pattern: KPattern, corner: number) =>
-      solved(pattern, 'CORNERS', corner) && solved(pattern, 'EDGES', [8, 9, 11, 10][corner - 4]);
-    if (!pair(after, entry.pair!) || [4, 5, 6, 7].some(i =>
-      !solved(after, 'EDGES', i) || pair(before, i) && !pair(after, i))) {
-      throw new Error('This algorithm does not solve the selected Advanced F2L case.');
+    if (!pairSolved(after, entry.pair) || [4, 5, 6, 7].some(i =>
+      !solved(after, 'EDGES', i) || pairSolved(before, i) && !pairSolved(after, i))) {
+      throw new Error(`This algorithm does not solve the selected ${entry.category === 'AF2L' ? 'Advanced' : 'Other'} F2L case.`);
     }
   } else {
     const before = casePattern(cube, canonical), { EDGES, CORNERS } = before.patternData;

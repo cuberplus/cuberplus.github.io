@@ -14,6 +14,21 @@ const layers = FACES.map((_, cross) => {
   return { edges: edges.map(edge => edge * 2), corners: corners.map(corner => corner * 3) };
 });
 
+// Incidental crosses can finish first; the first complete F2L layer identifies the solve's axis.
+export function completedF2LCross(scramble: string, solution: string, preferred = 3): number | undefined {
+  const edges = Uint8Array.from({ length: 12 }, (_, i) => i * 2), corners = Uint8Array.from({ length: 8 }, (_, i) => i * 3);
+  const apply = (move: number) => {
+    for (let i = 0; i < edges.length; i++) edges[i] = EDGE_MOVES[edges[i] * 18 + move];
+    for (let i = 0; i < corners.length; i++) corners[i] = CORNER_MOVES[corners[i] * 18 + move];
+  };
+  for (const move of parseAlgorithm(scramble)) apply(move);
+  for (const move of [undefined, ...parseAlgorithm(solution)]) {
+    if (move !== undefined) apply(move);
+    const cross = [preferred, 3, 0, 1, 2, 4, 5].find(face => face >= 0 && layers[face].edges.every(edge => edges[edge / 2] === edge) && layers[face].corners.every(corner => corners[corner / 3] === corner));
+    if (cross !== undefined) return cross;
+  }
+}
+
 // Eliminate viewing rotations so imported recordings can be checked in their calibrated frame.
 export function firstF2LPair(scramble: string, solution: string, cross: number, colors: readonly string[] = COLORS): string | undefined {
   const key = JSON.stringify([scramble, solution, cross, colors]);
@@ -26,11 +41,11 @@ export function firstF2LPair(scramble: string, solution: string, cross: number, 
 function findFirstF2LPair(scramble: string, solution: string, cross: number, colors: readonly string[]): string | undefined {
   if (cross < 0 || !scramble.trim() || !solution.trim()) return;
   try {
-    const home = layers[cross], edges = Uint8Array.from(home.edges), corners = Uint8Array.from(home.corners);
+    const home = layers[cross], edges = Uint8Array.from(home.edges), corners = Uint8Array.from(home.corners), edgeMoves = EDGE_MOVES, cornerMoves = CORNER_MOVES;
     // Only the cross and its four pairs can determine the first solved slot.
     const apply = (move: number) => {
-      for (let i = 0; i < edges.length; i++) edges[i] = EDGE_MOVES[edges[i] * 18 + move];
-      for (let i = 0; i < corners.length; i++) corners[i] = CORNER_MOVES[corners[i] * 18 + move];
+      for (let i = 0; i < edges.length; i++) edges[i] = edgeMoves[edges[i] * 18 + move];
+      for (let i = 0; i < corners.length; i++) corners[i] = cornerMoves[corners[i] * 18 + move];
     };
     for (const move of parseAlgorithm(scramble)) apply(move);
     const moves = solution.matchAll(/\S+/g);

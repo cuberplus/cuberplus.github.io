@@ -2,12 +2,13 @@ import type { KPattern } from 'cubing/kpuzzle';
 import type { Cube } from '../../timer/src/Core/puzzle';
 import { locations } from '../../shared/cube/cubeLocations';
 import alternatives from './alternatives.json';
+import otherF2l from './otherF2l.json';
 
-export type Category = 'F2L' | 'AF2L' | 'OLL' | 'PLL';
+export type Category = 'F2L' | 'AF2L' | 'OF2L' | 'OLL' | 'PLL';
 export interface AlgorithmCase { category: Category; id: string; algorithm: string; options: string[]; setup?: string; pair?: number }
 type CaseDefinition = Omit<AlgorithmCase, 'options'>;
 export interface IllustratedCase extends AlgorithmCase { facelets: string; visibleStickers: number[] }
-export const categories: Category[] = ['F2L', 'AF2L', 'OLL', 'PLL'];
+export const categories: Category[] = ['F2L', 'AF2L', 'OF2L', 'OLL', 'PLL'];
 // Highest community-voted algorithms in SpeedCubeDB's default (front-right F2L) view, November 4, 2026.
 const f2l = [
   "U R U' R'",
@@ -195,9 +196,10 @@ const pairEdges = [8, 9, 11, 10];
 export const algorithms: AlgorithmCase[] = [
   ...f2l.map((algorithm, i): CaseDefinition => ({ category: 'F2L', id: String(i + 1), algorithm })),
   ...advancedF2l.map(([id, algorithm, setup, pair]): CaseDefinition => ({ category: 'AF2L', id, algorithm, setup, pair })),
+  ...otherF2l.cases.map((entry): CaseDefinition => ({ ...entry, category: 'OF2L' })),
   ...oll.map((algorithm, i): CaseDefinition => ({ category: 'OLL', id: String(i + 1), algorithm })),
   ...Object.entries(pll).map(([id, algorithm]): CaseDefinition => ({ category: 'PLL', id, algorithm })),
-].map(entry => ({ ...entry, options: [entry.algorithm, ...alternatives[`${entry.category}-${entry.id}` as keyof typeof alternatives]] }));
+].map(entry => ({ ...entry, options: [entry.algorithm, ...(alternatives[`${entry.category}-${entry.id}` as keyof typeof alternatives] ?? [])] }));
 
 export function casePattern(cube: Cube, algorithm: string): KPattern {
   const transform = cube.puzzle.algToTransformation(algorithm);
@@ -213,7 +215,7 @@ export const illustrateCases = (cube: Cube): IllustratedCase[] =>
   algorithms.map(entry => {
     const pattern = entry.setup ? cube.solved().applyAlg(entry.setup) : casePattern(cube, entry.algorithm);
     const corners = new Set([entry.pair ?? 4]);
-    if (entry.category === 'AF2L') {
+    if (entry.pair !== undefined) {
       for (let corner = 4; corner < 8; corner++) {
         const edge = pairEdges[corner - 4], { EDGES, CORNERS } = pattern.patternData;
         if (EDGES.pieces[edge] === edge && !EDGES.orientation[edge] &&

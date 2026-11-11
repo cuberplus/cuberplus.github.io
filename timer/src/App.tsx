@@ -1,11 +1,11 @@
 import { useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import Navigation, { Footer, PageLocation, SettingsContext, usePageDialog } from '@cuberplus/navigation';
+import Navigation, { Footer, PageLocation, PageVisible, SettingsContext, usePageDialog } from '@cuberplus/navigation';
 import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
 import { cubeConnection, useCubeConnection } from '../../shared/cube/connection';
 import { CubePicker } from '../../shared/Components/CubeConnection';
 import { TimerEngine, inspectionPenalty, solveTime, type Solve } from './Core/engine';
 import { generateScramble, inverse, loadCube, movesOf, simplifyMoves, SOLVED, type Cube } from './Core/puzzle';
-import { averageDetails, backupJSON, cubeastCSV, dailyStreak, deleteSolve, formatTime, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, saveSolves, sessionStats, solveEndDate, turns, validateBackup } from './Data/storage';
+import { averageDetails, backupJSON, cubeastCSV, dailyStreak, deleteSolve, formatTime, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, recoverLocalSolves, saveSolves, sessionStats, solveEndDate, turns, validateBackup } from './Data/storage';
 import { AverageDetails } from './Components/AverageDetails';
 import { CubeView } from './Components/CubeView';
 import { Replay } from './Components/Replay';
@@ -35,6 +35,7 @@ function SolvePenalty({ solve }: { solve: Solve | null | undefined }) {
 
 export default function App() {
   const address = useContext(PageLocation);
+  const visible = useRef(true); visible.current = useContext(PageVisible);
   const trainerActive = /^\/trainer(?:\/|$)/.test(address || location.pathname);
   const acceptingMoves = useRef(!trainerActive);
   acceptingMoves.current = !trainerActive;
@@ -49,6 +50,7 @@ export default function App() {
   const [historySort, setHistorySort] = useState<{ column: HistoryColumn; direction: 'ascending' | 'descending' }>({ column: 'number', direction: 'descending' });
   const [error, setError] = useState('');
   const [storage, setStorage] = useState('Loading local history...');
+  const [historyReady, setHistoryReady] = useState(false), historyLoading = useRef<Promise<void>>(Promise.resolve());
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -59,6 +61,7 @@ export default function App() {
   const [overTurnPenalty, setOverTurnPenalty] = useState(() => { try { return localStorage.getItem('timer-over-turn-penalty') === 'true'; } catch { return false; } });
   const [inspection, setInspection] = useState(() => { try { return localStorage.getItem('timer-inspection') === 'true'; } catch { return false; } });
   const [showEveryLongPb, setShowEveryLongPb] = useState(() => { try { return localStorage.getItem('timer-show-every-long-pb') === 'true'; } catch { return false; } });
+  const [allSessions, setAllSessions] = useState(() => { try { return localStorage.getItem('timer-all-session-history') === 'true'; } catch { return false; } });
   const [hiddenVisuals, setHiddenVisuals] = useState<HiddenVisuals>(() => {
     try {
       const value = JSON.parse(localStorage.getItem('timer-hide-distracting-visuals') ?? 'false') as Partial<HiddenVisuals> | boolean | null;
@@ -82,6 +85,7 @@ export default function App() {
   usePageDialog(optionsDialog, false);
   const bluetooth = useRef(cubeConnection.adapter);
   const writes = useRef(Promise.resolve());
+  const queuedWrites = useRef(new Map<string, Solve>());
   const pending = useRef(0);
   const failedSaves = useRef(new Set<string>());
   const deletedSolves = useRef(new Set<string>());
@@ -138,7 +142,7 @@ export default function App() {
     if (deletedSolves.current.has(solve.id)) return;
     const copy = structuredClone(solve);
     const previous = historyRef.current, check = recordChecks.current.get(copy.id);
-    updateHistory([copy, ...previous.filter(item => item.id !== copy.id)].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+    if (copy.status !== 'active') updateHistory([copy, ...previous.filter(item => item.id !== copy.id)].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
     if (copy.status === 'incomplete') setCelebrations(current => current.filter(item => item.solve.id !== copy.id));
     if (!notify) {
       if (check) clearTimeout(check.timeout);
@@ -148,12 +152,13 @@ export default function App() {
     } else if (copy.status !== 'active') {
       if (check) check.solve = copy;
       else {
-        const timeout = setTimeout(() => {
+        const timeout = setTimeout(async () => {
+          await historyLoading.current;
           const candidate = recordChecks.current.get(copy.id);
           recordChecks.current.delete(copy.id);
           if (!candidate) return;
           const date = solveEndDate(candidate.solve);
-          if (!dailyStreak(candidate.previous, date).hasToday) {
+          if (!candidate.previous.some(solve => solve.status !== 'active' && solveEndDate(solve).toDateString() === date.toDateString())) {
             const { current, best } = dailyStreak(historyRef.current, date);
             setStreaks(items => [...items, { id: copy.id, current, best }]);
           }
@@ -176,11 +181,21 @@ export default function App() {
         recordChecks.current.set(copy.id, { solve: copy, previous, timeout });
       }
     }
+    const attempt = retry.current;
+    if (notify && attempt && copy.session === 'Retries' && copy.scramble === attempt.scramble) {
+      if (!attempt.id && !previous.some(item => item.id === copy.id)) attempt.id = copy.id;
+      if (attempt.id === copy.id && copy.status !== 'active') finishRetry();
+    }
+    const queued = queuedWrites.current.has(copy.id);
+    queuedWrites.current.set(copy.id, copy);
+    if (queued) return;
     pending.current++;
     setStorage('Saving locally...');
     writes.current = writes.current.then(async () => {
+      const latest = queuedWrites.current.get(copy.id)!;
+      queuedWrites.current.delete(copy.id);
       if (deletedSolves.current.has(copy.id)) return;
-      await saveSolves([copy]);
+      await saveSolves([latest]);
       if (deletedSolves.current.has(copy.id)) await deleteSolve(copy.id);
     }).then(() => {
       pending.current--;
@@ -192,11 +207,6 @@ export default function App() {
       setStorage('Not saved - export a backup now');
       setError(`Local storage: ${errorText(failure)}`);
     });
-    const attempt = retry.current;
-    if (notify && attempt && copy.session === 'Retries' && copy.scramble === attempt.scramble) {
-      if (!attempt.id && !previous.some(item => item.id === copy.id)) attempt.id = copy.id;
-      if (attempt.id === copy.id && copy.status !== 'active') finishRetry();
-    }
   };
 
   useEffect(() => {
@@ -215,15 +225,18 @@ export default function App() {
       if (pending.current === 0) setStorage(failedSaves.current.size ? 'Some solves not saved - export a backup now' : 'Saved locally');
     };
     window.addEventListener('timer-solve-deleted', removeSavedSolve);
-    const refreshHistory = () => { void readSolves().then(items => { if (mounted.current) updateHistory(items.sort((a, b) => b.createdAt.localeCompare(a.createdAt))); }).catch(() => setError('Local history could not be refreshed.')); };
+    const refreshHistory = () => { void readSolves(100).then(items => { if (mounted.current) updateHistory(items.sort((a, b) => b.createdAt.localeCompare(a.createdAt))); }).catch(() => setError('Local history could not be refreshed.')); };
     window.addEventListener('timer-solves-changed', refreshHistory);
-    void loadCube().then(async model => {
+    historyLoading.current = loadCube().then(async model => {
+      if (!mounted.current) return;
+      engine.current = new TimerEngine(model, record, render);
+      engine.current.overTurnPenaltyEnabled = overTurnPenaltyRef.current;
+      engine.current.inspectionPenaltyEnabled = inspectionRef.current;
+      setCube(model); console.info('[Timer Bluetooth] Puzzle loaded; connection controls ready');
       let recovered: Solve[] = [];
       try {
-        const existing = await readSolves();
-        recovered = validateBackup(backupJSON(existing), model);
-        if (existing.some(solve => solve.status === 'active')) await saveSolves(recovered);
-        if (mounted.current) setStorage('Saved locally');
+        recovered = await recoverLocalSolves(model, id => engine.current?.active?.id === id || historyRef.current.some(solve => solve.id === id));
+        if (mounted.current && pending.current === 0) setStorage('Saved locally');
       } catch (failure) {
         if (mounted.current) {
           setStorage('Local history unavailable');
@@ -231,13 +244,17 @@ export default function App() {
         }
       }
       if (!mounted.current) return;
-      engine.current = new TimerEngine(model, record, render);
-      engine.current.overTurnPenaltyEnabled = overTurnPenaltyRef.current;
-      engine.current.inspectionPenaltyEnabled = inspectionRef.current;
-      updateHistory(recovered.filter(solve => !deletedSolves.current.has(solve.id)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
-      setCube(model); console.info('[Timer Bluetooth] Puzzle loaded; connection controls ready');
+      const merged = new Map([...recovered, ...historyRef.current].map(solve => [solve.id, solve]));
+      recordChecks.current.forEach(check => {
+        check.previous = [...new Map([...recovered.filter(solve => solve.id !== check.solve.id && !deletedSolves.current.has(solve.id)),
+          ...check.previous].map(solve => [solve.id, solve])).values()];
+      });
+      updateHistory([...merged.values()].filter(solve => solve.status !== 'active' && !deletedSolves.current.has(solve.id)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+      setHistoryReady(true);
     }).catch((failure: Error) => { console.error('[Timer Bluetooth] Puzzle initialization failed', failure); setError(errorText(failure)); });
-    const interval = setInterval(render, 30);
+    const interval = setInterval(() => {
+      if (visible.current && !document.hidden && (engine.current?.phase === 'solving' || engine.current?.phase === 'ready' && inspectionRef.current)) render();
+    }, 30);
     const checks = recordChecks.current;
     const unsubscribe = cubeConnection.onEvent(event => {
       if (!acceptingMoves.current && event.type !== 'DISCONNECT') return;
@@ -263,7 +280,7 @@ export default function App() {
   }, [cube, trainerActive, sharedCube.connection, demo]);
 
   useEffect(() => {
-    if (!cube) return;
+    if (!cube || !historyReady) return;
     const url = new URL(address || location.href, location.origin);
     if (!/^\/timer(?:\/(?:index\.html)?)?$/.test(url.pathname)) return;
     const id = url.searchParams.get('solve');
@@ -273,7 +290,7 @@ export default function App() {
       const solve = historyRef.current.find(solve => solve.id === retryId && solve.status !== 'active');
       if (solve) retrySolve(solve); else setError('This solve is no longer saved in Timer.');
     }
-  }, [cube, address]);
+  }, [cube, address, historyReady]);
 
   async function prepareScramble(recover = false, existingScramble = retry.current?.scramble ?? '') {
     const timer = engine.current;
@@ -426,7 +443,9 @@ export default function App() {
 
   function exportHistory(format: 'json' | 'csv') {
     if (!cube) return;
-    const url = URL.createObjectURL(new Blob([format === 'csv' ? cubeastCSV(history, cube) : backupJSON(history)], { type: format === 'csv' ? 'text/csv;charset=utf-8' : 'application/json' }));
+    const active = engine.current?.active;
+    const solves = active && !deletedSolves.current.has(active.id) ? [active, ...historyRef.current.filter(solve => solve.id !== active.id)] : historyRef.current;
+    const url = URL.createObjectURL(new Blob([format === 'csv' ? cubeastCSV(solves, cube) : backupJSON(solves)], { type: format === 'csv' ? 'text/csv;charset=utf-8' : 'application/json' }));
     const link = document.createElement('a');
     link.href = url; link.download = `timer-${new Date().toISOString().slice(0, 10)}.${format}`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -436,12 +455,13 @@ export default function App() {
   const inspecting = inspection && timer?.phase === 'ready', inspectionTime = timer?.inspectionElapsed(performance.now()) ?? 0;
   const inspectionStatus = inspectionPenalty(inspectionTime);
   const message = status || timer?.message || 'Loading local puzzle tools...';
+  const sessions = useMemo(() => [...new Set([...createdSessions, ...history.map(solve => solve.session)])], [createdSessions, history]);
   const { filtered, statistics } = useMemo(() => {
     const filtered = history.filter(solve => solve.session === session && solve.status !== 'active');
     return { filtered, statistics: sessionStats(filtered) };
   }, [history, session]);
   const historyRows = useMemo(() => {
-    const rows = numberedSolves(filtered).map(({ solve, number }) => {
+    const rows = numberedSolves(allSessions ? history : filtered).map(({ solve, number }) => {
       const count = turns(solve);
       return { solve, number, duration: solveTime(solve), turns: count, tps: solve.duration > 0 ? count * 1000 / solve.duration : null };
     });
@@ -450,7 +470,20 @@ export default function App() {
       if (left === null || right === null) return left === right ? a.number - b.number : left === null ? 1 : -1;
       return (left - right) * (historySort.direction === 'ascending' ? 1 : -1) || a.number - b.number;
     }).slice(0, 100);
-  }, [filtered, historySort]);
+  }, [filtered, history, allSessions, historySort]);
+  const historyTable = useMemo(() => <div className="table-responsive"><table className="table align-middle" aria-label="Solve history">
+    <thead><tr>{historyColumns.map(column => <th key={column.key} scope="col" aria-sort={historySort.column === column.key ? historySort.direction : undefined}>
+      <button className="history-sort" onClick={() => setHistorySort(current => ({
+        column: column.key, direction: current.column === column.key && current.direction === 'ascending' ? 'descending' : 'ascending',
+      }))}>{column.label}</button>
+    </th>)}{allSessions && <th scope="col">Session</th>}<th scope="col">View</th></tr></thead>
+    <tbody>{historyRows.map(({ solve, number, turns: count, tps }) => <tr key={solve.id}>
+      <td>{number}</td><td>{formatTime(solveTime(solve), precision)}s<SolvePenalty solve={solve} /></td><td>{count}</td>
+      <td>{tps === null ? '--' : tps.toFixed(2)}</td>
+      {allSessions && <td>{solve.session}</td>}
+      <td><button className="btn btn-sm btn-outline-secondary" onClick={() => setReplay(solve)}>View</button></td>
+    </tr>)}</tbody>
+  </table></div>, [historyRows, historySort, allSessions, precision]);
   const recovering = timer?.phase === 'recovering';
   const setupCount = timer && !recovering ? timer.instructions.length - timer.scramble.trim().split(/\s+/).length : 0;
   const returning = recovering || (timer?.phase === 'scrambling' && timer.progress < setupCount);
@@ -484,7 +517,12 @@ export default function App() {
         <h2 id="options-title" className="mb-0">Options</h2>
         <button className="btn-close" aria-label="Close options" onClick={() => optionsDialog.current?.close()} />
       </div>
-      <SessionPicker value={session} sessions={[...createdSessions, ...history.map(solve => solve.session)]} disabled={timer?.phase === 'solving' || !!retry.current} change={setSession} create={createSession} />
+      <SessionPicker value={session} sessions={sessions} disabled={timer?.phase === 'solving' || !!retry.current} change={setSession} create={createSession} />
+      <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="all-session-history-help" checked={allSessions} onChange={event => {
+        setAllSessions(event.target.checked);
+        try { localStorage.setItem('timer-all-session-history', String(event.target.checked)); } catch { setError('History preference could not be saved in this browser.'); }
+      }} /><span className="form-check-label">Show all sessions in history</span></label>
+        <InfoTip id="all-session-history-help">Show saved solves from every session. New solves and session statistics still use the selected session.</InfoTip></div>
       <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="inspection-help" checked={inspection} disabled={timer?.phase === 'solving'} onChange={event => changeInspection(event.target.checked)} /><span className="form-check-label">15-second inspection</span></label>
         <InfoTip id="inspection-help">Count up after scrambling. Starting at 15 seconds adds +2; starting at 17 seconds or later is DNF. +2 penalties stack.</InfoTip></div>
       <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="over-turn-penalty-help" checked={overTurnPenalty} onChange={event => changeOverTurnPenalty(event.target.checked)} /><span className="form-check-label">Extra-turn +2 penalty</span></label>
@@ -585,24 +623,13 @@ export default function App() {
       </div>
     </section>
     <section className="panel mt-3">
-      <div className="d-flex justify-content-between flex-wrap gap-2"><SessionPicker value={session} sessions={[...createdSessions, ...history.map(solve => solve.session)]} disabled={!!solving || !!retry.current} change={setSession} create={createSession} /><div className="d-flex gap-2">
+      <div className="d-flex justify-content-between flex-wrap gap-2"><SessionPicker value={session} sessions={sessions} disabled={!!solving || !!retry.current} change={setSession} create={createSession} /><div className="d-flex gap-2">
         <button className="btn btn-outline-secondary" onClick={() => exportHistory('csv')}>Export CSV</button>
         <button hidden className="btn btn-outline-secondary" onClick={() => exportHistory('json')}>Export JSON</button>
         <label hidden className={`btn btn-outline-secondary mb-0 ${timer?.phase === 'solving' ? 'disabled' : ''}`}>Import JSON<input type="file" className="visually-hidden" accept=".json,application/json" disabled={timer?.phase === 'solving'} onChange={event => { void importBackup(event.target.files?.[0]); event.target.value = ''; }} /></label>
       </div></div>
-      <div className="table-responsive"><table className="table align-middle" aria-label="Solve history">
-        <thead><tr>{historyColumns.map(column => <th key={column.key} scope="col" aria-sort={historySort.column === column.key ? historySort.direction : undefined}>
-          <button className="history-sort" onClick={() => setHistorySort(current => ({
-            column: column.key, direction: current.column === column.key && current.direction === 'ascending' ? 'descending' : 'ascending',
-          }))}>{column.label}</button>
-        </th>)}<th scope="col">View</th></tr></thead>
-        <tbody>{historyRows.map(({ solve, number, turns: count, tps }) => <tr key={solve.id}>
-          <td>{number}</td><td>{formatTime(solveTime(solve), precision)}s<SolvePenalty solve={solve} /></td><td>{count}</td>
-          <td>{tps === null ? '--' : tps.toFixed(2)}</td>
-          <td><button className="btn btn-sm btn-outline-secondary" onClick={() => setReplay(solve)}>View</button></td>
-        </tr>)}</tbody>
-      </table></div>
-      {!filtered.length && <p className="text-secondary">No solves in this session yet. Your data stays on this device.</p>}
+      {historyTable}
+      {!historyRows.length && <p className="text-secondary">{allSessions ? 'No saved solves yet.' : 'No solves in this session yet.'} Your data stays on this device.</p>}
     </section>
     {average && <AverageDetails details={average} history={history} precision={precision} view={setReplay} close={() => setAverage(null)} />}
     {cube && replay && <Replay key={replay.id} cube={cube} solve={replay} history={history} precision={precision} change={changeSolve} remove={removeSolve} retry={retrySolve} retryDisabled={solving || resynchronizing.current} close={() => setReplay(null)} />}

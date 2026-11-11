@@ -26,7 +26,7 @@ const database = (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
   request.onerror = () => reject(request.error ?? new Error('Cannot open local storage.'));
 });
 
-export async function saveSolves(solves: Solve[], derivedOnly = false): Promise<void> {
+export async function saveSolves(solves: Solve[], derivedOnly: boolean | 'reanalysis' = false): Promise<void> {
   const db = await database();
   try {
     await new Promise<void>((resolve, reject) => {
@@ -37,7 +37,8 @@ export async function saveSolves(solves: Solve[], derivedOnly = false): Promise<
         const request = store.get(solve.id);
         request.onsuccess = () => {
           const current = request.result as Solve | undefined;
-          if (current && analysisKey(current) === solve.analysis?.key) store.put({ ...current, analysis: solve.analysis, cfop: solve.cfop ?? current.cfop });
+          if (current && analysisKey(current) === solve.analysis?.key) store.put({ ...current, analysis: solve.analysis, cfop: solve.cfop ?? current.cfop,
+            ...(derivedOnly === 'reanalysis' ? { imported: solve.imported } : {}) });
         };
       });
       tx.oncomplete = () => resolve();
@@ -47,13 +48,21 @@ export async function saveSolves(solves: Solve[], derivedOnly = false): Promise<
   } finally { db.close(); }
 }
 
-export async function readSolves(): Promise<Solve[]> {
+export async function readSolves(batchSize?: number): Promise<Solve[]> {
   const db = await database();
   try {
     return await new Promise<Solve[]>((resolve, reject) => {
-      const tx = db.transaction('solves', 'readonly');
-      const request = tx.objectStore('solves').getAll();
-      tx.oncomplete = () => resolve(request.result as Solve[]);
+      const tx = db.transaction('solves', 'readonly'), store = tx.objectStore('solves'), solves: Solve[] = [];
+      const next = (after?: string) => {
+        const request = store.getAll(after === undefined ? undefined : IDBKeyRange.lowerBound(after, true), batchSize);
+        request.onsuccess = () => {
+          const items = request.result as Solve[];
+          for (const solve of items) solves.push(solve);
+          if (batchSize && items.length === batchSize) next(items.at(-1)!.id);
+        };
+      };
+      next();
+      tx.oncomplete = () => resolve(solves);
       tx.onabort = () => reject(tx.error ?? new Error('Cannot read local solves.'));
     });
   } finally { db.close(); }
@@ -65,6 +74,14 @@ export async function readSolveIds(): Promise<string[]> {
     request.onsuccess = () => resolve(request.result as string[]);
     request.onerror = () => reject(request.error ?? new Error('Cannot read local solve IDs.'));
   }); } finally { db.close(); }
+}
+export async function recoverLocalSolves(cube: Cube, current?: (id: string) => boolean): Promise<Solve[]> {
+  const solves = await readSolves(100), active = solves.filter(solve => solve.status === 'active' && !current?.(solve.id));
+  if (!active.length) return solves;
+  const recovered = validateBackup(backupJSON(active), cube);
+  await saveSolves(recovered);
+  const byId = new Map(recovered.map(solve => [solve.id, solve]));
+  return solves.map(solve => byId.get(solve.id) ?? solve);
 }
 
 export async function deleteSolve(id: string): Promise<void> {
@@ -116,7 +133,7 @@ export function validateBackup(json: string, cube: Cube): Solve[] {
   };
   return solves.map(solve => {
     if (!solve || typeof solve !== 'object' || solve.version !== 1 ||
-        !text(solve.id, 100) || !solve.id || ids.has(solve.id) || !text(solve.session, 100) ||
+        !text(solve.id, 100) || !solve.id || ids.has(solve.id) || !text(solve.session, / - (Acubemy|Cubeast)$/.test(solve.session) ? 110 : 100) ||
         (solve.appVersion !== undefined && !text(solve.appVersion, 100)) ||
         !text(solve.device, 200) || !text(solve.createdAt, 100) || !Number.isFinite(Date.parse(solve.createdAt)) ||
         !text(solve.scramble) || (!solve.imported && (!movesOf(solve.scramble).length || movesOf(solve.scramble).some(move => !isMove(move)))) ||
@@ -186,9 +203,9 @@ function rollingAverages(values: number[], count: number): { current: number | n
 }
 export const average = (solves: Solve[], count: number): number | 'DNF' | null => averageResult(rollingAverages(solves.filter(s => s.status !== 'active').slice(0, count).map(averageValue), count).current);
 export function numberedSolves(solves: Solve[]): { solve: Solve; number: number }[] {
-  return solves.filter(solve => solve.status !== 'active')
-    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id))
-    .map((solve, index) => ({ solve, number: index + 1 }));
+  return solves.filter(solve => solve.status !== 'active').map(solve => ({ solve, date: Date.parse(solve.createdAt) }))
+    .sort((a, b) => a.date - b.date || a.solve.id.localeCompare(b.solve.id))
+    .map(({ solve }, index) => ({ solve, number: index + 1 }));
 }
 export function averageDetails(solves: Solve[], count: number, best = false): {
   time: number | 'DNF'; solves: { solve: Solve; trimmed: 'best' | 'worst' | null }[];

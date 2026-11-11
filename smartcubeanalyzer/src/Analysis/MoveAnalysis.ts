@@ -82,30 +82,18 @@ export function analyzeStepMoves(movesString: string, _aufMoves: Set<string> = A
     return { originalTurns, simplifiedTurns: simplified.length, wastedMoves: originalTurns - simplified.length, redundantPairs };
 }
 
-function countAufMoves(tokens: string[], direction: 'leading' | 'trailing', aufMoves: Set<string> = AUF_MOVES): number {
-    let count = 0;
-    for (const token of direction === 'leading' ? tokens : tokens.slice().reverse()) {
-        if (!aufMoves.has(token)) break;
-        count++;
-    }
-    return count;
-}
-
-function isRotationOrAuf(t: string, aufMoves: Set<string> = AUF_MOVES): boolean {
-    return ROTATIONS.has(t.toLowerCase()) || aufMoves.has(t);
-}
-
 const coreCounts = new Map<string, Map<string, number>>();
+const defaultAufKey = [...AUF_MOVES].join(' ');
 export function coreMovesCount(movesString: string | string[], aufMoves: Set<string> = AUF_MOVES): number {
-    const key = [...aufMoves].join(' ');
+    const key = aufMoves === AUF_MOVES ? defaultAufKey : [...aufMoves].join(' ');
     let cache = coreCounts.get(key);
     if (!cache) coreCounts.set(key, cache = new Map<string, number>());
     if (typeof movesString === 'string' && cache.has(movesString)) return cache.get(movesString)!;
     const tokens = typeof movesString === 'string' ? tokenizeMoves(movesString) : movesString;
     let start = 0;
-    while (start < tokens.length && isRotationOrAuf(tokens[start], aufMoves)) start++;
+    while (start < tokens.length && (ROTATIONS.has(tokens[start].toLowerCase()) || aufMoves.has(tokens[start]))) start++;
     let end = tokens.length - 1;
-    while (end >= start && isRotationOrAuf(tokens[end], aufMoves)) end--;
+    while (end >= start && (ROTATIONS.has(tokens[end].toLowerCase()) || aufMoves.has(tokens[end]))) end--;
     let count = 0;
     for (let i = start; i <= end; i++) {
         if (!ROTATIONS.has(tokens[i].toLowerCase())) count++;
@@ -127,9 +115,7 @@ function lowestMode(sorted: number[]): number | null {
     return maxCount > 1 ? sorted.find(value => counts[value] === maxCount)! : null;
 }
 
-export function typicalCaseMoves(sorted: number[]): number {
-    return lowestMode(sorted) ?? median(sorted);
-}
+export const typicalCaseMoves = (sorted: number[]): number => lowestMode(sorted) ?? median(sorted);
 
 export function computeCaseFailureStats(
     solves: Solve[],
@@ -139,15 +125,12 @@ export function computeCaseFailureStats(
     const caseMap: { [caseName: string]: CaseInstance[] } = {};
 
     for (const solve of solves) for (const step of caseSteps(solve, stepName)) {
-        if (!step.case) continue;
-        const caseName = step.case;
+        if (!step.case || step.case === "Solved") continue;
         const core = coreMovesCount(step.moves, getAufMovesForSolve(solve));
-        caseMap[caseName] ??= [];
-        caseMap[caseName].push({ solveId: solve.id, coreMoves: core, totalTurns: step.turns, stepTime: step.time });
+        (caseMap[step.case] ??= []).push({ solveId: solve.id, coreMoves: core, totalTurns: step.turns, stepTime: step.time });
     }
     const results: CaseStats[] = [];
     for (const [caseName, instances] of Object.entries(caseMap)) {
-        if (caseName === "Solved") continue;
         const moveCounts = instances.map(i => i.coreMoves).sort((a, b) => a - b);
         const expectedMovesBase = typicalCaseMoves(moveCounts), expectedMoves = expectedMovesBase + 2;
         const avgMoves = moveCounts.reduce((a, b) => a + b, 0) / moveCounts.length;
@@ -166,8 +149,8 @@ export function computeCaseFailureStats(
 
 export function computeAufInefficiency(step: Step): AufInefficiency {
     const tokens = tokenizeMoves(step.moves);
-    const preAufMoves = countAufMoves(tokens, 'leading');
-    const postAufMoves = countAufMoves(tokens, 'trailing');
+    const first = tokens.findIndex(token => !AUF_MOVES.has(token)), last = tokens.findLastIndex(token => !AUF_MOVES.has(token));
+    const preAufMoves = first < 0 ? tokens.length : first, postAufMoves = last < 0 ? tokens.length : tokens.length - 1 - last;
     const totalAufTime = step.preAufTime + step.postAufTime;
     return { preAufMoves, postAufMoves, totalAufTime, isHighCost: preAufMoves + postAufMoves > 2 || totalAufTime > 0.5 };
 }

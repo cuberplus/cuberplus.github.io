@@ -4,9 +4,13 @@ import { jest } from '@jest/globals';
 import { TimerEngine, type Solve } from '../../timer/src/Core/engine';
 import { loadCube, SOLVED, type Cube } from '../../timer/src/Core/puzzle';
 import { analyzeCFOP } from '../../timer/src/Analysis/cfop';
-import { analysisKey, persistAnalysis, persistReplayAnalysis, reanalyzeSolve, solveAnalysis } from '../../timer/src/Analysis/analysis';
+import { analysisKey, persistAnalysis, persistReplayAnalysis, reanalyzeAllSolves, reanalyzeSolve, solveAnalysis } from '../../timer/src/Analysis/analysis';
+import { MethodName } from '../../smartcubeanalyzer/src/Models/Types';
 import { backupJSON, deleteSolve, readSolves, saveSolves, validateBackup } from '../../timer/src/Data/storage';
 import { readLocalAnalysis } from '../../timer/src/Analysis/analyzer-data';
+import { readFileSync } from 'node:fs';
+import { importSolveCSVs } from '../../timer/src/Data/csvImport';
+import { CrossColor, StepName } from '../../smartcubeanalyzer/src/Models/Types';
 
 let cube: Cube;
 beforeAll(async () => { cube = await loadCube(); });
@@ -87,4 +91,65 @@ test('imported chart analysis does not re-derive recordings; opened replay bound
   const again = jest.spyOn(cube, 'parse').mockImplementation(() => { throw new Error('Should use saved replay'); });
   try { await persistReplayAnalysis(cached, cube); }
   finally { again.mockRestore(); }
+});
+test('bulk reanalysis recovers cases, preserves source metadata and reports progress without fabricating inspection', async () => {
+  const solve = sample();
+  solve.createdAt = '2026-10-01T10:20:30.123Z';
+  solveAnalysis(solve, cube);
+  const imported = { ...solve.analysis!.data, source: 'acubemy' as const, id: 'original', rawSourceId: 'original', rawSource: 'acubemy', date: solve.createdAt,
+    inspectionTime: null, endDate: '2026-10-01T10:20:40.456Z', steps: solve.analysis!.data.steps.filter(step => step.name).map(step => ({ ...step, case: '' })) };
+  solve.imported = imported; solve.analysis = undefined; solve.cfop = undefined;
+  const noMoves = { ...solve, id: 'missing', moves: [], startFacelets: SOLVED };
+  const roux = { ...solve, id: 'roux', imported: { ...imported, method: MethodName.Roux } };
+  await saveSolves([solve, noMoves, roux]);
+  const progress = jest.fn();
+  expect(await reanalyzeAllSolves(progress)).toMatchObject({ processed: 3, total: 3, analyzed: 1, skipped: 2, failed: 0, remainingMs: 0 });
+  const stored = await readSolves(), updated = stored.find(record => record.id === solve.id)!;
+  expect(updated.imported!.steps.find(step => step.name === 'PLL')!.case).toBe('Solved');
+  expect(updated.imported).toMatchObject({ id: 'original', rawSourceId: 'original', source: 'acubemy', date: solve.createdAt,
+    endDate: imported.endDate, inspectionTime: null });
+  expect(updated.moves).toEqual(solve.moves);
+  expect(updated.duration).toBe(solve.duration);
+  expect(updated.session).toBe(solve.session);
+  expect(validateBackup(backupJSON(stored), cube)).toHaveLength(3);
+  expect(progress.mock.calls[0][0]).toMatchObject({ processed: 0, total: 3, remainingMs: null });
+  expect(progress.mock.calls.at(-1)![0]).toMatchObject({ processed: 3, remainingMs: 0 });
+});
+test('reanalysis persistence retains later edits, deleted rows and unrelated metadata', async () => {
+  const solve = sample(), updated = reanalyzeSolve(solve, cube, undefined);
+  await saveSolves([{ ...solve, reason: 'local note' }]);
+  await saveSolves([updated], 'reanalysis');
+  expect((await readSolves())[0].reason).toBe('local note');
+  await saveSolves([{ ...solve, penalty: 2000 }]);
+  await saveSolves([updated], 'reanalysis');
+  expect((await readSolves())[0].penalty).toBe(2000);
+  await deleteSolve(solve.id);
+  await saveSolves([updated], 'reanalysis');
+  expect(await readSolves()).toEqual([]);
+});
+test('bulk reanalysis reports per-solve failures and handles an empty database', async () => {
+  expect(await reanalyzeAllSolves(jest.fn())).toMatchObject({ total: 0, processed: 0, analyzed: 0, remainingMs: 0 });
+  const solve = { ...sample(), startFacelets: 'invalid' };
+  await saveSolves([solve]);
+  expect(await reanalyzeAllSolves(jest.fn())).toMatchObject({ total: 1, analyzed: 0, failed: 1 });
+  expect((await readSolves())[0]).toEqual(solve);
+});
+test('imported reanalysis ignores incidental crosses and repairs legacy inverted cross colors', async () => {
+  const rows = readFileSync('smartcubeanalyzer\\public\\demo\\acubemy-all-solves.csv', 'utf8').split(/\r?\n/);
+  const row = rows.find(line => line.startsWith('286820,'))!;
+  expect(row).toBeDefined();
+  await importSolveCSVs([{ name: 'actual.csv', text: async () => `${rows[0]}\n${row}\n` } as File]);
+  const [solve] = await readSolves();
+  expect(solve.moves).toHaveLength(93);
+  expect(analyzeCFOP(solve, cube).cross).toBe(1);
+  for (const crossColor of [CrossColor.White, CrossColor.Yellow]) {
+    const legacy = { ...solve, imported: { ...solve.imported!, crossColor } };
+    const updated = reanalyzeSolve(legacy, cube, undefined);
+    expect(updated.imported!.crossColor).toBe(CrossColor.White);
+    expect(updated.imported!.steps.find(step => step.name === StepName.OLL)!.case).toBe('10');
+    expect(updated.imported!.steps.find(step => step.name === StepName.PLL)!.case).toBe(solve.imported!.steps.find(step => step.name === StepName.PLL)!.case);
+    expect(analyzeCFOP(updated, cube).cross).toBe(0);
+    expect(validateBackup(backupJSON([updated]), cube)).toHaveLength(1);
+    expect(updated.moves).toEqual(solve.moves);
+  }
 });

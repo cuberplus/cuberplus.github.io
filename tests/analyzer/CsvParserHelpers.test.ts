@@ -48,8 +48,8 @@ describe('getAufMovesForSolve', () => {
     });
 
     test.each([
-        [CrossColor.White, 'U'],   // cross on D → AUF on U
-        [CrossColor.Yellow, 'D'],  // cross on U → AUF on D
+        [CrossColor.White, 'D'],
+        [CrossColor.Yellow, 'U'],
         [CrossColor.Orange, 'R'],  // cross on L → AUF on R
         [CrossColor.Red, 'L'],     // cross on R → AUF on L
         [CrossColor.Green, 'B'],   // cross on F → AUF on B
@@ -232,10 +232,12 @@ describe('stripRotationsFromMoveString', () => {
     });
 
     test('ROTATIONS covers all three axes and their variants', () => {
-        expect(ROTATIONS.size).toBe(12);
+        expect(ROTATIONS.size).toBe(18);
         ['x', 'y', 'z'].forEach(axis => {
             expect(ROTATIONS.has(axis)).toBe(true);
             expect(ROTATIONS.has(`${axis}'`)).toBe(true);
+            expect(ROTATIONS.has(`${axis}2'`)).toBe(true);
+            expect(ROTATIONS.has(`${axis}3'`)).toBe(true);
             expect(ROTATIONS.has(`${axis}2`)).toBe(true);
         });
     });

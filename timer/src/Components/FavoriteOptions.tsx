@@ -19,7 +19,7 @@ export function FavoriteOptions({ cube, history }: { cube: Cube | null; history:
       {(['F2L', 'OLL', 'PLL'] as const).map(category => <label className="form-check mb-0" key={category}>
         <input type="checkbox" className="form-check-input" checked={categories[category]}
           onChange={event => setCategories({ ...categories, [category]: event.target.checked })} />
-        <span className="form-check-label">{category === 'F2L' ? 'F2L (including Advanced F2L)' : category}</span>
+        <span className="form-check-label">{category === 'F2L' ? 'F2L (including Advanced and Other F2L)' : category}</span>
       </label>)}
     </fieldset>
     </details>

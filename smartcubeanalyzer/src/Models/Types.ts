@@ -213,6 +213,7 @@ export interface FileInputState {
     isParsing: boolean,
     loadError?: string,
     unloadedCount?: number,
+    savedAnalysisChanged?: boolean,
     currentMethod: MethodName
 }
 

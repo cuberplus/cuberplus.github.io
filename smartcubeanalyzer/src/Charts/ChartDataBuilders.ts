@@ -182,10 +182,12 @@ export function buildFirstPairPercentages(solves: Solve[], windowSize: number, p
     solves.forEach(solve => { const face = COLORS.indexOf(solve.crossColor as typeof COLORS[number]); if (face >= 0) counts[face % 3]++; });
     const cross = counts.indexOf(Math.max(...counts));
     const pairs = counts[cross] ? EDGES.filter(edge => edge.every(face => face % 3 !== cross)).map(edge => pairColors(edge)) : [];
-    return { labels: makeLabels(Math.max(0, solves.length - windowSize + 1), pointsPerGraph, windowSize), datasets: pairs.map(pair => ({
+    const values = solves.map(solve => COLORS.indexOf(solve.crossColor as typeof COLORS[number]) % 3 === cross ? solve.firstF2LPair : undefined);
+    const data = pairs.map(pair => reduceDataset(calculateMovingPercentage(values, windowSize, value => value === pair), pointsPerGraph));
+    const totals = data[0]?.map((_, i) => data.reduce((sum, series) => sum + series[i], 0)) ?? [];
+    return { labels: makeLabels(Math.max(0, solves.length - windowSize + 1), pointsPerGraph, windowSize), datasets: pairs.map((pair, index) => ({
         label: pair.replace('/', ' / '),
-        data: reduceDataset(calculateMovingPercentage(solves, windowSize, solve => solve.firstF2LPair === pair &&
-            COLORS.indexOf(solve.crossColor as typeof COLORS[number]) % 3 === cross), pointsPerGraph),
+        data: data[index].map((value, i) => totals[i] ? value * 100 / totals[i] : null),
     })) };
 }
 
@@ -215,9 +217,11 @@ function buildCategoryPercentageChart(
     categories: Array<{ predicate: (c: string) => boolean; label: string }>
 ): LabelledChart<'line'> {
     const cases = solves.map((x) => getStep(x, stepName)?.case ?? '');
+    const coverage = reduceDataset(calculateMovingPercentage(cases, windowSize, value => categories.some(category => category.predicate(value))), pointsPerGraph);
     const datasets = categories.map(({ predicate, label }) => ({
         label,
-        data: reduceDataset(calculateMovingPercentage(cases, windowSize, predicate), pointsPerGraph),
+        data: reduceDataset(calculateMovingPercentage(cases, windowSize, predicate), pointsPerGraph)
+            .map((value, i) => coverage[i] ? value * 100 / coverage[i] : null),
     }));
     const labels = makeLabels(Math.max(0, solves.length - windowSize + 1), pointsPerGraph, windowSize);
     return { labels, datasets };
@@ -258,7 +262,6 @@ export function buildInspectionData(
 
 export function shouldShowInspectionCharts(solves: Solve[]): boolean {
     if (solves.length === 0) return false;
-    if (solves.every((s) => s.source === 'acubemy')) return false;
     return solves.some((s) => s.inspectionTime != null);
 }
 

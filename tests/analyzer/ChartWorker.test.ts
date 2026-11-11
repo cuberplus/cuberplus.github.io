@@ -492,6 +492,14 @@ describe('chartWorker step averages', () => {
 });
 
 describe('chartWorker efficiency', () => {
+    test('missing cases cannot imply perfect success, while move efficiency remains available', () => {
+        const solves = makeSolves(5).map(solve => ({ ...solve, steps: makeCfopSteps().map(step => ({ ...step, case: '', moves: "R U R' F" })) }));
+        const data = run({ solves, windowSize: 5 }).chartData.runningEfficiency;
+        expect(data.datasets[0].data[0]).toBe(100);
+        expect(data.datasets.slice(1).every(dataset => dataset.data[0] === null)).toBe(true);
+        const missing = solves.map(solve => ({ ...solve, steps: solve.steps.map(step => ({ ...step, moves: '' })) }));
+        expect(run({ solves: missing, windowSize: 5 }).chartData.runningEfficiency.datasets[0].data[0]).toBeNull();
+    });
     const efficientSolve = () =>
         makeSolve({ steps: makeCfopSteps().map(s => ({ ...s, moves: "R U R' F" })) });
     const wastefulSolve = () =>

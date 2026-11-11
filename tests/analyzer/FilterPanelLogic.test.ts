@@ -49,6 +49,13 @@ function passingSolve(overrides: Partial<Solve> = {}): Solve {
 }
 
 describe('FilterPanel.passesFilters', () => {
+    test('explains each excluded solve exactly once without calling missing inspection corrupt', () => {
+        const solves = [passingSolve({ inspectionTime: null }), passingSolve({ method: MethodName.Roux, inspectionTime: 400 }),
+            passingSolve({ inspectionTime: 301 }), passingSolve({ isCorrupt: true })];
+        const filters = permissiveFilters();
+        expect(solves.filter(solve => FilterPanel.passesFilters(solve, filters))).toHaveLength(1);
+        expect(FilterPanel.exclusionSummary(solves, filters)).toBe('Solving method: 1; Inspection time: 1; Invalid source data: 1. Each excluded solve is counted once.');
+    });
     test('retains DNFs in windows despite missing time, but still honors session filters', () => {
         const solve = passingSolve({ dnf: true, time: 0, session: 'Practice' });
         expect(FilterPanel.passesFilters(solve, permissiveFilters({ fastestTime: 10 }))).toBe(true);
