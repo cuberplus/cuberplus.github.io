@@ -1,1 +1,0 @@
-import{e}from"./csvImport-CNwxL-aV.js";import"./dataWorker-DWpRW6Ms.js";e.expose&&import("./inside-JAJOK2MI-BwA5CS9L.js").then(()=>{globalThis.postMessage?globalThis.postMessage("comlink-exposed"):globalThis.process.getBuiltinModule("node:worker_threads").parentPort?.postMessage("comlink-exposed")});var t=import.meta.url;export{t as WORKER_ENTRY_FILE_URL};
