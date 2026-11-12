@@ -133,11 +133,12 @@ describe('clickable cell styling', () => {
         return css.slice(start, css.indexOf('}', start));
     }
 
-    test('the case link fills its cell so the whole box is clickable', () => {
+    test('the case link fills its available cell width and keeps text inset from its edges', () => {
         const rule = ruleFor('.algo-case-link {');
         expect(rule).toContain('block-size: 100%');
-        // Cancels the grid's 8px cell padding so the click target reaches the edges.
-        expect(rule).toContain('margin-inline: -8px');
+        expect(rule).toContain('width: 100%');
+        expect(rule).toContain('padding: 4px 12px');
+        expect(rule).not.toContain('margin-inline: -8px');
     });
 
     test('the fastest-solves grid marks its cells as clickable', () => {

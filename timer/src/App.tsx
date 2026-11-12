@@ -1,8 +1,9 @@
-import { useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react';
 import Navigation, { Footer, PageLocation, PageVisible, SettingsContext, usePageDialog } from '@cuberplus/navigation';
 import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
 import { cubeConnection, useCubeConnection } from '../../shared/cube/connection';
-import { CubePicker } from '../../shared/Components/CubeConnection';
+import { CubeButton, CubePicker } from '../../shared/Components/CubeConnection';
+import { PageOptionsButton } from '../../shared/Components/PageOptionsButton';
 import { TimerEngine, inspectionPenalty, solveTime, type Solve } from './Core/engine';
 import { generateScramble, inverse, loadCube, movesOf, simplifyMoves, SOLVED, type Cube } from './Core/puzzle';
 import { averageDetails, backupJSON, cubeastCSV, dailyStreak, deleteSolve, formatTime, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, recoverLocalSolves, saveSolves, sessionStats, solveEndDate, turns, updateSession, validateBackup } from './Data/storage';
@@ -14,8 +15,10 @@ import { SolveMistakes } from './Components/SolveMistakes';
 import { FavoriteOptions } from './Components/FavoriteOptions';
 import { useScreenWakeLock } from './Hooks/useScreenWakeLock';
 import { InfoTip } from '../../shared/Components/InfoTip';
+import { latestSolves } from '../../shared/Components/SolveLimit';
 import { SessionPicker } from './Components/SessionPicker';
 import { noteCloudSolve } from '../../src/cloud/backup';
+import { relativeTime } from './Data/relativeTime';
 
 const errorText = (error: Error): string => error.message || 'The operation failed.';
 const historyColumns = [
@@ -57,11 +60,18 @@ export default function App() {
   const [demo, setDemo] = useState(false);
   const [battery, setBattery] = useState<number | null>(null);
   const [mac, setMac] = useState(() => { try { return localStorage.getItem('timer-last-cube-mac') ?? ''; } catch { return ''; } });
-  const { precision } = useContext(SettingsContext);
+  const { precision, solveLimit } = useContext(SettingsContext);
   const [overTurnPenalty, setOverTurnPenalty] = useState(() => { try { return localStorage.getItem('timer-over-turn-penalty') === 'true'; } catch { return false; } });
   const [inspection, setInspection] = useState(() => { try { return localStorage.getItem('timer-inspection') === 'true'; } catch { return false; } });
   const [showEveryLongPb, setShowEveryLongPb] = useState(() => { try { return localStorage.getItem('timer-show-every-long-pb') === 'true'; } catch { return false; } });
   const [allSessions, setAllSessions] = useState(() => { try { return localStorage.getItem('timer-all-session-history') === 'true'; } catch { return false; } });
+  const [historyNow, setHistoryNow] = useState(Date.now);
+  useEffect(() => {
+    if (!allSessions) return;
+    setHistoryNow(Date.now());
+    const clock = setInterval(() => setHistoryNow(Date.now()), 60000);
+    return () => clearInterval(clock);
+  }, [allSessions]);
   const [hiddenVisuals, setHiddenVisuals] = useState<HiddenVisuals>(() => {
     try {
       const value = JSON.parse(localStorage.getItem('timer-hide-distracting-visuals') ?? 'false') as Partial<HiddenVisuals> | boolean | null;
@@ -70,6 +80,7 @@ export default function App() {
     } catch { return { timer: false, cube: false, progressBar: false }; }
   });
   const [session, setSession] = useState('Default');
+  const [historyPage, setHistoryPage] = useState(0);
   const [changingSession, setChangingSession] = useState(false);
   const sessionChange = useRef(false);
   const [createdSessions, setCreatedSessions] = useState<string[]>(() => {
@@ -84,7 +95,9 @@ export default function App() {
   const recordChecks = useRef(new Map<string, { solve: Solve; previous: Solve[]; timeout: ReturnType<typeof setTimeout> }>());
   const dailyRecords = useRef<{ date: string; records: string[] } | null>(null);
   const optionsDialog = useRef<HTMLDialogElement>(null);
+  const setupDialog = useRef<HTMLDialogElement>(null);
   usePageDialog(optionsDialog, false);
+  usePageDialog(setupDialog, false);
   const bluetooth = useRef(cubeConnection.adapter);
   const writes = useRef(Promise.resolve());
   const queuedWrites = useRef(new Map<string, Solve>());
@@ -216,7 +229,7 @@ export default function App() {
           }
           const records = notificationRecords(personalBests);
           if (records.length) {
-            const solves = [candidate.solve, ...candidate.previous.filter(item => item.session === candidate.solve.session && item.id !== copy.id)
+            const solves = [candidate.solve, ...candidate.previous.filter(item => item.session !== 'Retries' && item.id !== copy.id)
               .sort((a, b) => b.createdAt.localeCompare(a.createdAt))];
             setCelebrations(current => [...current, ...records.map(record => ({
               ...record, id: `${copy.id}-${record.name}`, solve: candidate.solve,
@@ -501,37 +514,45 @@ export default function App() {
 
   const timer = engine.current, solve = timer?.active ?? (timer?.result ? history.find(solve => solve.id === timer.result?.id) ?? null : history.find(solve => solve.status !== 'active')), elapsed = timer?.elapsed(performance.now()) ?? 0;
   const inspecting = inspection && timer?.phase === 'ready', inspectionTime = timer?.inspectionElapsed(performance.now()) ?? 0;
+  const displayedTime = formatTime(inspecting ? inspectionTime : timer?.active ? elapsed : solve ? solveTime(solve) : elapsed, precision);
   const inspectionStatus = inspectionPenalty(inspectionTime);
   const message = status || timer?.message || 'Loading local puzzle tools...';
   const sessions = useMemo(() => [...new Set([...createdSessions, ...history.map(solve => solve.session)])], [createdSessions, history]);
-  const { filtered, statistics } = useMemo(() => {
-    const filtered = history.filter(solve => solve.session === session && solve.status !== 'active');
-    return { filtered, statistics: sessionStats(filtered) };
-  }, [history, session]);
+  const sessionHistory = useMemo(() => history.filter(solve => solve.session === session && solve.status !== 'active'), [history, session]);
+  const filtered = useMemo(() => latestSolves(sessionHistory, solveLimit, solve => Date.parse(solve.createdAt)).reverse(), [sessionHistory, solveLimit]);
+  const recordHistory = useMemo(() => history.filter(solve => solve.status !== 'active' && solve.session !== 'Retries'), [history]);
+  const statistics = useMemo(() => sessionStats(recordHistory), [recordHistory]);
   const historyRows = useMemo(() => {
-    const rows = numberedSolves(allSessions ? history : filtered).map(({ solve, number }) => {
-      const count = turns(solve);
+    const numbered = numberedSolves(allSessions ? history : sessionHistory);
+    const rows = (solveLimit ? numbered.slice(-solveLimit) : numbered).map(({ solve, number }) => {
+      const count = historySort.column === 'turns' || historySort.column === 'tps' ? turns(solve) : 0;
       return { solve, number, duration: solveTime(solve), turns: count, tps: solve.duration > 0 ? count * 1000 / solve.duration : null };
     });
     return rows.sort((a, b) => {
       const left = a[historySort.column], right = b[historySort.column];
       if (left === null || right === null) return left === right ? a.number - b.number : left === null ? 1 : -1;
       return (left - right) * (historySort.direction === 'ascending' ? 1 : -1) || a.number - b.number;
-    }).slice(0, 100);
-  }, [filtered, history, allSessions, historySort]);
-  const historyTable = useMemo(() => <div className="table-responsive"><table className="table align-middle" aria-label="Solve history">
+    });
+  }, [sessionHistory, history, allSessions, historySort, solveLimit]);
+  useEffect(() => setHistoryPage(0), [session, allSessions, historySort, solveLimit]);
+  const page = Math.min(historyPage, Math.max(0, Math.ceil(historyRows.length / 100) - 1));
+  const historyTable = useMemo(() => <div className="table-responsive"><table className="table align-middle history-table" aria-label="Solve history">
     <thead><tr>{historyColumns.map(column => <th key={column.key} scope="col" aria-sort={historySort.column === column.key ? historySort.direction : undefined}>
       <button className="history-sort" onClick={() => setHistorySort(current => ({
         column: column.key, direction: current.column === column.key && current.direction === 'ascending' ? 'descending' : 'ascending',
       }))}>{column.label}</button>
-    </th>)}{allSessions && <th scope="col">Session</th>}<th scope="col">View</th></tr></thead>
-    <tbody>{historyRows.map(({ solve, number, turns: count, tps }) => <tr key={solve.id}>
-      <td>{number}</td><td>{formatTime(solveTime(solve), precision)}s<SolvePenalty solve={solve} /></td><td>{count}</td>
-      <td>{tps === null ? '--' : tps.toFixed(2)}</td>
-      {allSessions && <td>{solve.session}</td>}
-      <td><button className="btn btn-sm btn-outline-secondary" onClick={() => setReplay(solve)}>View</button></td>
-    </tr>)}</tbody>
-  </table></div>, [historyRows, historySort, allSessions, precision]);
+    </th>)}{allSessions && <><th scope="col">Date</th><th scope="col">Session</th></>}</tr></thead>
+    <tbody>{historyRows.slice(page * 100, (page + 1) * 100).map(({ solve, number }) => {
+      const count = turns(solve), tps = solve.duration > 0 ? count * 1000 / solve.duration : null;
+      return <tr key={solve.id}>
+      <td><button className="history-cell" aria-label={`Solve ${number}: open replay`} onClick={() => setReplay(solve)}>{number}</button></td>
+      <td><button className="history-cell history-time" aria-label={`Solve ${number}: ${formatTime(solveTime(solve), precision)}s, open replay`} onClick={() => setReplay(solve)}>{formatTime(solveTime(solve), precision)}s<SolvePenalty solve={solve} /></button></td>
+      <td><button className="history-cell" aria-label={`Solve ${number}: ${count} turns, open replay`} onClick={() => setReplay(solve)}>{count}</button></td>
+      <td><button className="history-cell" aria-label={`Solve ${number}: ${tps === null ? '--' : tps.toFixed(2)} TPS, open replay`} onClick={() => setReplay(solve)}>{tps === null ? '--' : tps.toFixed(2)}</button></td>
+      {allSessions && <><td><button className="history-cell" aria-label={`Solve ${number}: ${relativeTime(solve.createdAt, historyNow)}, open replay`} onClick={() => setReplay(solve)}><time dateTime={solve.createdAt} title={new Date(solve.createdAt).toLocaleString()}>{relativeTime(solve.createdAt, historyNow)}</time></button></td>
+      <td><button className="history-cell" aria-label={`Solve ${number}: session ${solve.session}, open replay`} onClick={() => setReplay(solve)}>{solve.session}</button></td></>}
+    </tr>; })}</tbody>
+  </table></div>, [historyRows, historySort, allSessions, precision, page, historyNow]);
   const recovering = timer?.phase === 'recovering';
   const setupCount = timer && !recovering ? timer.instructions.length - timer.scramble.trim().split(/\s+/).length : 0;
   const returning = recovering || (timer?.phase === 'scrambling' && timer.progress < setupCount);
@@ -545,21 +566,38 @@ export default function App() {
   const someVisualsHidden = hiddenVisuals.timer || hiddenVisuals.cube || hiddenVisuals.progressBar;
   const currentMoveClass = timer?.isPartialTurn ? 'current partial' : 'current';
   const connected = timer && timer.phase !== 'disconnected';
+  useEffect(() => { if (connected) setupDialog.current?.close(); }, [connected]);
   const canConnect = !!cube && !busy && !connecting && !sharedCube.connecting && !connected && !!navigator.bluetooth && window.isSecureContext;
   const simulate = (move: string) => receive({ type: 'MOVE', timestamp: performance.now(), move, face: 'URFDLB'.indexOf(move[0]), direction: move.endsWith("'") ? 1 : 0, localTimestamp: performance.now(), cubeTimestamp: null });
   return <div className="cuberplus-page">
     <header className="cuberplus-header">
       <Navigation current="timer" />
-      <div className="cuberplus-header-controls">
-        <button className="btn btn-outline-secondary" onClick={() => optionsDialog.current?.showModal()}>Options</button>
+    </header>
+    <main className="container py-4 timer-main">
+    <div className="page-heading timer-toolbar">
+      <h1 className="route-heading">Timer</h1>
+      <div className="page-actions">
+        <CubeButton connected={!!connected} open={() => setupDialog.current?.showModal()} />
+        <PageOptionsButton open={() => optionsDialog.current?.showModal()} />
+      </div>
+    </div>
+    <dialog ref={setupDialog} className="panel options-dialog" aria-labelledby="cube-setup-title">
+      <div className="d-flex justify-content-between align-items-center mb-3"><h2 id="cube-setup-title" className="mb-0">Bluetooth cube setup</h2><button className="btn-close" aria-label="Close cube setup" onClick={() => setupDialog.current?.close()} /></div>
+      <form onSubmit={event => { event.preventDefault(); if (canConnect) void connect(); }}>
+      <div className="page-actions">
         <CubePicker disabled={!!connected || connecting || sharedCube.connecting} change={setMac} />
-        {connected ? <button className="btn btn-outline-secondary" onClick={() => void disconnect()}>Disconnect</button> :
-          <><button className="btn btn-primary d-inline-flex align-items-center gap-2" disabled={!canConnect} onClick={connect}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M7 7l10 10-5 5V2l5 5L7 17" /></svg>{connecting || sharedCube.connecting ? 'Connecting...' : 'Connect cube'}</button>
-          <button hidden className="btn btn-outline-secondary" disabled={!cube || busy || connecting} onClick={startDemo}>Try simulated cube</button></>}
+        {connected ? <button type="button" className="btn btn-outline-secondary" onClick={() => void disconnect()}>Disconnect</button> :
+          <><button type="submit" className="btn btn-primary d-inline-flex align-items-center gap-2" disabled={!canConnect}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M7 7l10 10-5 5V2l5 5L7 17" /></svg>{connecting || sharedCube.connecting ? 'Connecting...' : 'Connect cube'}</button>
+          <button type="button" hidden className="btn btn-outline-secondary" disabled={!cube || busy || connecting} onClick={startDemo}>Try simulated cube</button></>}
         {(sharedCube.battery ?? battery) !== null && <span className="badge text-bg-secondary">{sharedCube.battery ?? battery}% battery</span>}
       </div>
-    </header>
-    <main className="container py-4">
+      {connected ? <div className="d-grid gap-2 mt-3">
+        <button type="button" className="btn btn-outline-secondary" disabled={busy || solving} onClick={() => { setupDialog.current?.close(); void resynchronize(); }}>Read cube state</button>
+        <button type="button" className="btn btn-outline-secondary" disabled={busy || solving} onClick={() => { setupDialog.current?.close(); calibrate(); }}>Cube is physically solved - calibrate</button>
+      </div> : <div className="mt-3"><label className="d-block">Bluetooth MAC (only if needed)<input className="form-control mt-2" placeholder="AA:BB:CC:DD:EE:FF" value={mac} disabled={connecting} onChange={event => setMac(event.target.value)} /></label><a className="d-inline-block mt-2" href="/timer/help/mac-address.html" target="_blank" rel="noopener noreferrer">Find my cube's MAC address</a></div>}
+      </form>
+      {error && <p role="alert" className="text-danger mt-3 mb-0">{error}</p>}
+    </dialog>
     <dialog ref={optionsDialog} className="panel options-dialog" aria-labelledby="options-title">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h2 id="options-title" className="mb-0">Options</h2>
@@ -570,7 +608,7 @@ export default function App() {
         setAllSessions(event.target.checked);
         try { localStorage.setItem('timer-all-session-history', String(event.target.checked)); } catch { setError('History preference could not be saved in this browser.'); }
       }} /><span className="form-check-label">Show all sessions in history</span></label>
-        <InfoTip id="all-session-history-help">Show saved solves from every session. New solves and session statistics still use the selected session.</InfoTip></div>
+        <InfoTip id="all-session-history-help">Show saved solves from every session. New solves use the selected session; records always use all saved sessions.</InfoTip></div>
       <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="inspection-help" checked={inspection} disabled={timer?.phase === 'solving'} onChange={event => changeInspection(event.target.checked)} /><span className="form-check-label">15-second inspection</span></label>
         <InfoTip id="inspection-help">Count up after scrambling. Starting at 15 seconds adds +2; starting at 17 seconds or later is DNF. +2 penalties stack.</InfoTip></div>
       <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="over-turn-penalty-help" checked={overTurnPenalty} onChange={event => changeOverTurnPenalty(event.target.checked)} /><span className="form-check-label">Extra-turn +2 penalty</span></label>
@@ -591,16 +629,13 @@ export default function App() {
           <label className="form-check"><input type="checkbox" className="form-check-input" checked={hiddenVisuals.progressBar} onChange={event => changeHiddenVisuals({ ...hiddenVisuals, progressBar: event.target.checked })} /><span className="form-check-label">Progress bar</span></label>
         </fieldset>
       </details>
-      {!connected && <div className="mt-4">
-        <form onSubmit={event => { event.preventDefault(); if (canConnect) { optionsDialog.current?.close(); connect(); } }}><label className="d-block">Bluetooth MAC (only if needed)<input className="form-control mt-2" placeholder="AA:BB:CC:DD:EE:FF" value={mac} disabled={connecting} onChange={event => setMac(event.target.value)} /></label></form>
-        <a className="d-inline-block mt-2" href="/timer/help/mac-address.html" target="_blank" rel="noopener noreferrer">Find my cube's MAC address</a>
-      </div>}
       {(error.startsWith('Visual preference changed') || error.startsWith('Penalty preference changed') || error.startsWith('PB notification preference changed')) && <p role="alert" className="text-warning mt-3 mb-0">{error}</p>}
     </dialog>
     {(!navigator.bluetooth || !window.isSecureContext) && <p className="alert alert-info">Bluetooth needs a supported browser and HTTPS or localhost. Try Chrome/Edge on Windows.</p>}
     {error && <div className="alert alert-danger d-flex justify-content-between" role="alert">{error}<button className="btn-close" aria-label="Dismiss error" onClick={() => setError('')} /></div>}
     {!['Saved locally', 'Saving locally...'].includes(storage) && <p className="text-secondary small mb-3">{storage}</p>}
-    <section className={`panel timer-panel ${timer?.phase === 'ready' ? 'ready' : ''}`}>
+    {!connected && <div className="alert alert-info timer-onboarding"><strong>Connect a smart cube to start timing.</strong><InfoTip>Choose a saved cube in Cube setup, connect, then follow the highlighted scramble. New cube? Add it in Options. Saved solves can be browsed without a connection.</InfoTip><button className="btn btn-primary" onClick={() => setupDialog.current?.showModal()}>Set up a cube</button></div>}
+    <section className={`panel timer-panel ${!connected ? 'timer-disconnected ' : ''}${timer?.phase === 'ready' ? 'ready' : ''}`}>
       {retry.current && <p className="small text-secondary" role="status">Retry will be saved in Retries, then return to {retry.current.previousSession || 'Default'}.{' '}
         <button className="btn btn-sm btn-outline-secondary" disabled={busy || solving || resynchronizing.current} onClick={() => { finishRetry(); if (timer?.phase === 'disconnected') timer.message = 'Connect your cube to begin.'; else void prepareScramble(); }}>Cancel retry</button></p>}
       {recovering && <p className="small text-secondary mb-2">Return the cube to solved</p>}
@@ -622,12 +657,12 @@ export default function App() {
           </svg>
         </button>
       </div>
-      <div className="row g-3 align-items-center"><div className={hideCube ? 'col-12' : 'col-lg-7'}>
+      <div className={`row g-3 align-items-center timer-hero${hideCube ? ' timer-hero--no-cube' : ''}`}><div className={hideCube ? 'col-12' : 'col-lg-7'}>
       {hideTimer ? <div className="solving-indicator" role="status" aria-label="Solving">
         <span>Solving</span><span className="solving-dots" aria-hidden="true"><span>...</span></span>
       </div> : <>
           <div className="timer-display d-flex align-items-center justify-content-center gap-3">
-            <div className="timer-value" aria-label={inspecting ? 'Inspection time' : 'Solve time'}>{formatTime(inspecting ? inspectionTime : timer?.active ? elapsed : solve ? solveTime(solve) : elapsed, precision)}</div>
+            <div className="timer-value" style={{ '--time-length': displayedTime.length } as CSSProperties} aria-label={inspecting ? 'Inspection time' : 'Solve time'}>{displayedTime}</div>
             {!inspecting && <SolvePenalty solve={solve} />}
           </div>
           <div className="timer-details">
@@ -638,12 +673,8 @@ export default function App() {
       </div>{!hideCube && <div className="col-lg-5">
         {cube && timer && <CubeView cube={cube} facelets={timer.facelets} moves={timer.visualizationMoves} animateSeeks />}
       </div>}</div>
-          {!hideProgressBar && cube && solve && <SolveTimeline cube={cube} solve={solve} elapsed={elapsed} precision={precision} open={solve.status === 'active' ? undefined : () => setReplay(history.find(item => item.id === solve.id) ?? solve)} />}
-          {cube && solve && solve.status !== 'active' && <SolveMistakes cube={cube} solve={solve} history={history} brief />}
-          {connected && <div className="d-flex justify-content-center gap-2 flex-wrap mt-3">
-            <button className="btn btn-outline-secondary" disabled={busy || timer.phase === 'solving'} onClick={() => void resynchronize()}>Read cube state</button>
-            <button className="btn btn-outline-secondary" disabled={busy || timer.phase === 'solving'} onClick={calibrate}>Cube is physically solved - calibrate</button>
-          </div>}
+          {!hideProgressBar && cube && solve && <SolveTimeline compact cube={cube} solve={solve} elapsed={elapsed} precision={precision} open={solve.status === 'active' ? undefined : () => setReplay(history.find(item => item.id === solve.id) ?? solve)} />}
+          {cube && solve && solve.status !== 'active' && <div className="timer-feedback"><SolveMistakes cube={cube} solve={solve} history={filtered} brief /></div>}
           {demo && <div className="demo mt-4">
             <p className="text-warning">Simulated cube - not a physical Bluetooth connection</p>
             <div className="d-flex justify-content-center gap-2 flex-wrap">
@@ -657,26 +688,37 @@ export default function App() {
             }}>Simulate solve</button>
           </div>}
     </section>
-    <section className="panel mt-3">
+    <section className="panel mt-3 timer-records">
       <div className="table-responsive">
-        <table className="table table-sm" aria-label="Session statistics"><thead><tr><th scope="col">Metric</th><th scope="col">Current</th><th scope="col">Best</th></tr></thead>
+        <table className="table table-sm" aria-label="All-time statistics"><thead><tr><th scope="col">Metric <InfoTip>Records use all saved solves across all sessions, regardless of the recent-solves limit. Retry attempts do not count toward records.</InfoTip></th><th scope="col">Current</th><th scope="col">Best</th></tr></thead>
           <tbody>{statistics.map(stat => <tr key={stat.name}><th scope="row">{stat.name}</th>
             {(['current', 'best'] as const).map(kind => <td key={kind}>{stat[kind] === null ? '--' :
               <button className="stat-link" aria-label={`View ${kind} ${stat.name}`} onClick={() => stat.name === 'Single'
-                ? setReplay(filtered.find(solve => (solve.status === 'complete' ? solveTime(solve) : 'DNF') === stat[kind]) ?? null)
-                : setAverage(averageDetails(filtered, Number(stat.name.slice(2)), kind === 'best'))}>{stat[kind] === 'DNF' ? 'DNF' : formatTime(stat[kind] as number, precision)}</button>}
+                ? setReplay(recordHistory.find(solve => (solve.status === 'complete' ? solveTime(solve) : 'DNF') === stat[kind]) ?? null)
+                : setAverage(averageDetails(recordHistory, Number(stat.name.slice(2)), kind === 'best'))}>{stat[kind] === 'DNF' ? 'DNF' : formatTime(stat[kind] as number, precision)}</button>}
             </td>)}
           </tr>)}</tbody>
         </table>
       </div>
     </section>
-    <section className="panel mt-3">
-      <div className="d-flex justify-content-between flex-wrap gap-2"><SessionPicker value={session} sessions={sessions} disabled={changingSession || !!solving || !!retry.current} change={setSession} create={createSession} /><div className="d-flex gap-2">
+    {!!filtered.length && <section className="timer-recent" aria-labelledby="timer-recent-title"><div className="timer-recent-heading"><h2 id="timer-recent-title">Recent solves</h2><a href="#timer-history">Full history</a></div><div className="recent-times">
+      {filtered.slice(0, 5).map(solve => {
+        const time = solve.status === 'incomplete' ? 'DNF' : formatTime(solveTime(solve), precision);
+        return <button key={solve.id} className="btn btn-outline-secondary" aria-label={`Open recent solve: ${time}${time === 'DNF' ? '' : ' seconds'}`} onClick={() => setReplay(solve)}><span style={{ '--time-length': time.length } as CSSProperties}>{time}</span></button>;
+      })}
+    </div></section>}
+    <section className="panel mt-3 timer-history" id="timer-history" aria-labelledby="timer-history-title">
+      <div className="d-flex justify-content-between flex-wrap gap-2 mb-3"><h2 id="timer-history-title" className="h5">{allSessions ? 'All sessions' : session} history</h2><div className="d-flex gap-2">
         <button className="btn btn-outline-secondary" onClick={() => exportHistory('csv')}>Export CSV</button>
         <button hidden className="btn btn-outline-secondary" onClick={() => exportHistory('json')}>Export JSON</button>
         <label hidden className={`btn btn-outline-secondary mb-0 ${timer?.phase === 'solving' ? 'disabled' : ''}`}>Import JSON<input type="file" className="visually-hidden" accept=".json,application/json" disabled={timer?.phase === 'solving'} onChange={event => { void importBackup(event.target.files?.[0]); event.target.value = ''; }} /></label>
       </div></div>
       {historyTable}
+      {!!historyRows.length && <nav className="history-pagination" aria-label="Solve history pages">
+        <button className="btn btn-outline-secondary" disabled={page === 0} onClick={() => setHistoryPage(page - 1)}>Previous</button>
+        <span role="status">{page * 100 + 1}–{Math.min((page + 1) * 100, historyRows.length)} of {historyRows.length.toLocaleString()} solves</span>
+        <button className="btn btn-outline-secondary" disabled={(page + 1) * 100 >= historyRows.length} onClick={() => setHistoryPage(page + 1)}>Next</button>
+      </nav>}
       {!historyRows.length && <p className="text-secondary">{allSessions ? 'No saved solves yet.' : 'No solves in this session yet.'} Your data stays on this device.</p>}
     </section>
     {average && <AverageDetails details={average} history={history} precision={precision} view={setReplay} close={() => setAverage(null)} />}

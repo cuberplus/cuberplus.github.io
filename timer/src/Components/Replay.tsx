@@ -103,12 +103,13 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
   return <dialog ref={dialog} className="panel replay-dialog" aria-label="Solve replay" onCancel={event => { event.preventDefault(); if (!deleting) dismiss(); }}>
     <div className="replay-header">
       <div className="replay-summary">
+        <h2 className="replay-title">Solve replay</h2>
         <strong className="replay-time" aria-label="Solve time">{formatTime(solveTime(solve), precision)}s</strong>
         <span className="d-inline-flex align-items-baseline gap-3 flex-wrap">
           <span>{turns(solve)} turns</span>
-          <span className="small text-secondary" aria-label="Inspection time">Inspection: {solve.inspection === undefined ? 'Not recorded' : `${formatTime(solve.inspection, precision)}s`}</span>
-          <span className="small text-secondary" aria-label="Solve date">{new Date(solve.createdAt).toLocaleString()}</span>
+          {solve.duration > 0 && <span>{(turns(solve) * 1000 / solve.duration).toFixed(2)} TPS</span>}
         </span>
+        <span className="small text-secondary" aria-label="Solve date">{new Date(solve.createdAt).toLocaleString()}</span>
       </div>
       <div className="d-flex gap-2">
         <button autoFocus className="btn-close" aria-label="Close replay" disabled={deleting} onClick={dismiss} />
@@ -117,26 +118,29 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
     {deleteError && <p className="alert alert-danger" role="alert">{deleteError}</p>}
     {saveError && <p className="alert alert-danger" role="alert">{saveError}</p>}
     <div className="replay-scramble">
-      <p className="scramble mb-0">{movesOf(solve.scramble).join(' ')}</p>
+      <details><summary>Scramble</summary><p className="scramble mb-0">{movesOf(solve.scramble).join(' ')}</p></details>
       {hasReplay && (retry
         ? <button className="btn btn-outline-primary" disabled={deleting || retryDisabled} onClick={() => { dismiss(); retry(solve); }}>Retry</button>
         : <a className={`btn btn-outline-primary${deleting ? ' disabled' : ''}`} aria-disabled={deleting || undefined} tabIndex={deleting ? -1 : undefined} href={`/timer/?retry=${encodeURIComponent(solve.id)}`} onClick={event => { if (deleting) event.preventDefault(); else dismiss(); }}>Retry</a>)}
     </div>
-    {hasReplay && <><CubeView cube={cube} facelets={facelets} moves={moves} position={position} speed={speed} playback seekVersion={seekVersion} cross={cross} rotation={rotation} />
-    <div className="d-flex gap-2 align-items-center flex-wrap">
+    {hasReplay && <section className="replay-playback" aria-label="Playback"><CubeView cube={cube} facelets={facelets} moves={moves} position={position} speed={speed} playback seekVersion={seekVersion} cross={cross} rotation={rotation} height={220} />
+    <div className="replay-controls">
       <button className="btn btn-primary" disabled={!solve.moves.length} onClick={() => { if (position >= solve.moves.length) seekPosition(0); setPlaying(!playing); }}>{playing ? 'Pause' : 'Play'}</button>
       <button className="btn btn-outline-secondary" disabled={position === 0} onClick={() => seekPosition(position - 1)}>Previous move</button>
       <button className="btn btn-outline-secondary" disabled={position >= solve.moves.length} onClick={() => seekPosition(position + 1)}>Next move</button>
       <select className="form-select replay-speed" aria-label="Replay speed" value={speed} onChange={event => setSpeed(Number(event.target.value))}>
         {[0.25, 0.5, 1, 2, 4].map(value => <option key={value} value={value}>{value}x</option>)}
       </select>
-      <span>{position}/{solve.moves.length} moves - {formatTime(cursor, precision)}s</span>
-    </div></>}
+      <span className="replay-position">{position}/{solve.moves.length} moves - {formatTime(cursor, precision)}s</span>
+    </div></section>}
+    <section className="replay-section"><h3>Step timing</h3>
     <SolveTimeline cube={cube} solve={solve} elapsed={solve.duration} precision={precision} position={position} cursor={cursor} seekMove={hasReplay ? seekPosition : undefined}
       seek={hasReplay && solve.moves.length ? time => seekPosition(time < 0 ? 0 : timestamps.reduce((closest, stamp, i) => Math.abs(stamp - time) <= Math.abs((timestamps[closest - 1] ?? 0) - time) ? i + 1 : closest, 0)) : undefined} />
+    </section>
+    <div className="replay-disclosure-row"><details className="replay-disclosure"><summary>Solution moves</summary>
     <div className="move-timeline" role="group" aria-label="Solution steps">{steps.map((step, index) => <div key={`${index}-${step.name}`} role="group" aria-label={`${step.name} solution`} className="mb-2">
       <div className="d-flex align-items-baseline gap-2">
-        <h3 className="replay-step-name">{step.name}</h3>
+        <h3 className="replay-step-name">{step.caseKey ? <button type="button" className="replay-case-link" aria-label={`${step.name}: open ${step.case} case`} onClick={() => { setPlaying(false); setCaseKey(step.caseKey); }}>{step.name}</button> : step.name}</h3>
         {step.case && (step.caseKey
           ? <button className="badge text-bg-secondary border-0" aria-label={`${step.name} case`} onClick={() => { setPlaying(false); setCaseKey(step.caseKey); }}>{step.case}</button>
           : <span className="badge text-bg-secondary" aria-label={`${step.name} case`}>{step.case}</span>)}
@@ -151,11 +155,13 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
           onClick={() => seekPosition(group.end)}>{group.move}</button>;
       }) : <span className="small text-secondary">{step.empty}</span>}
     </div>)}</div>
+    </details><InfoTip>Select any recorded move to jump to it. Recognized step names and case badges open the matching algorithm case. The timeline shows recognition and execution time for each step.</InfoTip></div>
     {solve.status === 'incomplete' && <p className="text-warning mt-2" aria-label="Penalty reason">DNF reason: {getDnfReason(solve)}</p>}
     {!!solve.penalty && <p className="text-warning mt-2" aria-label="Penalty reason">+{solve.penalty / 1000} {solve.penalty === 2000 ? 'reason' : 'reasons'}: {getPenaltyReasons(solve).join(', ')}</p>}
     {solve.reason && solve.reason !== 'Solve aborted by user.' && <p className="text-secondary small mt-2">{solve.reason}</p>}
-    <SolveMistakes cube={cube} solve={solve} history={history} />
-    {change && <div className="d-flex gap-2 align-items-center flex-wrap mt-3">
+    <section className="replay-section"><h3>Insights</h3><SolveMistakes cube={cube} solve={solve} history={history} /></section>
+    {change && <div className="replay-disclosure-row"><details className="replay-disclosure"><summary>Analysis settings</summary>
+    <div className="d-flex gap-2 align-items-center flex-wrap mt-3">
       <button className="btn btn-outline-primary" disabled={deleting} onClick={() => reanalyze(solve.crossOverride)}>Re-run analysis</button>
       {hasReplay && <label className="d-flex gap-2 align-items-center">Base cross color
         <select className="form-select w-auto" aria-label="Base cross color" disabled={deleting} value={solve.crossOverride ?? ''}
@@ -164,11 +170,10 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
           {['White', 'Red', 'Green', 'Yellow', 'Orange', 'Blue'].map((color, face) => <option key={color} value={face}>{color}</option>)}
         </select>
       </label>}
-      <InfoTip>Re-run analysis to refresh step detection and mistakes. Choosing a cross color recalculates the solve using that base face. Time losses are estimates, not additive; overlapping mistakes can describe the same lost time.</InfoTip>
-    </div>}
+    </div></details><InfoTip>Re-run analysis to refresh step detection and mistakes. Choosing a cross color recalculates the solve using that base face. Time losses are estimates, not additive; overlapping mistakes can describe the same lost time.</InfoTip></div>}
     {analysisError && <p role="alert" className="alert alert-warning">{analysisError}</p>}
     {caseKey && <CaseModal caseKey={caseKey} close={() => setCaseKey('')} />}
-    <div className="d-flex gap-2 mt-3" role="group" aria-label="Solve penalties and deletion">
+    <div className="replay-actions" role="group" aria-label="Solve penalties and deletion">
       {change && <>
         <button className={`btn ${getPenaltyReasons(solve).includes('manual') ? 'btn-warning' : 'btn-outline-warning'}`}
           aria-pressed={getPenaltyReasons(solve).includes('manual')} disabled={deleting || (solve.status !== 'complete' && solve.dnfReason !== 'manual')}
@@ -179,9 +184,11 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
       </>}
       <button className="btn btn-outline-danger" disabled={deleting} onClick={removeSolve}>{deleting ? 'Deleting...' : 'Delete'}</button>
     </div>
-    <div className="d-flex align-items-baseline gap-3 flex-wrap small text-secondary text-break mt-3">
+    <div className="replay-disclosure-row replay-recording"><details className="replay-disclosure"><summary>Recording details</summary>
+    <div className="d-grid gap-2 small text-secondary text-break mt-3">
+      <span aria-label="Inspection time">Inspection: {solve.inspection === undefined ? 'Not recorded' : `${formatTime(solve.inspection, precision)}s`}</span>
       <span aria-label="Solve ID">Solve ID: <span className="font-monospace">{solve.id}</span></span>
-      <span aria-label="Solve source">{sourceLabel(solve)}{solve.imported && <InfoTip>{hasReplay ? 'Replay rebuilt from exported moves and timestamps; original device clock data is not available. Imported step analysis is preserved.' : 'Imported step analysis is preserved. This CSV has no valid timed recording to replay.'}</InfoTip>}</span>
-    </div>
+      <span aria-label="Solve source">{sourceLabel(solve)}</span>
+    </div></details>{solve.imported && <InfoTip>{hasReplay ? 'Replay rebuilt from exported moves and timestamps; original device clock data is not available. Imported step analysis is preserved.' : 'Imported step analysis is preserved. This CSV has no valid timed recording to replay.'}</InfoTip>}</div>
   </dialog>;
 }

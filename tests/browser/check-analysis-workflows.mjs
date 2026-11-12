@@ -10,13 +10,13 @@ const page = await context.newPage(), errors = [], timings = {};
 page.on('pageerror', error => errors.push(error.message));
 try {
   const start = performance.now();
-  await page.goto(`${base}/smartcubeanalyzer/`);
+  await page.goto(`${base}/analyzer/`);
   await page.getByRole('link', { name: 'Options', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Options', exact: true })).toBeVisible();
   timings['Navigate during analyzer loading'] = Math.round(performance.now() - start);
   await page.getByRole('link', { name: 'Smartcube Analyzer', exact: true }).click();
   await expect(page.locator('canvas').first()).toBeVisible({ timeout: 120000 });
-  await expect(page.getByRole('button', { name: 'Display My Stats!', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Data', exact: true })).toBeEnabled();
   timings['Initial full-data analyzer load including navigation'] = Math.round(performance.now() - start);
   console.log('Initial analyzer loaded:', timings);
   await page.getByRole('button', { name: 'F2L', exact: true }).click();
@@ -43,8 +43,9 @@ try {
   await expect(page.locator('.algo-case-link').first()).toBeVisible();
   for (const label of ['First saved-data analysis', 'Cached saved-data analysis']) {
     const began = performance.now();
-    await page.getByRole('button', { name: 'Display My Stats!', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Display My Stats!', exact: true })).toBeEnabled({ timeout: 240000 });
+    await page.getByRole('button', { name: 'Data', exact: true }).click();
+    await page.getByRole('button', { name: 'My saved solves', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Data', exact: true })).toBeEnabled({ timeout: 240000 });
     await expect(page.locator('canvas').first()).toBeVisible();
     timings[label] = Math.round(performance.now() - began);
     console.log(label, timings[label], 'ms');

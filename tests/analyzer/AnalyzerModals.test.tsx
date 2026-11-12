@@ -40,6 +40,32 @@ function point(index: number, datasetIndex = 0): ActiveElement {
 }
 
 describe('Analyzer inline drill-down', () => {
+    test.each([
+        ['runningAverage', [91, 93, 95, 97, 99]],
+        ['runningTurns', [89, 91, 93, 97, 99]],
+        ['runningInspection', [87, 89, 91, 97, 99]],
+    ] as const)('clicking %s resolves full-history labels through scoped, filtered phase data', (key, numbers) => {
+        const recordSolves = makeSolves(100).map((solve, i) => ({ ...solve, dnf: i === 94, inspectionTime: i === 92 ? null : 8 }));
+        const solves = recordSolves.slice(80).filter((_, i) => i % 2 === 0).map(solve => ({ ...solve, time: 0.5 }));
+        const instance = panel({ recordSolves, solves });
+        const chart = instance.state.chartData![key]!;
+        expect(chart.labels!.at(-1)).toBe('99');
+        instance.openAverage(key, point(chart.labels!.length - 1));
+        expect(instance.state.average!.numbers).toEqual(numbers);
+        expect(instance.state.average!.solves.map(solve => solve.id)).toEqual(numbers.map(number => `solve-${number - 1}`));
+        expect(instance.state.average!.solves.every(solve => solve.time === 0.5)).toBe(true);
+    });
+
+    test('record drill-downs use historical full-solve times and numbering outside the filtered phase window', () => {
+        const recordSolves = makeSolves(1010).map((solve, i) => ({ ...solve, source: 'timer' as const, time: i < 1000 ? 1 : 20 }));
+        const instance = panel({ recordSolves, solves: recordSolves.slice(-5).map(solve => ({ ...solve, time: 0.1 })), steps: [StepName.Cross] });
+        instance.openAverage('recordHistory', point(0, 4));
+        expect(instance.state.average!.solves).toEqual(recordSolves.slice(0, 1000));
+        expect(instance.state.average!.numbers).toEqual(Array.from({ length: 1000 }, (_, i) => i + 1));
+        expect(instance.state.average!.percentage).toBe(5);
+        instance.openAverage('recordHistory', point(0, 0));
+        expect(instance.state.replayId).toBe(recordSolves[0].id);
+    });
     test('mistake drill-down matches the counted window, exact step/AUF, corrupt exclusions, DNFs, and original numbers', () => {
         const solves = makeSolves(9).map((solve, i) => ({
             ...solve, source: 'timer' as const, dnf: i === 6, isCorrupt: i === 8,
@@ -52,7 +78,7 @@ describe('Analyzer inline drill-down', () => {
         expect(instance.state.average!.percentage).toBe(0);
         render(<AverageModal {...instance.state.average!} close={() => undefined} view={solve => instance.openSolveSource(solve)} />);
         expect(screen.getByRole('heading', { name: 'PLL AUF: Single-move undo (2 solves)' })).not.toBeNull();
-        fireEvent.click(screen.getByRole('button', { name: 'View solve 7' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Solve 7, open replay' }));
         expect(instance.state.replayId).toBe(solves[6].id);
         instance.openMistakes({ kind: 'crossMoves' });
         expect(instance.state.average!.numbers).toEqual([5, 7]);
@@ -168,7 +194,7 @@ describe('Analyzer inline drill-down', () => {
         expect(instance.state.average).toBeUndefined();
     });
 
-    test('a histogram bin selects the exact recent valid window and preserves original identities through sorting and View', () => {
+    test('a histogram bin selects the exact recent valid window and preserves original identities through sorting and replay', () => {
         const solves = makeSolves(9).map((solve, i) => ({ ...solve, source: 'timer' as const, time: [12.1, 15, 12, 12.999, 13, 12.5, 11.999, 12.8, 12.3][i], dnf: i === 8 }));
         const instance = panel({ solves, windowSize: 5 });
         const data = instance.state.chartData!.histogram, index = data.labels!.indexOf(12);
@@ -182,7 +208,7 @@ describe('Analyzer inline drill-down', () => {
         expect(screen.queryAllByTitle(/^Excluded /)).toHaveLength(0);
         fireEvent.click(screen.getByRole('button', { name: 'Time', exact: true }));
         expect(within(screen.getByRole('table')).getAllByRole('rowheader').map(cell => cell.textContent)).toEqual(['6', '8', '4']);
-        fireEvent.click(screen.getByRole('button', { name: 'View solve 8' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Solve 8, open replay' }));
         expect(instance.state.replayId).toBe(solves[7].id);
     });
 
@@ -241,19 +267,20 @@ describe('chopped average modal', () => {
         expect(within(table).getByTitle('Excluded best').className).toBe('average-trimmed-best');
         expect(within(table).getByTitle('Excluded worst').className).toBe('average-trimmed-worst');
         expect(within(table).getByTitle('Excluded worst').textContent).toBe('(DNF)');
-        fireEvent.click(screen.getByRole('button', { name: 'View average solve 72' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Solve 72, open replay' }));
         expect(view).toHaveBeenCalledWith(solves[3]);
         fireEvent.click(screen.getByRole('button', { name: 'Close average' }));
         expect(close).toHaveBeenCalledTimes(1);
     });
 
-    test('shared columns sort numerically without renumbering solves, moving trim assignments or changing View targets', () => {
+    test('columns sort numerically without renumbering solves, moving trim assignments or changing replay targets', () => {
         const solves = makeSolves(5).map((solve, i) => ({
             ...solve, time: [4, 1, 9, 3, 5][i], turns: [2, 11, 30, 5, 1][i], tps: [12, 2, NaN, 5, 10][i],
         }));
         const view = jest.fn<(solve: Solve) => void>(), close = jest.fn();
         render(<AverageModal solves={solves} numbers={[69, 70, 71, 72, 73]} percentage={5} view={view} close={close} />);
         const table = screen.getByRole('table');
+        expect(within(table).getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['Solve', 'Time', 'Turns', 'TPS']);
         const numbers = () => within(table).getAllByRole('rowheader').map(cell => Number(cell.textContent));
         const sort = (name: string) => fireEvent.click(within(table).getByRole('button', { name, exact: true }));
         sort('Turns');
@@ -271,11 +298,7 @@ describe('chopped average modal', () => {
         expect(within(table).getByTitle('Excluded worst').textContent).toBe('(9.000s)');
         sort('Time');
         expect(numbers()).toEqual([71, 73, 69, 72, 70]);
-        sort('View');
-        expect(numbers()).toEqual([69, 70, 71, 72, 73]);
-        sort('View');
-        expect(numbers()).toEqual([73, 72, 71, 70, 69]);
-        fireEvent.click(within(table).getByRole('button', { name: 'View average solve 70' }));
+        fireEvent.click(within(table).getByRole('button', { name: 'Solve 70, open replay' }));
         expect(view).toHaveBeenCalledWith(solves[1]);
         sort('Solve');
         expect(numbers()).toEqual([69, 70, 71, 72, 73]);
@@ -283,6 +306,29 @@ describe('chopped average modal', () => {
         expect(numbers()).toEqual([73, 72, 71, 70, 69]);
         fireEvent(screen.getByRole('dialog'), new Event('cancel', { bubbles: true, cancelable: true }));
         expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([undefined, 'Selected mistakes'])('every field replays the original solve after sorting in %s lists', title => {
+        const solves = makeSolves(3).map((solve, i) => ({ ...solve, time: [3, 1, 2][i], dnf: i === 2, tps: i === 2 ? NaN : solve.tps }));
+        const view = jest.fn<(solve: Solve) => void>();
+        render(<AverageModal solves={solves} numbers={[9, 4, 7]} percentage={5} title={title} view={view} close={() => undefined} />);
+        const table = screen.getByRole('table', { name: title ? 'Selected solves' : 'Average solves' });
+        expect(within(table).queryByRole('button', { name: 'View', exact: true })).toBeNull();
+        fireEvent.click(within(table).getByRole('button', { name: 'Time', exact: true }));
+        const rows = within(table).getAllByRole('row').slice(1);
+        expect(rows.map(row => within(row).getByRole('rowheader').textContent)).toEqual(['4', '9', '7']);
+        for (const [index, row] of rows.entries()) {
+            const fields = within(row).getAllByRole('button');
+            expect(fields).toHaveLength(4);
+            for (const field of fields) {
+                fireEvent.click(field);
+                expect(view).toHaveBeenLastCalledWith(solves[[1, 0, 2][index]]);
+            }
+        }
+        expect(view).toHaveBeenCalledTimes(12);
+        expect(within(rows[0]).getByRole('button', { name: /excluded best/ }).textContent).toBe('(1.000s)');
+        expect(within(rows[2]).getByRole('button', { name: /excluded worst/ }).textContent).toBe('(DNF)');
+        expect(within(rows[2]).getByRole('button', { name: /-- TPS/ }).textContent).toBe('--');
     });
 
     test('untrimmed DNF averages stay DNF and do not strike out rows', () => {

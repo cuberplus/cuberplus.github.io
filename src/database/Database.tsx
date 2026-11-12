@@ -24,9 +24,20 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
   const [linked, setLinked] = useState(() => location.hash.slice(1));
   const [adding, setAdding] = useState(false), [category, setCategory] = useState<Category>('F2L');
   const [notice, setNotice] = useState<AlgorithmNotice | null>(null);
+  const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<'F2L' | 'OLL' | 'PLL' | ''>('');
   const [caseId, setCaseId] = useState('1'), [algorithm, setAlgorithm] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false);
   const customAlgorithms = readCustomAlgorithms();
   const entries = catalog.map(entry => ({ ...entry, ...caseImages[`${entry.category}-${entry.id}` as keyof typeof caseImages] }));
+  const tokens = search.toLowerCase().replace(/-/g, ' ').trim().split(/\s+/).filter(Boolean);
+  const favoritesOnly = tokens.some(token => /^favorites?$/.test(token)), finding = !!search.trim();
+  const query = tokens.filter(token => !/^favorites?$/.test(token));
+  const pllCase = query.join(' ').match(/^(?:pll\s+([a-z]+)|([a-z]+)\s+perm(?:utation)?)$/)?.slice(1).find(Boolean);
+  const matches = entries.filter(entry => caseKey ? `${entry.category}-${entry.id}` === caseKey :
+    (!selectedCategory || (selectedCategory === 'F2L' ? entry.category.endsWith('F2L') : entry.category === selectedCategory)) &&
+    (!pllCase || entry.category === 'PLL' && entry.id.toLowerCase().startsWith(pllCase)) &&
+    (!favoritesOnly || entry.options.some(algorithm => favorites.has(favoriteId(entry, algorithm)))) &&
+    query.every(token => `${categoryName(entry.category)} ${entry.category} ${entry.id} ${entry.category === 'PLL' ? 'perm permutation' : ''} ${caseGroup(entry)} ${entry.options.join(' ')}`.toLowerCase().includes(token)));
   useEffect(() => {
     const refresh = () => setCatalog(getAlgorithms());
     window.addEventListener(CATALOG_CHANGED, refresh); window.addEventListener('storage', refresh);
@@ -38,6 +49,7 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
       const key = location.hash.slice(1);
       if (!catalog.some(entry => `${entry.category}-${entry.id}` === key)) return;
       setLinked(key); setOpen(previous => new Set([...previous, key.split('-')[0]]));
+      setSearch(''); setSelectedCategory('');
       const entry = catalog.find(entry => `${entry.category}-${entry.id}` === key)!;
       setOpenProperties(previous => new Set([...previous, `${entry.category}:${caseGroup(entry)}`]));
     }
@@ -84,14 +96,32 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
   return <div className="cuberplus-page database-page">
     {!caseKey && <header className="cuberplus-header"><Navigation current="database" /></header>}
     <main className="container py-4 database-main">
-      {!caseKey && <><h2>Algorithm database</h2>
-      <div className="d-flex flex-wrap gap-2 my-3">
-        <DiscoverAlgorithms notify={setNotice} /><DiscoverAlgorithms learn notify={setNotice} />
-        <button type="button" className="btn btn-outline-secondary btn-sm" aria-expanded={adding} onClick={() => setAdding(value => !value)}>Add your own algorithm</button>
-        <button type="button" className="btn btn-outline-secondary btn-sm" disabled={!favorites.size} onClick={() => {
+      {!caseKey && <><div className="database-heading"><h1 className="route-heading mb-0">Algorithm database</h1>
+        <span className="text-secondary small">{favorites.size} favorites</span>
+      </div>
+      <section className="database-finder" aria-label="Find algorithms">
+        <label htmlFor="algorithm-search">Search cases or algorithms<input id="algorithm-search" className="form-control" type="search" autoCorrect="off" autoCapitalize="off" spellCheck={false} placeholder="e.g. PLL-T, favorite, R U R'" value={search} onChange={event => setSearch(event.target.value)} /></label>
+        <div className="d-flex align-items-center gap-3">
+          <nav className="d-flex flex-shrink-0 gap-2" aria-label="Algorithm categories">{(['F2L', 'OLL', 'PLL'] as const).map(value => <button key={value} className={`btn btn-sm ${selectedCategory === value ? 'btn-primary' : 'btn-outline-secondary'}`} aria-pressed={selectedCategory === value} onClick={() => { setSelectedCategory(selectedCategory === value ? '' : value); setOpen(new Set(categories.filter(category => value === 'F2L' ? category.endsWith('F2L') : category === value))); }}>{value}</button>)}</nav>
+          <p aria-live="polite" className="small text-secondary mb-0">{matches.length} matching cases{!matches.length ? '. Try another search or clear the filters.' : ''}</p>
+        </div>
+        {(finding || selectedCategory) && <button className="btn btn-sm btn-outline-secondary" onClick={() => { setSearch(''); setSelectedCategory(''); }}>Clear filters</button>}
+      </section>
+      <details className="database-tools">
+        <summary>Algorithm tools</summary>
+        <div className="database-tool-groups">
+        <section><h3 className="h6">Your algorithms</h3>
+          <button type="button" className="btn btn-primary btn-sm" aria-expanded={adding} onClick={() => setAdding(value => !value)}>Add your own algorithm</button>
+        </section>
+        <section><h3 className="h6">From your solves</h3>
+          <div className="d-flex flex-wrap gap-2"><DiscoverAlgorithms notify={setNotice} /><DiscoverAlgorithms learn notify={setNotice} /></div>
+        </section>
+        <section><h3 className="h6">Reset favorites</h3>
+        <button type="button" className="btn btn-outline-danger btn-sm" disabled={!favorites.size} onClick={() => {
           if (window.confirm('Un-favorite all algorithms? Your algorithms and Unlearn selections will be kept.')) setFavorites(new Set());
         }}>Un-Favorite All</button>
-      </div></>}
+        </section></div>
+      </details></>}
       {adding && <form className="card p-3 mb-3" onSubmit={event => { event.preventDefault(); void addAlgorithm(); }}>
         <div className="d-flex justify-content-between align-items-center mb-2">
           <h3 className="h5 mb-0">Add your own algorithm</h3>
@@ -108,8 +138,9 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
       </form>}
       {message && <p role="status">{message}</p>}
       {error && <p role="alert">{error}</p>}
-      {categories.filter(category => !caseKey || caseKey.startsWith(`${category}-`)).map(category => <details className="card database-group" key={category} open={open.has(category)}
+      {categories.filter(category => matches.some(entry => entry.category === category)).map(category => <details className="card database-group" key={category} open={finding || open.has(category)}
         onToggle={event => {
+          if (finding) return;
           const expanded = event.currentTarget.open;
           setOpen(previous => {
             if (previous.has(category) === expanded) return previous;
@@ -118,13 +149,14 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
         }}>
         <summary>
           <CategoryImage category={category} />
-          <span>{categoryName(category)}</span><span className="database-count">{catalog.filter(entry => entry.category === category).length} cases</span>
+          <span>{categoryName(category)}</span><span className="database-count">{matches.filter(entry => entry.category === category).length} cases</span>
         </summary>
         <div className="database-group-content">
-          {open.has(category) && [...new Set(entries.filter(entry => entry.category === category && (!caseKey || `${category}-${entry.id}` === caseKey)).sort(compareCases).map(caseGroup))].map(property => {
+          {(finding || open.has(category)) && [...new Set(matches.filter(entry => entry.category === category).sort(compareCases).map(caseGroup))].map(property => {
             const propertyKey = `${category}:${property}`;
-            const cases = entries.filter(entry => entry.category === category && caseGroup(entry) === property && (!caseKey || `${category}-${entry.id}` === caseKey)).sort(compareCases);
-            return <details key={property} className="database-property" open={!!caseKey || openProperties.has(propertyKey)} onToggle={event => {
+            const cases = matches.filter(entry => entry.category === category && caseGroup(entry) === property).sort(compareCases);
+            return <details key={property} className="database-property" open={!!caseKey || finding || openProperties.has(propertyKey)} onToggle={event => {
+              if (finding) return;
               const expanded = event.currentTarget.open;
               setOpenProperties(previous => {
                 if (previous.has(propertyKey) === expanded) return previous;
@@ -132,16 +164,17 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
               });
             }}>
               <summary>{property || 'Other cases'}<span className="database-count">{cases.length} cases</span></summary>
-              {(caseKey || openProperties.has(propertyKey)) && cases.map(entry => {
+              {(caseKey || finding || openProperties.has(propertyKey)) && cases.map(entry => {
             const key = `${category}-${entry.id}`;
             const builtInOptions = algorithms.find(base => base.category === category && base.id === entry.id)!.options;
+            const options = entry.options.map((algorithm, index) => ({ algorithm, index }))
+              .filter(({ algorithm }) => !favoritesOnly || favorites.has(favoriteId(entry, algorithm)))
+              .sort((a, b) => Number(favorites.has(favoriteId(entry, b.algorithm))) - Number(favorites.has(favoriteId(entry, a.algorithm))));
             return <article className={`database-case${linked === key ? ' database-case--linked' : ''}`} id={key} key={key} aria-label={`${category} ${entry.id}`}>
               {entry.facelets ? <CaseImage {...entry} /> : <div className="database-case-image" />}
               <div className="database-algorithms">
                 <h3>{categoryName(category)} {entry.id}</h3>
-                {entry.options.map((algorithm, index) => ({ algorithm, index }))
-                  .sort((a, b) => Number(favorites.has(favoriteId(entry, b.algorithm))) - Number(favorites.has(favoriteId(entry, a.algorithm))))
-                  .slice(0, expandedCases.has(key) ? undefined : 3).map(({ algorithm, index }) => {
+                {options.slice(0, expandedCases.has(key) ? undefined : 3).map(({ algorithm, index }) => {
                   const id = favoriteId(entry, algorithm), favorite = favorites.has(id);
                   const custom = customAlgorithms[key]?.includes(algorithm) && !builtInOptions.includes(algorithm);
                   return <div className={`database-algorithm${custom ? ' database-algorithm--custom' : ''}`} key={algorithm}>
@@ -164,13 +197,13 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
                     <p>{formatAlgorithm(algorithm)}</p>
                   </div>;
                 })}
-                {entry.options.length > 3 && <button type="button" className="btn btn-outline-secondary btn-sm mt-2"
+                {options.length > 3 && <button type="button" className="btn btn-outline-secondary btn-sm mt-2"
                   aria-expanded={expandedCases.has(key)}
                   aria-label={`${expandedCases.has(key) ? 'Show fewer' : 'Show all'} ${category} ${entry.id} algorithms`}
                   onClick={() => setExpandedCases(previous => {
                     const next = new Set(previous); if (next.has(key)) next.delete(key); else next.add(key); return next;
                   })}>
-                  {expandedCases.has(key) ? 'Show fewer' : `Show all ${entry.options.length} algorithms`}
+                  {expandedCases.has(key) ? 'Show fewer' : `Show all ${options.length} algorithms`}
                 </button>}
               </div>
             </article>;

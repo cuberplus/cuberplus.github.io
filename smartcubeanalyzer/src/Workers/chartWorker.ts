@@ -11,6 +11,7 @@ import { calendarDay, streakWindows } from '../../../shared/statistics/streaks';
 export interface WorkerInput {
     requestId: number;
     solves: Solve[];
+    recordSolves?: Solve[];
     windowSize: number;
     pointsPerGraph: number;
     steps: StepName[];
@@ -223,10 +224,9 @@ export function computeBestSolvesData(solves: Solve[], precision = 3): FastestSo
 export function computeAllChartData(input: WorkerInput): ChartDataBundle {
     const { windowSize, pointsPerGraph, steps, goodTime, badTime, methodName, use4SegmentTiming, isDark } = input;
     const solves = input.solves.filter(s => !s.dnf);
-    const records = recordTimes(input.solves);
-    const solveNumbers = input.solves.flatMap((solve, i) => solve.dnf ? [] : [i + 1]);
-    const hasOll = steps.includes(StepName.OLL);
-    const hasPll = steps.includes(StepName.PLL);
+    const recordSolves = (input.recordSolves ?? input.solves).filter(solve => !solve.isCorrupt && solve.session !== 'Retries'), records = recordTimes(recordSolves);
+    const originalNumbers = new Map(input.recordSolves?.map((solve, i) => [solve.id, i + 1]));
+    const numbers = input.solves.map((solve, i) => originalNumbers.get(solve.id) ?? i + 1), solveNumbers = numbers.filter((_, i) => !input.solves[i].dnf);
 
     // Acubemy exports don't include inspection time. When sources are combined, only Cubeast solves
     // should contribute to inspection charts; when the dataset is Acubemy-only, hide both charts.
@@ -241,7 +241,7 @@ export function computeAllChartData(input: WorkerInput): ChartDataBundle {
 
     const cache: ChartDataBundle = {
         mistakes: summarizeMistakes(solves, windowSize),
-        runningAverage: paint(buildRunningAverageData(input.solves, windowSize, pointsPerGraph, input.chopPercentage)),
+        runningAverage: paintRolling(buildRunningAverageData(input.solves, windowSize, pointsPerGraph, input.chopPercentage), numbers),
         runningStdDev: paintRolling(buildRunningStdDevData(solves, windowSize, pointsPerGraph)),
         runningTps: paintRolling(buildRunningTpsData(solves, windowSize, pointsPerGraph)),
         runningInspection: showInspectionCharts
@@ -257,18 +257,18 @@ export function computeAllChartData(input: WorkerInput): ChartDataBundle {
         inspection: showInspectionCharts
             ? paint(buildInspectionData(inspectionSolves, windowSize, input.precision))
             : null,
-        dailyRecord: paint(buildDailyRecordData(solves)),
-        streakRows: buildAllStreakRows(input.solves),
-        recordRows: buildRecordRows(input.solves, input.precision, records),
+        dailyRecord: paint(buildDailyRecordData(recordSolves.filter(solve => !solve.dnf))),
+        streakRows: buildAllStreakRows(recordSolves),
+        recordRows: buildRecordRows(recordSolves, input.precision, records),
         goodBad: paintRolling(buildGoodBadData(solves, windowSize, pointsPerGraph, goodTime, badTime)),
-        recordHistory: applyPaletteToChartData(buildRecordHistory(input.solves, records), isDark),
+        recordHistory: applyPaletteToChartData(buildRecordHistory(recordSolves, records), isDark),
         stepPercentages: paint(buildStepPercentages(solves, steps, windowSize), true),
         typicalCompare: paint(buildTypicalCompare(solves, windowSize)),
-        bestSolvesData: computeBestSolvesData(solves, input.precision),
+        bestSolvesData: computeBestSolvesData(recordSolves.filter(solve => !solve.dnf), input.precision),
     };
 
-    if (hasOll) cache.ollCategory = paintRolling(buildOllCategoryChart(solves, windowSize, pointsPerGraph));
-    if (hasPll) cache.pllCategory = paintRolling(buildPllCategoryChart(solves, windowSize, pointsPerGraph));
+    if (steps.includes(StepName.OLL)) cache.ollCategory = paintRolling(buildOllCategoryChart(solves, windowSize, pointsPerGraph));
+    if (steps.includes(StepName.PLL)) cache.pllCategory = paintRolling(buildPllCategoryChart(solves, windowSize, pointsPerGraph));
     if (caseCategory(steps)) {
         cache.caseData = paint(buildCaseData(solves, steps, windowSize, use4SegmentTiming));
         cache.algoPracticeRows = buildAlgorithmPracticeRows(solves, steps, windowSize, input.precision);

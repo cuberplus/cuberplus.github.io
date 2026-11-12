@@ -42,7 +42,7 @@ test('three independent sub-options default on and retain choices across main to
   await act(async () => root.unmount());
   root = createRoot(container); await render();
   expect(controls().map(input => input.checked)).toEqual([true, false, false, true]);
-  expect(container.textContent).toContain('F2L (including Advanced F2L)');
+  expect(container.textContent).toContain('F2L (including Advanced and Other F2L)');
 });
 test('Automatically find favorites adds recorded matches and preserves existing favorites', async () => {
   const entry = algorithms.find(entry => entry.category === 'PLL' && entry.id === 'T')!;
@@ -112,5 +112,5 @@ test('favorite settings collapse independently while their checkbox and tooltip 
   expect(details.open).toBe(false);
   expect(controls()[0].checked).toBe(true);
   await act(async () => summary.querySelector<HTMLButtonElement>('button')!.focus());
-  expect(container.querySelector('[role="tooltip"]')!.textContent).toContain('Only checks cases with favorites.');
+  await waitFor(() => expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain('Only checks cases with favorites.'));
 });

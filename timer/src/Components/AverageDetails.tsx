@@ -11,7 +11,7 @@ export function AverageDetails({ details, history, precision, view, close }: {
   close: () => void;
 }) {
   const rows = useMemo(() => {
-    const numbers = new Map(numberedSolves(history.filter(solve => solve.session === details.solves[0].solve.session))
+    const numbers = new Map(numberedSolves(history)
       .map(({ solve, number }) => [solve.id, number]));
     return details.solves.map(({ solve, trimmed }): AverageRow<Solve> => {
       const count = turns(solve);

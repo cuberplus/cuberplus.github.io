@@ -1,8 +1,7 @@
 /**
  * @jest-environment jsdom
  *
- * The demo data picker: a split button whose main half loads the original demo
- * data, and whose menu offers every dataset shipped in public/demo.
+ * The Data menu keeps source actions and all bundled demos together.
  *
  * The menu markup is worth pinning. Bootstrap's .dropdown-item is `nowrap`, so
  * an earlier version that rendered a description <div> inside each item grew the
@@ -48,8 +47,8 @@ beforeEach(() => {
 
 async function openMenu() {
     render(React.createElement(FileInput));
-    await waitFor(() => expect(screen.getByLabelText('Choose demo data').hasAttribute('disabled')).toBe(false));
-    fireEvent.click(screen.getByLabelText('Choose demo data'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Data', exact: true }).hasAttribute('disabled')).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Data', exact: true }));
 }
 
 test('deleted Timer solves leave the loaded Analyzer data without removing other sources with the same ID', async () => {
@@ -85,25 +84,27 @@ test('a session deletion removes all matching Timer solves in a single update', 
 });
 
 describe('the demo data picker', () => {
-    test('the button is labelled Demo Data, on a single line', async () => {
+    test('source and import actions stay inside the Data menu', async () => {
         render(React.createElement(FileInput));
-        await screen.findByText('Demo Data');
-        const button = screen.getByText('Demo Data');
-        expect(button).not.toBeNull();
-        // A wrapped label looked broken on narrow screens.
-        expect(button.classList.contains('text-nowrap')).toBe(true);
+        const button = await screen.findByRole('button', { name: 'Data', exact: true });
+        expect(button.getAttribute('aria-expanded')).toBe('false');
+        expect(screen.queryByRole('button', { name: 'My saved solves' })).toBeNull();
+        fireEvent.click(button);
+        expect(screen.getByRole('button', { name: 'My saved solves' })).not.toBeNull();
+        expect(screen.getByRole('button', { name: 'Choose CSV File' })).not.toBeNull();
+        expect(screen.getByRole('link', { name: 'Import solves' }).getAttribute('href')).toBe('/options/#import-heading');
     });
 
     test('clicking the button loads the original demo data', async () => {
-        render(React.createElement(FileInput));
-        fireEvent.click(await screen.findByText('Demo Data'));
+        await openMenu();
+        fireEvent.click(screen.getByText('Dev Solves', { exact: true }));
         expect(requested).toHaveLength(1);
         expect(requested[0].endsWith(DEFAULT_DEMO_FILE)).toBe(true);
     });
 
     test('the menu lists every dataset, in registry order', async () => {
         await openMenu();
-        const items = Array.from(document.querySelectorAll('.demo-data-menu .dropdown-item'));
+        const items = Array.from(document.querySelectorAll('.demo-data-menu .demo-dataset'));
         expect(items.map(i => i.firstChild?.textContent)).toEqual(DEMO_DATASETS.map(d => d.name));
     });
 
@@ -115,7 +116,7 @@ describe('the demo data picker', () => {
 
     test('each entry shows its description under the name', async () => {
         await openMenu();
-        const items = Array.from(document.querySelectorAll('.demo-data-menu .dropdown-item'));
+        const items = Array.from(document.querySelectorAll('.demo-data-menu .demo-dataset'));
         expect(items).toHaveLength(DEMO_DATASETS.length);
         expect(items.map(i => i.querySelector('span.d-block')?.textContent))
             .toEqual(DEMO_DATASETS.map(d => d.description));
@@ -123,7 +124,7 @@ describe('the demo data picker', () => {
 
     test('descriptions are inline elements, keeping the item markup valid inside a link', async () => {
         await openMenu();
-        for (const item of Array.from(document.querySelectorAll('.demo-data-menu .dropdown-item'))) {
+        for (const item of Array.from(document.querySelectorAll('.demo-data-menu .demo-dataset'))) {
             expect(item.querySelector('div')).toBeNull();
             expect(item.querySelector('span.d-block')?.tagName).toBe('SPAN');
         }
@@ -144,7 +145,7 @@ describe('the demo data picker', () => {
         expect(rule).toMatch(/max-height:\s*\d+vh/);
         expect(rule).toMatch(/overflow-y:\s*auto/);
         // Entries wrap via Bootstrap's .text-wrap utility rather than a custom rule.
-        for (const item of Array.from(document.querySelectorAll('.demo-data-menu .dropdown-item'))) {
+        for (const item of Array.from(document.querySelectorAll('.demo-data-menu .demo-dataset'))) {
             expect(item.classList.contains('text-wrap')).toBe(true);
         }
     });

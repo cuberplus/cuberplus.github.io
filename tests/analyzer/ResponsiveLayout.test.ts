@@ -34,7 +34,7 @@ function ruleInMedia(media: string, selector: string): string {
 
 describe('preset step filters', () => {
     test('the button row opts into the responsive layout', () => {
-        expect(fileInput).toContain('className="preset-filters gap-1 gap-sm-2"');
+        expect(fileInput).toContain('className="preset-filters"');
         // The old Bootstrap utility set display with !important and would win over the custom rules.
         expect(fileInput).not.toContain('d-flex flex-wrap gap-2');
     });

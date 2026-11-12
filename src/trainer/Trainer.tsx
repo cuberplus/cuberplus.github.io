@@ -2,7 +2,8 @@ import { memo, useContext, useEffect, useReducer, useRef, useState } from 'react
 import Navigation, { Footer, PageVisible, usePageDialog } from '@cuberplus/navigation';
 import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
 import { cubeConnection, useCubeConnection } from '../../shared/cube/connection';
-import { CubeConnectionControls } from '../../shared/Components/CubeConnection';
+import { CubeConnectionMenu } from '../../shared/Components/CubeConnection';
+import { PageOptionsButton } from '../../shared/Components/PageOptionsButton';
 import { CubeView } from '../../timer/src/Components/CubeView';
 import { loadCube, type Cube } from '../../timer/src/Core/puzzle';
 import { cfopFrame } from '../../timer/src/Analysis/cfop';
@@ -73,15 +74,19 @@ export default function Trainer() {
   const current = drill.current, busy = !!current && ['countdown', 'running'].includes(current.phase);
   const previews = current?.phase === 'running' && current.settings.upcomingCases ? current.queue.slice(current.index, current.index + 3) : [];
   const entry = current?.queue[current.index];
+  const visibleRuns = runs.filter(run => !kind || run.kind === kind);
+  const best = { OLL: Math.min(...runs.filter(run => run.kind === 'OLL').map(run => run.milliseconds)),
+    PLL: Math.min(...runs.filter(run => run.kind === 'PLL').map(run => run.milliseconds)) };
   return <div className="cuberplus-page trainer-page">
-    <header className="cuberplus-header"><Navigation current="trainer" /><div className="cuberplus-header-controls">
-      {kind && <button className="btn btn-outline-secondary" onClick={() => optionsDialog.current?.showModal()}>Options</button>}
-      <CubeConnectionControls />
-    </div></header>
+    <header className="cuberplus-header"><Navigation current="trainer" /></header>
     <main className="container py-4 trainer-main">
+      <div className="page-heading"><h1 className="route-heading">Trainer</h1><div className="page-actions">
+      <CubeConnectionMenu />
+      <PageOptionsButton open={() => optionsDialog.current?.showModal()} />
+      </div></div>
       <dialog ref={optionsDialog} className="panel options-dialog trainer-settings" aria-labelledby="trainer-options-title">
         <div className="d-flex justify-content-between align-items-center mb-4">
-          <h2 id="trainer-options-title" className="mb-0">{kind} Blitz options</h2>
+          <h2 id="trainer-options-title" className="mb-0">{kind ? `${kind} Blitz` : 'Trainer'} options</h2>
           <button className="btn-close" aria-label="Close options" onClick={() => optionsDialog.current?.close()} />
         </div>
         <fieldset disabled={busy} className="d-grid gap-3">
@@ -103,7 +108,7 @@ export default function Trainer() {
           </label>)}
         </fieldset>
       </dialog>
-      {!kind ? <><h2>Trainer</h2><div className="trainer-drills">{(['OLL', 'PLL'] as const).map(group => <button key={group} className="card trainer-drill" onClick={() => choose(group)}>
+      {!kind ? <><div className="trainer-drills">{(['OLL', 'PLL'] as const).map(group => <button key={group} className="card trainer-drill" onClick={() => choose(group)}>
         <CaseImage category={group} id={group === 'OLL' ? '27' : 'T'} />
         <h3>{group} Blitz</h3>
       </button>)}</div></> : <>
@@ -126,7 +131,8 @@ export default function Trainer() {
             {current.settings.caseNames && !current.settings.upcomingCases && <strong>{kind} {entry!.id}</strong>}
             <CubeView cube={current.cube} facelets={current.cube.facelets(current.pattern)} moves={current.moves} animateSeeks cross={3} colorFrame={entry!.colorFrame} height={230} hidePLL={kind === 'OLL' && current.settings.hidePLL} />
           </>}
-          {!busy ? <button className="btn btn-primary align-self-center" disabled={!connected || !cube} onClick={() => {
+          {!busy && <p id="blitz-prerequisite" role="status">{!connected ? 'Connect a smart cube above to start Blitz.' : !cube ? 'Loading puzzle tools...' : 'Cube connected. Ready for the countdown.'}</p>}
+          {!busy ? <button className="btn btn-primary align-self-center" aria-describedby="blitz-prerequisite" disabled={!connected || !cube} onClick={() => {
             try { drill.current = new Blitz(cube!, kind, Math.random, settings); drill.current.start(performance.now()); }
             catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not start Blitz.'); return; }
             setResult(null); setUnsaved(false); setError(''); setStatus(''); render();
@@ -140,8 +146,17 @@ export default function Trainer() {
         {unsaved ? <button className="btn btn-primary" onClick={() => persist(result)}>Retry saving result</button> : <p>Result and case splits saved.</p>}
         <Splits run={result} cube={cube} />
       </section>}
-      {!!runs.length && <section className="mt-4"><h3>Blitz history</h3>{runs.filter(run => !kind || run.kind === kind).map(run =>
-        <details className="card p-3 mb-2" key={run.id}><summary>{run.kind} Blitz - {seconds(run.milliseconds)} - {new Date(run.date).toLocaleString()}</summary><Splits run={run} cube={cube} /></details>)}</section>}
+      {!!visibleRuns.length && <section className="mt-4 trainer-history">
+        <div className="d-flex align-items-baseline justify-content-between gap-2 mb-3"><h3 className="h5 mb-0">Blitz history</h3><span className="text-secondary small">{visibleRuns.length} {visibleRuns.length === 1 ? 'run' : 'runs'}</span></div>
+        {visibleRuns.map(run => <details className="card trainer-run" key={run.id}>
+          <summary>
+            <span className="trainer-run-kind">{run.kind} Blitz<span className="small text-secondary">{run.splits.length} cases</span></span>
+            <strong className="trainer-run-time">{seconds(run.milliseconds)}{run.milliseconds === best[run.kind] && <span className="trainer-best">Best</span>}</strong>
+            <time dateTime={run.date}>{new Date(run.date).toLocaleString()}</time>
+          </summary>
+          <div className="trainer-run-content"><Splits run={run} cube={cube} /></div>
+        </details>)}
+      </section>}
     </main><Footer />
   </div>;
 }
@@ -178,25 +193,29 @@ const Splits = memo(function Splits({ run, cube }: { run: BlitzRun; cube: Cube |
       <div><dt>Recognition <InfoTip>Time from each case loading to its first turn, excluding the countdown. Older results without timing data show Not recorded.</InfoTip></dt><dd>{recordedTime(timings[0])}</dd></div>
       <div><dt>Execution <InfoTip>Time from the first turn to case completion, including pauses between turns.</InfoTip></dt><dd>{recordedTime(timings[1])}</dd></div>
     </dl>
-    {run.settings ? <dl className="trainer-run-settings mt-3">
+    <details className="settings-disclosure trainer-run-options"><summary>Run settings</summary>
+    {run.settings ? <dl className="trainer-run-settings">
       <div><dt>Upcoming cases</dt><dd>{run.settings.upcomingCases ? 'Shown' : 'Hidden'}</dd></div>
       <div><dt>Case names shown</dt><dd>{run.settings.caseNames ? 'Yes' : 'No'}</dd></div>
       {run.kind === 'OLL' && <div><dt>PLL stickers</dt><dd>{run.settings.hidePLL ? 'Gray' : 'Shown'}</dd></div>}
       <div><dt>Cross color</dt><dd>{run.settings.crossColor}</dd></div><div><dt>Front color</dt><dd>{run.settings.frontColor}</dd></div>
-    </dl> : <p className="text-secondary mt-3">Settings were not recorded for this older Blitz.</p>}
-    <div className="table-responsive"><table className="table table-sm trainer-splits"><thead><tr>{([['order', 'Order'], ['caseId', 'Case'], ['recognitionMilliseconds', 'Recognition'], ['executionMilliseconds', 'Execution'], ['milliseconds', 'Split']] as const).map(([column, label]) =>
-      <th key={column} aria-sort={sort.column === column ? sort.ascending ? 'ascending' : 'descending' : 'none'}>
-        <button className="btn btn-link p-0" onClick={() => setSort({ column, ascending: sort.column === column ? !sort.ascending : true })}>
+    </dl> : <p className="text-secondary">Settings were not recorded for this older Blitz.</p>}
+    </details>
+    <div className="table-responsive trainer-splits-scroll" role="region" aria-label={`${run.kind} case splits`} tabIndex={0}><table className="table table-sm trainer-splits">
+      <caption className="visually-hidden">{run.kind} Blitz case timings</caption>
+      <thead><tr>{([['order', 'Order'], ['caseId', 'Case'], ['recognitionMilliseconds', 'Recognition'], ['executionMilliseconds', 'Execution'], ['milliseconds', 'Split']] as const).map(([column, label]) =>
+      <th key={column} scope="col" aria-sort={sort.column === column ? sort.ascending ? 'ascending' : 'descending' : 'none'}>
+        <button className="trainer-sort" onClick={() => setSort({ column, ascending: sort.column === column ? !sort.ascending : true })}>
           {label}{sort.column === column ? sort.ascending ? ' \u2191' : ' \u2193' : ''}
         </button>
       </th>)}</tr></thead><tbody>
       {splits.map(split => <tr key={split.caseId}><td>{split.order}</td><td><div className="d-flex align-items-center gap-2">
         {cube && <BlitzCaseImage cube={cube} kind={run.kind} id={split.caseId} {...split} hidePLL={run.kind === 'OLL'} />}
-        <span>{run.kind} {split.caseId}{split.preAuf !== undefined ? <>
+        <span><strong>{run.kind} {split.caseId}</strong>{(split.preAuf !== undefined || split.auf !== undefined || split.crossColor) && <details className="trainer-case-setup"><summary>Setup</summary>{split.preAuf !== undefined ? <>
           <small className="d-block text-secondary">Pre-AUF: {split.preAuf || 'None'}</small>
           <small className="d-block text-secondary">Post-AUF: {split.postAuf || 'None'}</small>
         </> : split.auf !== undefined && <small className="d-block text-secondary">AUF: {split.auf || 'None'}</small>}
-          {split.crossColor && <small className="d-block text-secondary">{split.crossColor} cross / {split.frontColor} front</small>}</span>
+          {split.crossColor && <small className="d-block text-secondary">{split.crossColor} cross / {split.frontColor} front</small>}</details>}</span>
       </div></td><td>{recordedTime(split.recognitionMilliseconds)}</td><td>{recordedTime(split.executionMilliseconds)}</td><td>{seconds(split.milliseconds)}</td></tr>)}
     </tbody></table></div>
   </>;

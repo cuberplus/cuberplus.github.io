@@ -76,8 +76,11 @@ export function getMistakeMap(values: number[], windowSize: number): boolean[] {
     return values.map((value, i) => value > average[Math.max(0, i - windowSize)] + 3 * stdDev[Math.max(0, i - windowSize)]);
 }
 
-export function markMistakes(solves: Solve[], windowSize: number): Solve[] {
+export function markMistakes(solves: Solve[], windowSize: number, prepared = false): Solve[] {
     const valid = solves.filter(s => !s.isCorrupt && !s.dnf);
+    // Only freshly worker-analyzed, unchanged datasets may bypass content hashing.
+    const preparedContext = valid[0]?.mistakeContext;
+    if (prepared && preparedContext?.startsWith(`3:${windowSize}:`) && valid.every(s => s.mistakeContext === preparedContext && s.mistakes)) return solves;
     let hash = 2166136261;
     for (const solve of valid) {
         const key = `${solve.id}:${solve.time}:${solve.method}:${solve.source}:${solve.date.getTime()}:${solve.crossColor}:${solve.executionTime}:${solve.turns}:${solve.steps.map(s => `${s.name},${s.case},${s.time},${s.turns},${s.recognitionTime},${s.executionTime},${s.postAufTime},${moveHash(s.moves)}`).join(';')}`;

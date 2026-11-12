@@ -123,7 +123,6 @@ describe('FilterPanel date and toggle handlers', () => {
     const toggles: Array<[string, (p: FilterPanel, v: boolean) => void, keyof FilterPanelState]> = [
         ['log scale', (p, v) => p.setUseLogScale(v), 'useLogScale'],
         ['4 segment timing', (p, v) => p.setUse4SegmentTiming(v), 'use4SegmentTiming'],
-        ['test alert', (p, v) => p.setTestAlert(v), 'showTestAlert'],
     ];
 
     test.each(toggles)('%s toggles both ways', (_n, call, key) => {

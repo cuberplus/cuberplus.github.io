@@ -9,9 +9,15 @@ import { SettingsContext, usePageDialog } from '@cuberplus/navigation';
 export default function AnalyzerReplay({ id, close }: { id: string; close: () => void }) {
   const { precision } = useContext(SettingsContext);
   const dialog = useRef<HTMLDialogElement>(null);
+  const opener = useRef(document.activeElement);
   const [data, setData] = useState<{ solve: Solve; cube: Cube; history: Solve[] } | null>(null);
   const [error, setError] = useState('');
-  usePageDialog(dialog);
+  useEffect(() => () => {
+    const element = opener.current;
+    // Let the nested replay dialog close before restoring its opener.
+    if (element instanceof HTMLElement) queueMicrotask(() => { if (element.isConnected) element.focus(); });
+  }, []);
+  usePageDialog(dialog, !data);
   useEffect(() => {
     let cancelled = false;
     Promise.all([readSolves(), loadCube()]).then(([solves, cube]) => {

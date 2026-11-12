@@ -477,13 +477,14 @@ test.each([5, 12, 100, 1000])('celebrates the first available Ao%s without re-ce
   expect(newPersonalBests(previous, { ...seed, duration: 10000 })).toEqual([{ name: `Ao${count}`, time: 10000 }]);
 });
 
-test('PB detection respects session boundaries, penalties, ties and incomplete attempts', () => {
+test('PB detection compares all sessions and respects penalties, ties and incomplete attempts', () => {
   const seed = sample(), previous = [{ ...seed, id: 'previous', duration: 10000 }];
   expect(newPersonalBests([], seed)).toEqual([{ name: 'Single', time: seed.duration }]);
   expect(newPersonalBests(previous, { ...seed, duration: 10000 })).toEqual([]);
   expect(newPersonalBests(previous, { ...seed, duration: 9000, penalty: 2000 })).toEqual([]);
   expect(newPersonalBests(previous, { ...seed, duration: 1, status: 'incomplete' })).toEqual([]);
-  expect(newPersonalBests(previous, { ...seed, session: 'Other', duration: 20000 })).toEqual([{ name: 'Single', time: 20000 }]);
+  expect(newPersonalBests(previous, { ...seed, session: 'Other', duration: 20000 })).toEqual([]);
+  expect(newPersonalBests(previous, { ...seed, session: 'Other', duration: 9000 })).toEqual([{ name: 'Single', time: 9000 }]);
 });
 
 test.each([5, 12, 100, 1000])('retries retain current Single/Ao%s statistics without setting records or triggering PBs', count => {

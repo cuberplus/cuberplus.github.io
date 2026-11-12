@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { CaseModal } from '../../src/database/CaseModal';
 
 jest.mock('../../src/database/Database', () => ({ __esModule: true, default: ({ caseKey }: { caseKey: string }) => <p>{caseKey}</p> }));
@@ -20,4 +20,14 @@ test.each([
   await screen.findByText(caseKey);
   expect(screen.getByRole('heading', { name: title })).toBeDefined();
   expect(screen.getByRole('dialog', { name: title })).toBeDefined();
+});
+
+test.each(['button', 'Escape'])('%s closes the native dialog before unmounting so it can restore focus', async method => {
+  const close = jest.fn(() => expect(dialog.open).toBe(false));
+  render(<CaseModal caseKey="PLL-T" close={close} />);
+  const dialog = await screen.findByRole<HTMLDialogElement>('dialog');
+  expect(dialog.open).toBe(true);
+  if (method === 'button') fireEvent.click(screen.getByRole('button', { name: 'Close algorithm case' }));
+  else fireEvent(dialog, new Event('cancel', { cancelable: true }));
+  expect(close).toHaveBeenCalledTimes(1);
 });

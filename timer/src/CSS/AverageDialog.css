@@ -5,6 +5,10 @@ body:has(.average-dialog[open]) { overflow: hidden; }
 .average-dialog .average-trimmed-best { color: var(--cp-accent); }
 .average-dialog .average-trimmed-worst { color: var(--cp-danger); }
 .average-dialog .history-sort { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.average-clickable tbody :is(th, td) { padding: 0; }
+.average-cell { display: block; width: 100%; min-height: 2.75rem; padding: .65rem .5rem; border: 0; background: transparent; color: inherit; font: inherit; text-align: start; text-decoration: none; cursor: pointer; }
+.average-clickable tbody tr:is(:hover, :focus-within) { background: var(--cp-subtle); }
+.average-cell:focus-visible { outline: 2px solid var(--cp-accent); outline-offset: -3px; }
 .average-dialog th[aria-sort] .history-sort::after { content: ''; display: inline-block; margin-left: .4rem; border-left: 4px solid transparent; border-right: 4px solid transparent; }
 .average-dialog th[aria-sort="ascending"] .history-sort::after { border-bottom: 6px solid currentColor; }
 .average-dialog th[aria-sort="descending"] .history-sort::after { border-top: 6px solid currentColor; }

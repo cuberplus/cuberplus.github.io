@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { cpSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { extname, resolve, sep } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { defineConfig, loadEnv, transformWithEsbuild } from 'vite';
 import react from '@vitejs/plugin-react';
 import type { Plugin } from 'postcss';
@@ -37,11 +38,11 @@ export default defineConfig(({ mode }) => ({
     },
     configureServer(server) {
       server.middlewares.use((request, response, next) => {
-        const path = new URL(request.url ?? '/', 'http://localhost').pathname.match(/^\/(timer|smartcubeanalyzer|scrambler)\/(.+)$/);
+        const path = new URL(request.url ?? '/', 'http://localhost').pathname.match(/^\/(timer|analyzer|scrambler)\/(.+)$/);
         if (!path || path[2] === 'index.html') return next();
         let decoded: string;
         try { decoded = decodeURIComponent(path[2]); } catch { return next(); }
-        const base = resolve(root, path[1], 'public'), file = resolve(base, decoded);
+        const base = resolve(root, path[1] === 'analyzer' ? 'smartcubeanalyzer' : path[1], 'public'), file = resolve(base, decoded);
         if (!file.startsWith(base + sep) || !existsSync(file) || !statSync(file).isFile()) return next();
         const types: Record<string, string> = { '.js': 'text/javascript', '.html': 'text/html', '.css': 'text/css', '.csv': 'text/csv', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
         response.setHeader('Content-Type', types[extname(file)] ?? 'application/octet-stream');
@@ -51,10 +52,13 @@ export default defineConfig(({ mode }) => ({
     async closeBundle() {
       const output = resolve(root, 'build'), shell = readFileSync(resolve(output, 'index.html'), 'utf8');
       for (const app of ['timer', 'smartcubeanalyzer', 'scrambler']) {
-        cpSync(resolve(root, app, 'public'), resolve(output, app), { recursive: true, filter: source => !/(?:manifest[^\\/]*|index\.html)$/.test(source) });
-        writeFileSync(resolve(output, app, 'index.html'), shell);
+        const target = resolve(output, app === 'smartcubeanalyzer' ? 'analyzer' : app);
+        cpSync(resolve(root, app, 'public'), target, { recursive: true, filter: source => !/(?:manifest[^\\/]*|index\.html)$/.test(source) });
+        writeFileSync(resolve(target, 'index.html'), shell);
       }
-      for (const page of ['database', 'trainer', 'options']) {
+      const demos = resolve(output, 'analyzer', 'demo');
+      for (const file of readdirSync(demos).filter(file => file.endsWith('.csv'))) writeFileSync(resolve(demos, `${file}.gz`), gzipSync(readFileSync(resolve(demos, file)), { level: 9 }));
+      for (const page of ['database', 'trainer', 'options', 'smartcubeanalyzer']) {
         mkdirSync(resolve(output, page), { recursive: true });
         writeFileSync(resolve(output, page, 'index.html'), shell);
       }
@@ -63,7 +67,7 @@ export default defineConfig(({ mode }) => ({
       const assets = readdirSync(resolve(output, 'assets')).filter(file => !file.endsWith('.map')).map(file => `/assets/${file}`);
       const caseImages = readdirSync(resolve(output, 'case-images')).filter(file => file.endsWith('.svg'))
         .sort((a, b) => Number(a.includes('-')) - Number(b.includes('-'))).map(file => `/case-images/${file}`);
-      const precache = ['/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/favicon.ico', '/trainer-preview.svg', '/smartcubeanalyzer/theme-init.js', '/smartcubeanalyzer/react-data-grid.css', ...assets, ...caseImages];
+      const precache = ['/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/favicon.ico', '/trainer-preview.svg', '/analyzer/theme-init.js', '/analyzer/react-data-grid.css', ...assets, ...caseImages];
       const version = createHash('sha256');
       for (const file of precache) if (existsSync(resolve(output, `.${file}`))) version.update(readFileSync(resolve(output, `.${file}`)));
       const { code } = await transformWithEsbuild(readFileSync(resolve(root, 'src', 'pwa', 'service-worker.ts'), 'utf8'), 'service-worker.ts', { loader: 'ts', format: 'iife' });

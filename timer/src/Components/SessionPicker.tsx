@@ -16,7 +16,7 @@ export function SessionPicker({ value, sessions, disabled, change, create, manag
     catch (failure) { setError(failure instanceof Error ? failure.message : 'Session changes could not be saved.'); }
   }
   return <div className="session-picker">
-    <label className="d-flex align-items-center gap-2">Session:
+    <label className="d-flex align-items-center gap-2"><span className="session-picker-label">Session:</span>
       <select className="form-select" aria-label="Session" value={value} disabled={disabled}
         onChange={event => {
           setError(''); setName('');

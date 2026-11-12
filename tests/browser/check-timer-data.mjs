@@ -21,19 +21,20 @@ async function database(page, records, removeIds = []) {
   }), { records, removeIds });
 }
 
-async function checkAverage(average, numbers) {
+async function checkAverage(average, numbers, clickableFields = false) {
   await expect(average.locator('.btn-close')).toHaveCSS('background-size', '16px 16px');
   expect(await average.locator('.btn-close').evaluate(button => {
     const box = button.getBoundingClientRect(); return [box.width, box.height];
   })).toEqual([32, 32]);
   const table = average.getByRole('table', { name: 'Average solves' });
-  const labels = ['Solve', 'Time', 'Turns', 'TPS', 'View'];
+  const labels = ['Solve', 'Time', 'Turns', 'TPS', ...(clickableFields ? [] : ['View'])];
   await expect(table.locator('thead th')).toHaveText(labels);
   await expect(table.locator('tbody th')).toHaveText(numbers.map(String));
   await expect(average.locator('s, del')).toHaveCount(0);
   await expect(average.getByText(/chopped solve-time|sorted by|excludes the|times reflect/i)).toHaveCount(0);
   await expect(average.locator('[title^="Excluded "]')).toHaveCount(2);
   for (const [label, index] of [['Time', 1], ['Turns', 2], ['TPS', 3], ['View', 0], ['Solve', 0]]) {
+    if (clickableFields && label === 'View') continue;
     const header = table.getByRole('columnheader', { name: label, exact: true });
     for (const direction of ['ascending', 'descending']) {
       await header.getByRole('button').click();
@@ -59,7 +60,7 @@ async function dismissCelebrations(page) {
 }
 
 async function clickChartPoint(page, title, datasetIndex = 0, index = -1) {
-  await expect(page.getByRole('button', { name: 'Display My Stats!', exact: true })).toBeEnabled({ timeout: 60000 });
+  await expect(page.getByRole('button', { name: 'Data', exact: true })).toBeEnabled({ timeout: 60000 });
   const canvas = page.getByRole('region', { name: title, exact: true }).locator('canvas');
   await expect(async () => { await canvas.scrollIntoViewIfNeeded(); }).toPass({ timeout: 15000 });
   await page.waitForTimeout(1100);
@@ -89,30 +90,29 @@ try {
   await page.goto(`${base}/options/`);
   await page.getByRole('button', { name: 'Dark theme', exact: true }).click();
   await page.getByRole('combobox', { name: 'Time precision' }).selectOption('3');
-  await page.goto(`${base}/smartcubeanalyzer/`);
-  const load = page.getByRole('button', { name: 'Display My Stats!', exact: true });
-  const demo = page.getByRole('button', { name: 'Demo Data', exact: true });
+  await page.goto(`${base}/analyzer/`);
+  const data = page.getByRole('button', { name: 'Data', exact: true });
+  const load = page.getByRole('button', { name: 'My saved solves', exact: true });
+  const demo = page.getByRole('button', { name: /^Dev Solves/ });
   const choose = page.getByRole('button', { name: 'Choose CSV File', exact: true });
   const displayCsv = page.getByRole('button', { name: 'Display CSV Stats', exact: true });
-  await expect(load).toBeEnabled({ timeout: 60000 });
+  await expect(data).toBeEnabled({ timeout: 60000 });
   await expect(displayCsv).toHaveCount(0);
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
+    await data.click();
     const boxes = await Promise.all([load, demo, choose].map(control => control.boundingBox()));
-    const [timerBox, demoBox, chooseBox] = boxes;
     expect(boxes.every(box => box && box.x >= 0 && box.x + box.width <= width)).toBe(true);
-    expect(timerBox.y).toBe(demoBox.y);
-    expect(chooseBox.y).toBeGreaterThanOrEqual(timerBox.y + timerBox.height);
-    expect(demoBox.x).toBeGreaterThan(timerBox.x);
-    expect(await demo.evaluate(button => getComputedStyle(button).backgroundColor)).toBe('rgb(13, 110, 253)');
-    expect(await load.evaluate(button => getComputedStyle(button).backgroundColor)).toBe('rgb(45, 128, 112)');
+    await page.keyboard.press('Escape');
   }
   await expect(page.getByText('Read saved Timer solves', { exact: false })).toHaveCount(0);
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await data.click();
   await load.click();
   await expect(page.getByRole('alert').filter({ hasText: 'No saved CuberPlus solves found' })).toBeVisible();
 
   const chooserEvent = page.waitForEvent('filechooser');
+  await data.click();
   await choose.click();
   await (await chooserEvent).setFiles([{
     name: 'my-solves.csv', mimeType: 'text/csv',
@@ -124,11 +124,14 @@ try {
     name: 'acubemy.csv', mimeType: 'text/csv',
     buffer: Buffer.from('solve_id,date,total_time,analysis_type\nacubemy,2026-01-05T00:00:00Z,16000,CFOP'),
   }]);
+  await expect(data).toBeEnabled();
+  await data.click();
   await expect(choose).toContainText('my-solves.csv');
-  await expect(page.getByRole('button', { name: 'Open filters', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: /^Open filters/ })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Open filters', exact: true }).click();
-  await expect(page.getByRole('heading', { name: /^Showing 3 \/ 5 solves/ })).toBeVisible();
+  await page.getByRole('button', { name: /^Open filters/ }).click();
+  await expect(page.locator('.offcanvas.show').getByRole('group', { name: /^Showing 3 \/ 5 solves/ })).toBeVisible();
   expect(await database(page)).toEqual([]);
 
   await page.goto(`${base}/timer/`);
@@ -182,35 +185,38 @@ try {
   samples.push({ ...samples[0], id: 'timer-data-dnf', status: 'incomplete', reason: 'Stopped, "early"' });
   samples.push({ ...samples[0], id: 'timer-data-active', status: 'active' });
   const before = await database(page, samples);
-  await page.goto(`${base}/smartcubeanalyzer/`);
+  await page.goto(`${base}/analyzer/`);
+  await data.click();
   await load.click();
-  const filters = page.getByRole('button', { name: 'Open filters', exact: true });
+  const filters = page.getByRole('button', { name: /^Open filters/ });
   await expect(filters).toBeVisible({ timeout: 60000 });
   await expect(page.locator('canvas').first()).toBeVisible();
+  await page.getByRole('button', { name: 'All charts', exact: true }).click();
   await expect(page.getByRole('region', { name: 'First F2L Pair', exact: true }).locator('canvas')).toBeVisible();
   await expect(page.locator('.clickable-grid').getByRole('gridcell', { name: '12.000', exact: true })).toBeVisible();
   const analyzed = await database(page);
   expect(analyzed.every(solve => solve.analysis)).toBe(true);
   expect(recordings(analyzed)).toEqual(recordings(before));
   await filters.click();
-  await expect(page.getByText('Showing 7 / 7 solves', { exact: false })).toBeVisible();
-  const sessions = page.locator('.offcanvas.show .card').filter({ has: page.getByRole('heading', { name: /Which Sessions/ }) });
+  await expect(page.locator('.offcanvas.show').getByText('Showing 7 / 7 solves', { exact: false })).toBeVisible();
+  const sessions = page.locator('.offcanvas.show').getByRole('group', { name: /^Which Sessions/ });
   await sessions.locator('.dropdown-heading').click();
   expect(await sessions.textContent()).toContain(session);
   await sessions.locator('.dropdown-heading').click();
-  const sources = page.locator('.offcanvas.show .card').filter({ has: page.getByRole('heading', { name: /^Source/ }) });
+  const sources = page.locator('.offcanvas.show').getByRole('group', { name: /^Source/ });
   await sources.locator('.dropdown-heading').click();
   await sources.getByText('CuberPlus', { exact: true }).click();
-  await expect(page.getByText('Showing 0 / 7 solves', { exact: false })).toBeVisible();
+  await expect(page.locator('.offcanvas.show').getByText('Showing 0 / 7 solves', { exact: false })).toBeVisible();
   await sources.getByText('CuberPlus', { exact: true }).click();
-  await expect(page.getByText('Showing 7 / 7 solves', { exact: false })).toBeVisible();
+  await expect(page.locator('.offcanvas.show').getByText('Showing 7 / 7 solves', { exact: false })).toBeVisible();
   await page.locator('.offcanvas.show .btn-close').click();
 
   const updated = await database(page, [{ ...samples[1], id: 'timer-data-new', createdAt: new Date().toISOString() }]);
+  await data.click();
   await load.click();
-  await expect(load).toBeEnabled();
+  await expect(data).toBeEnabled();
   await filters.click();
-  await expect(page.getByText('Showing 8 / 8 solves', { exact: false })).toBeVisible();
+  await expect(page.locator('.offcanvas.show').getByText('Showing 8 / 8 solves', { exact: false })).toBeVisible();
   await page.locator('.offcanvas.show .btn-close').click();
   expect(recordings(await database(page))).toEqual(recordings(updated));
   for (const width of [390, 320]) {
@@ -230,24 +236,23 @@ try {
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     const header = replay.locator('.replay-header');
-    await expect(header.locator('a, button')).toHaveText(['', '+2', 'DNF', 'Delete']);
+    await expect(header.locator('a, button')).toHaveText(['']);
+    await expect(replay.getByLabel('Solve penalties and deletion', { exact: true }).getByRole('button')).toHaveText(['+2', 'DNF', 'Delete']);
     await expect(replay.locator('.replay-scramble a, .replay-scramble button')).toHaveText(['Retry']);
     await expect(header.getByRole('button', { name: 'Close replay' })).toBeVisible();
-    await expect(header).not.toContainText(/Solve replay|complete|host timing|quarter turns/i);
+    await expect(header.getByRole('heading', { name: 'Solve replay', exact: true })).toBeVisible();
+    await expect(header).not.toContainText(/complete|host timing|quarter turns/i);
     await expect(header.getByLabel('Solve time', { exact: true })).toHaveText('12.000s');
     expect(await header.getByLabel('Solve time', { exact: true }).evaluate(time =>
       parseFloat(getComputedStyle(time).fontSize) > parseFloat(getComputedStyle(time.parentElement).fontSize))).toBe(true);
-    const inspection = header.getByLabel('Inspection time', { exact: true });
-    const turns = inspection.locator('xpath=preceding-sibling::span');
-    await expect(turns).toHaveText(/^\d+ turns$/);
-    const [turnBox, inspectionBox] = await Promise.all([turns.boundingBox(), inspection.boundingBox()]);
-    expect(inspectionBox.x).toBeGreaterThan(turnBox.x + turnBox.width);
-    expect(Math.abs(inspectionBox.y - turnBox.y)).toBeLessThan(5);
+    await expect(header.getByLabel('Inspection time', { exact: true })).toHaveCount(0);
+    await expect(replay.getByLabel('Inspection time', { exact: true })).toBeHidden();
     expect(await replay.evaluate(dialog => dialog.scrollWidth <= dialog.clientWidth)).toBe(true);
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
   await expect(replay.getByRole('region', { name: 'Solve mistakes', exact: true })).toBeVisible();
   const footer = replay.locator(':scope > :last-child');
+  await footer.getByText('Recording details', { exact: true }).click();
   await expect(footer.getByLabel('Solve ID', { exact: true })).toContainText(seed.id);
   await expect(footer.getByLabel('Solve source', { exact: true })).toHaveText('CuberPlus');
   expect(await replay.evaluate(dialog => {
@@ -270,6 +275,7 @@ try {
     await page.setViewportSize({ width: 1440, height: 1000 });
   }
   await expect(replay.getByLabel('Solution orientation', { exact: true })).toHaveCount(0);
+  await replay.getByText('Solution moves', { exact: true }).click();
   const initialRotation = replay.getByLabel('Initial rotation', { exact: true });
   if (await initialRotation.count()) await expect(replay.getByRole('group', { name: 'Cross solution', exact: true }).locator('.move').first()).toHaveAttribute('aria-label', 'Initial rotation');
   await expect(page.getByLabel('Solve ID', { exact: true })).toContainText(seed.id);
@@ -277,7 +283,7 @@ try {
   await expect(page.getByRole('slider', { name: 'Replay move', exact: true })).toHaveAttribute('aria-valuenow', '1');
   await page.keyboard.press('Escape');
   await expect(replay).toHaveCount(0);
-  await expect(page).toHaveURL(`${base}/smartcubeanalyzer/`);
+  await expect(page).toHaveURL(`${base}/analyzer/`);
   expect(popups).toBe(0);
   expect(recordings(await database(page))).toEqual(recordings(updated));
   for (const [width, theme] of [[1440, 'dark'], [320, 'dark'], [320, 'light']]) {
@@ -290,7 +296,7 @@ try {
     await expect(average).toBeVisible();
     await expect(average).toHaveCSS('opacity', '1');
     await expect(average.getByRole('table', { name: 'Average solves' }).locator('tbody tr')).toHaveCount(5);
-    await checkAverage(average, Array.from({ length: 5 }, (_, i) => Number(selected.label) - 4 + i));
+    await checkAverage(average, Array.from({ length: 5 }, (_, i) => Number(selected.label) - 4 + i), true);
     expect(await average.evaluate(dialog => dialog.getBoundingClientRect().width <= innerWidth)).toBe(true);
     if (theme === 'dark') {
       if (width === 320 && process.env.CUBERPLUS_SCREENSHOT_DIR) {
@@ -301,12 +307,22 @@ try {
         const style = getComputedStyle(dialog);
         return [style.backgroundColor, style.color, style.padding, style.borderRadius, getComputedStyle(dialog.querySelector('h2')).fontSize];
       })).toEqual(timerStyle);
-      await average.locator('tbody button').first().click();
-      await expect(replay).toBeVisible();
-      await page.getByRole('button', { name: 'Next move', exact: true }).click();
-      await page.getByRole('button', { name: 'Close replay', exact: true }).click();
-      await expect(replay).toHaveCount(0);
-      await expect(average).toBeVisible();
+      let replayId;
+      for (let column = 0; column < 4; column++) {
+        const field = average.locator('tbody tr').first().getByRole('button').nth(column);
+        await expect(field).not.toHaveCSS('text-decoration-line', 'underline');
+        await field.focus();
+        await page.keyboard.press(column % 2 ? 'Space' : 'Enter');
+        await expect(replay).toBeVisible();
+        const id = await replay.getByLabel('Solve ID', { exact: true }).textContent();
+        replayId ??= id;
+        expect(id).toBe(replayId);
+        await page.getByRole('button', { name: 'Next move', exact: true }).click();
+        await page.keyboard.press('Escape');
+        await expect(replay).toHaveCount(0);
+        await expect(average).toBeVisible();
+        await expect(field).toBeFocused();
+      }
       await average.getByRole('button', { name: 'Close average', exact: true }).click();
     } else {
       await page.keyboard.press('Escape');
@@ -331,18 +347,23 @@ try {
   await expect(replay.getByRole('alert')).toHaveText('This solve is no longer saved in Timer.');
   await page.getByRole('button', { name: 'Close replay', exact: true }).click();
   await expect(replay).toHaveCount(0);
-  await expect(page).toHaveURL(`${base}/smartcubeanalyzer/`);
+  await expect(page).toHaveURL(`${base}/analyzer/`);
   expect(popups).toBe(0);
   expect(errors).toEqual([]);
   const csvChooser = page.waitForEvent('filechooser');
+  await data.click();
   await choose.click();
   await (await csvChooser).setFiles({
     name: 'numbered-solves.csv', mimeType: 'text/csv',
     buffer: Buffer.from('id,date,dnf,time,solving_method,solution_rotation,first_f2l_pair,step_0_name,step_0_slice_turns\n' + Array.from({ length: 80 }, (_, i) =>
       `numbered-${i},${new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString().replace('T', ' ').replace('.000Z', ' UTC')},false,${12000 + i * 100},CFOP,DB,${i % 2 ? 'Orange/Blue' : 'Red/Green'},Cross,${i % 2 ? 7 : 9}`).join('\n')),
   });
+  await expect(data).toBeEnabled();
+  await data.click();
   await expect(choose).toContainText('numbered-solves.csv');
+  await page.keyboard.press('Escape');
   await filters.click();
+  await page.locator('.offcanvas.show').getByText('Chart settings', { exact: true }).click();
   await page.locator('#autoWindowSize').press('Space');
   await page.locator('#windowSize').fill('5');
   await page.locator('.offcanvas.show .btn-close').click();
@@ -383,7 +404,7 @@ try {
     await penaltyPage.getByRole('button', { name: 'Options', exact: true }).click();
     await expect(inspection).toBeChecked();
     await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
-    await penaltyPage.getByRole('button', { name: 'View', exact: true }).click();
+    await penaltyPage.getByRole('table', { name: 'Solve history' }).locator('tbody td button').first().click();
     let replay = penaltyPage.getByRole('dialog', { name: 'Solve replay', exact: true });
     await replay.getByRole('button', { name: '+2', exact: true }).click();
     await expect(replay.getByLabel('Penalty reason', { exact: true })).toHaveText('+6 reasons: inspection, over-turn, manual');
@@ -391,7 +412,7 @@ try {
     await expect(replay.getByLabel('Penalty reason', { exact: true }).first()).toHaveText('DNF reason: manual');
     await expect.poll(async () => (await database(penaltyPage))[0]).toMatchObject({ status: 'incomplete', dnfReason: 'manual', penalty: 6000 });
     await penaltyPage.reload();
-    await penaltyPage.getByRole('button', { name: 'View', exact: true }).click();
+    await penaltyPage.getByRole('table', { name: 'Solve history' }).locator('tbody td button').first().click();
     replay = penaltyPage.getByRole('dialog', { name: 'Solve replay', exact: true });
     await expect(replay.getByRole('button', { name: 'DNF', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(replay.getByRole('button', { name: '+2', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -427,7 +448,8 @@ try {
     const original = (await database(penaltyPage)).find(solve => solve.id === seed.id);
     await dismissCelebrations(penaltyPage);
     await penaltyPage.locator('.site-page--timer').getByRole('link', { name: 'Smartcube Analyzer', exact: true }).click();
-    await penaltyPage.getByRole('button', { name: 'Display My Stats!', exact: true }).click();
+    await penaltyPage.getByRole('button', { name: 'Data', exact: true }).click();
+    await penaltyPage.getByRole('button', { name: 'My saved solves', exact: true }).click();
     await penaltyPage.locator('.clickable-grid').getByRole('gridcell', { name: '14.00', exact: true }).click();
     replay = penaltyPage.getByRole('dialog', { name: 'Solve replay', exact: true });
     await expect(replay.getByRole('link', { name: 'Retry', exact: true })).toHaveAttribute('href', `/timer/?retry=${encodeURIComponent(seed.id)}`);
@@ -451,7 +473,7 @@ try {
     await expect(session).toBeEnabled();
     await session.selectOption('Retries');
     await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
-    await penaltyPage.getByRole('table', { name: 'Solve history' }).getByRole('button', { name: 'View', exact: true }).click();
+    await penaltyPage.getByRole('table', { name: 'Solve history' }).locator('tbody td button').first().click();
     replay = penaltyPage.getByRole('dialog', { name: 'Solve replay', exact: true });
     await replay.getByRole('button', { name: 'Retry', exact: true }).click();
     await expect(guided).toBeEnabled({ timeout: 60000 });
@@ -466,9 +488,9 @@ try {
     await penaltyPage.getByRole('button', { name: 'Options', exact: true }).click();
     await session.selectOption('Retries');
     await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
-    await penaltyPage.getByRole('table', { name: 'Solve history' }).getByRole('button', { name: 'View', exact: true }).first().click();
+    await penaltyPage.getByRole('table', { name: 'Solve history' }).locator('tbody td button').first().click();
     replay = penaltyPage.getByRole('dialog', { name: 'Solve replay', exact: true });
-    await expect(replay.locator('.replay-header a, .replay-header button')).toHaveText(['', '+2', 'DNF', 'Delete']);
+    await expect(replay.getByLabel('Solve penalties and deletion', { exact: true }).getByRole('button')).toHaveText(['+2', 'DNF', 'Delete']);
     await expect(replay.locator('.replay-scramble a, .replay-scramble button')).toHaveText(['Retry']);
     const deletedId = await replay.getByLabel('Solve ID', { exact: true }).locator('span').textContent();
     const beforeDelete = await database(penaltyPage);
@@ -490,9 +512,10 @@ try {
     await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
     await expect(penaltyPage.getByRole('table', { name: 'Solve history' }).locator('tbody tr')).toHaveCount(3);
     await penaltyPage.locator('.site-page--timer').getByRole('link', { name: 'Smartcube Analyzer', exact: true }).click();
-    await penaltyPage.getByRole('button', { name: 'Display My Stats!', exact: true }).click();
+    await penaltyPage.getByRole('button', { name: 'Data', exact: true }).click();
+    await penaltyPage.getByRole('button', { name: 'My saved solves', exact: true }).click();
     await penaltyPage.locator('.clickable-grid').getByRole('gridcell', { name: '14.00', exact: true }).click();
-    await expect(replay.locator('.replay-header a, .replay-header button')).toHaveText(['', '+2', 'DNF', 'Delete']);
+    await expect(replay.getByLabel('Solve penalties and deletion', { exact: true }).getByRole('button')).toHaveText(['+2', 'DNF', 'Delete']);
     await expect(replay.locator('.replay-scramble a, .replay-scramble button')).toHaveText(['Retry']);
     penaltyPage.once('dialog', async dialog => {
       expect(dialog.type()).toBe('confirm');
@@ -513,7 +536,7 @@ try {
   console.log('PASS desktop/mobile Timer and Analyzer retry: same scramble, separate persisted attempts in retries, original unchanged and previous session restored');
   console.log('PASS desktop/mobile Delete before Retry: persisted individual deletion from Timer and Analyzer, refreshed charts and mounted Timer history, other solves preserved');
   console.log('PASS desktop/mobile inspection count-up, automatic +2/DNF, stacked manual penalties, reasons, persistence and undo');
-  console.log('PASS shared Timer/Analyzer averages: sortable Solve/Time/Turns/TPS/View, real chart solve numbers 69-73, preserved chop colors without strikethrough, identical dialog styling, inline replay, readonly loading, Escape, light/dark and mobile');
+  console.log('PASS Timer/Analyzer averages: preserved Timer View controls, four clickable Analyzer fields with keyboard focus return, sorting, real solve numbers 69-73, chop colors, inline replay, readonly loading, Escape, light/dark and mobile');
 } finally {
   await browser.close();
 }

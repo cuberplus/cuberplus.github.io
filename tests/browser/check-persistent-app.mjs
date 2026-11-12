@@ -85,7 +85,9 @@ try {
   await expect.poll(async () => (await database(page)).filter(solve => solve.status === 'complete').length, { timeout: 30000 }).toBe(1);
   const [seed] = await database(page);
   await visit(page, 'Smartcube Analyzer');
-  await page.getByRole('button', { name: 'Display My Stats!', exact: true }).click();
+  await page.getByRole('button', { name: 'Data', exact: true }).click();
+  await page.getByRole('button', { name: 'My saved solves', exact: true }).click();
+  await page.getByRole('button', { name: 'All charts', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Daily Fastest Solve', exact: true })).toBeVisible({ timeout: 60000 });
   await visit(page, 'Scrambler');
   await expect(page.getByRole('button', { name: 'Print sheet' })).toBeEnabled({ timeout: 120000 });
@@ -94,7 +96,9 @@ try {
   await visit(page, 'Timer');
   expect(await page.evaluate(({ before, after }) => before === after, { before: originalEngine, after: await engine(page) })).toBe(true);
   expect(initializations).toBe(1);
+  await page.getByRole('button', { name: 'Bluetooth cube setup', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Disconnect', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close cube setup', exact: true }).click();
   await expect(page.getByRole('table', { name: 'Solve history' }).locator('tbody tr')).toHaveCount(1);
   console.log('PASS Timer engine/connection survives all tools and records a solve while hidden');
 
@@ -105,7 +109,8 @@ try {
   }));
   await database(page, samples);
   await visit(page, 'Smartcube Analyzer');
-  await page.getByRole('button', { name: 'Display My Stats!', exact: true }).click();
+  await page.getByRole('button', { name: 'Data', exact: true }).click();
+  await page.getByRole('button', { name: 'My saved solves', exact: true }).click();
   await expect(page.locator('.clickable-grid').getByRole('columnheader')).toHaveCount(4);
   await expect(page.locator('.clickable-grid').getByRole('row')).toHaveCount(samples.length + 2);
   const count = await clickPoint(page, 'Count of Solves by How Long They Took', 12);
@@ -113,7 +118,7 @@ try {
   await expect(list).toBeVisible();
   await expect(list.locator('tbody tr')).toHaveCount(count);
   const solveId = await list.locator('tbody tr').first().getAttribute('data-solve-id');
-  await list.getByRole('button', { name: /^View solve / }).first().click();
+  await list.locator('tbody button').first().click();
   const replay = page.getByRole('dialog', { name: 'Solve replay', exact: true });
   await expect(replay).toBeVisible({ timeout: 60000 });
   if (solveId) await expect(replay.getByLabel('Solve ID', { exact: true })).toContainText(solveId);
@@ -122,7 +127,7 @@ try {
   await clickPoint(page, 'Daily Fastest Solve');
   await expect(replay).toBeVisible({ timeout: 60000 });
   await replay.getByRole('button', { name: 'Close replay', exact: true }).click();
-  await page.getByRole('button', { name: 'Open filters', exact: true }).click();
+  await page.getByRole('button', { name: /^Open filters/ }).click();
   await expect(page.locator('.offcanvas.show')).toBeVisible();
   await page.goBack();
   await expect(page.getByRole('link', { name: 'Timer', current: 'page', exact: true })).toBeVisible();
@@ -134,12 +139,14 @@ try {
   const offline = await context.newPage();
   offline.on('pageerror', error => errors.push(error.message));
   offline.on('requestfailed', request => { if (new URL(request.url()).origin === base) errors.push(`${request.url()}: ${request.failure()?.errorText}`); });
-  for (const [route, name] of [['/', 'Home'], ['/timer/', 'Timer'], ['/smartcubeanalyzer/', 'Smartcube Analyzer'], ['/scrambler/', 'Scrambler'], ['/database/', 'Database'], ['/trainer/', 'Trainer'], ['/options/', 'Options']]) {
+  for (const [route, name] of [['/', 'Home'], ['/timer/', 'Timer'], ['/analyzer/', 'Smartcube Analyzer'], ['/scrambler/', 'Scrambler'], ['/database/', 'Database'], ['/trainer/', 'Trainer'], ['/options/', 'Options']]) {
     await offline.goto(`${base}${route}`);
     await expect(offline.getByRole('link', { name, current: 'page', exact: true })).toBeVisible();
     if (name === 'Timer') await expect(offline.getByText('Try simulated cube', { exact: true })).toBeEnabled({ timeout: 60000 });
     if (name === 'Smartcube Analyzer') {
-      await offline.getByRole('button', { name: 'Display My Stats!', exact: true }).click();
+      await offline.getByRole('button', { name: 'Data', exact: true }).click();
+      await offline.getByRole('button', { name: 'My saved solves', exact: true }).click();
+      await offline.getByRole('button', { name: 'All charts', exact: true }).click();
       await expect(offline.getByRole('region', { name: 'Daily Fastest Solve', exact: true })).toBeVisible({ timeout: 60000 });
     }
     if (name === 'Scrambler') await expect(offline.getByRole('button', { name: 'Print sheet' })).toBeEnabled({ timeout: 120000 });

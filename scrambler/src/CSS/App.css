@@ -10,9 +10,10 @@ button, a, input, select, summary { -webkit-tap-highlight-color: transparent; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .topbar { max-width: 1800px; margin: auto; height: 88px; padding: 0 4%; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
 main { max-width: 1800px; width: 100%; margin: 0 auto; padding: 0 4%; }
-.workspace { display: grid; grid-template-columns: 266px minmax(0, 1fr); gap: 22px; align-items: start; margin-top: 24px; }
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; align-items: start; }
 .settings-panel, .worksheet-panel { background: var(--cp-panel); border: 1px solid var(--line); border-radius: 16px; }
 .settings-panel { padding: 23px 21px; }
+.practice-cards { display: none; }
 .panel-heading { display: flex; gap: 9px; align-items: center; }
 .section-number { color: var(--muted); font-size: 10px; font-family: ui-monospace, monospace; }
 h2 { font-size: 15px; font-weight: 650; letter-spacing: -.25px; margin: 0; }
@@ -101,12 +102,40 @@ progress::-moz-progress-bar { background: var(--accent); }
 .empty-state small { display: block; margin-top: 22px; font-size: 10px; }
 @keyframes pulse { 50% { opacity: .2; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
-@media (min-width: 1550px) { .workspace { grid-template-columns: 290px minmax(0, 1fr); gap: 28px; } .worksheet td { padding: 18px; } .algorithm { font-size: 12px; } }
-@media (max-width: 1000px) { main { padding: 0 24px; } .topbar { padding: 0 24px; } .workspace { grid-template-columns: 230px minmax(0, 1fr); gap: 16px; } .settings-panel { padding: 20px 16px; } .worksheet-heading { padding: 20px 16px; } }
-@media (max-width: 720px) { main { padding: 0 16px; } .workspace { grid-template-columns: minmax(0, 1fr); } .settings-panel { padding: 20px; } fieldset { display: grid; grid-template-columns: 1fr 1fr; gap: 0 15px; } fieldset > * { grid-column: 1 / -1; } .worksheet-heading { padding: 20px 16px; } .worksheet-heading h2 { font-size: 14px; } .sheet-toolbar, .generation-status { padding-left: 16px; padding-right: 16px; } }
+@media (min-width: 1550px) { .worksheet td { padding: 18px; } .algorithm { font-size: 12px; } }
+@media (max-width: 1000px) { main { padding: 0 24px; } .topbar { padding: 0 24px; } .settings-panel { padding: 20px 16px; } .worksheet-heading { padding: 20px 16px; } }
+@media (max-width: 720px) {
+  main { padding: 0 16px; }
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .settings-panel { padding: 12px 16px; }
+  fieldset { display: grid; grid-template-columns: 1fr 1fr; gap: 0 15px; }
+  fieldset > * { grid-column: 1 / -1; }
+  fieldset label, .columns-popover > label, .columns-popover form label { font-size: 14px; }
+  input, select { font-size: 16px; min-height: 48px; }
+  button, .columns-menu summary { min-height: 44px; }
+  .worksheet-heading { padding: 20px 16px; flex-wrap: wrap; }
+  .worksheet-heading h2 { font-size: 18px; }
+  .worksheet-heading p { font-size: 13px; margin-left: 0; }
+  .sheet-toolbar, .generation-status { padding-left: 16px; padding-right: 16px; }
+  .row-summary > span, .generation-status, .columns-menu summary, .print-button { font-size: 13px; }
+  .practice-cards { display: grid; gap: 1rem; padding: 1rem; }
+  .practice-cards:empty { display: none; }
+  .practice-card { padding: 1rem; border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+  .practice-card h3 { font-size: 1rem; margin: 0 0 .75rem; }
+  .practice-card .algorithm { font-size: 16px; overflow-wrap: anywhere; }
+  .practice-card .cube-net { margin: 1rem auto; }
+  .practice-card summary { padding: .75rem 0; min-height: 48px; color: var(--accent); }
+  .practice-card dt { font-size: 14px; margin-top: .75rem; }
+  .practice-card dd { margin: .5rem 0; }
+  .practice-card .color-tag, .practice-card .pair-list { font-size: 14px; }
+  .practice-blank { min-height: 2rem; border-bottom: 1px solid var(--line); }
+  .practice-cards:not(:empty) + .table-scroll { display: none; }
+}
 /* Zero page margins suppress browser headers/footers; cloned padding keeps the grid inset. */
 @page { size: portrait; margin: 0; }
 @media print {
+  .practice-cards, .route-heading { display: none !important; }
+  .practice-cards:not(:empty) + .table-scroll { display: block; }
   :root { --ink: #15271e; }
   body { padding: 0 6mm; background: white; color: black; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .topbar, .settings-panel, .worksheet-panel > :not(.table-scroll), .table-scroll > :not(.worksheet), .worksheet caption { display: none !important; }

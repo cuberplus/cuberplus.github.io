@@ -72,6 +72,28 @@ describe('FilterPanel.compressSolves', () => {
         expect(compressed[0].time).toBeCloseTo(fullTime);
     });
 
+    test('recent scope bounds analysis before filters without discarding all-time record data', () => {
+        const solves = Array.from({ length: 10005 }, (_, i) => ({
+            ...makeSolve([2, 3, 4, 3, 4, 2, 3]), id: String(i),
+            date: new Date(Date.UTC(2026, 0, 1, 0, 0, i)), session: i < 5 ? 'Older' : 'Recent',
+        })).reverse();
+        const panel = new FilterPanel({ solves });
+        const state = FilterPanel.getDerivedStateFromProps({ solves }, panel.state);
+        expect(state.allSolves).toBe(solves);
+        expect(state.filteredSolves).toHaveLength(10000);
+        expect(state.filteredSolves[0].id).toBe('5');
+        expect(state.filteredSolves.at(-1)!.id).toBe('10004');
+        const all = FilterPanel.getDerivedStateFromProps({ solves, solveLimit: 0 }, state);
+        expect(all.filteredSolves).toHaveLength(10005);
+        expect(all.filteredSolves[0].id).toBe('0');
+        const older = FilterPanel.getDerivedStateFromProps({ solves }, {
+            ...state, filters: { ...state.filters, sessions: ['Older'] },
+        });
+        expect(older.filteredSolves).toEqual([]);
+        const expanded = FilterPanel.getDerivedStateFromProps({ solves, solveLimit: 0 }, older);
+        expect(expanded.filteredSolves.map(solve => solve.id)).toEqual(['0', '1', '2', '3', '4']);
+    });
+
     test('with a single step selected, time equals only that step time', () => {
         const solves = [makeSolve(stepTimes)];
         const compressed = FilterPanel.compressSolves(solves, [StepName.OLL]);

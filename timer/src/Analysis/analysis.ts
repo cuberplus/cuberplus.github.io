@@ -2,12 +2,12 @@ import { parseCsv } from '../../../smartcubeanalyzer/src/Data/CsvParser';
 import type { Solve as Analysis } from '../../../smartcubeanalyzer/src/Models/Types';
 import type { Cube } from '../Core/puzzle';
 import { solveTime, type Solve } from '../Core/engine';
-import { cubeastCSV, readSolves, saveSolves } from '../Data/storage';
+import { cubeastCSV, readSolves, saveSolves, turns } from '../Data/storage';
 import { importedAnalysis, validImported } from '../Data/csvImport';
 import { loadCube, SOLVED } from '../Core/puzzle';
 import type { DataProgress } from '../../../shared/workers/dataTasks';
 import { MISTAKES } from '../../../smartcubeanalyzer/src/Analysis/MistakeAnalysis';
-import { MethodName, StepName } from '../../../smartcubeanalyzer/src/Models/Types';
+import { CrossColor, MethodName, StepName } from '../../../smartcubeanalyzer/src/Models/Types';
 import { analyzeCFOP, cfopKey, recordingKey } from './cfop';
 import { completedF2LCross } from '../../../shared/cube/f2l';
 import { COLORS } from '../../../scrambler/src/cube/cube';
@@ -35,6 +35,21 @@ export function solveAnalysis(solve: Solve, cube: Cube): Analysis {
   if (!solve.imported) solve.cfop = { ...analyzeCFOP(solve, cube), version: 1, key: cfopKey(solve) };
   rememberAnalysis(solve, data);
   return data;
+}
+
+export function recordAnalysis(solve: Solve): Analysis {
+  const cached = solve.imported ? importedAnalysis(solve) : solve.analysis?.data ? restore(solve.analysis.data) : undefined;
+  const count = cached?.turns ?? turns(solve);
+  return {
+    id: solve.id, source: 'timer', crossColor: CrossColor.Unknown, scramble: solve.scramble,
+    tps: solve.duration > 0 ? count * 1000 / solve.duration : 0, turns: count, inspectionTime: null,
+    recognitionTime: 0, executionTime: 0, preAufTime: 0, postAufTime: 0,
+    isCorrupt: false, method: MethodName.CFOP, isMistake: false, isFullStep: true,
+    ...cached, time: solveTime(solve) / 1000, date: new Date(solve.createdAt), session: solve.session,
+    endDate: cached?.endDate ?? new Date(Date.parse(solve.createdAt) + (solve.moves.at(-1)?.elapsed ?? solve.duration)),
+    dnf: solve.status === 'incomplete', steps: cached?.steps.map(step => ({ ...step, moves: '' })) ?? [],
+    recording: undefined, mistakes: undefined,
+  };
 }
 
 export function rememberAnalysis(solve: Solve, data: Analysis): void {

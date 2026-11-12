@@ -15,6 +15,24 @@ const caseSolve = (name: StepName, moves = "R U R'", overrides: Partial<Solve> =
     makeSolve({ steps: [makeStep(name, 3, { case: 'test case', moves })], ...overrides });
 
 describe('specific mistake reasons', () => {
+    test('fresh prepared classification is retained, but a changed window or mixed context is recalculated', () => {
+        const solves = makeSolves(20).map(solve => ({ ...solve, steps: [makeStep(StepName.Cross, 1)] }));
+        solves.at(-1)!.steps[0].time = 100;
+        markMistakes(solves, 5);
+        const expected = JSON.stringify(solves);
+        const reasons = solves.at(-1)!.mistakes;
+        markMistakes(solves, 5, true);
+        expect(JSON.stringify(solves)).toBe(expected);
+        expect(solves.at(-1)!.mistakes).toBe(reasons);
+        markMistakes(solves, 10, true);
+        expect(solves[0].mistakeContext).toMatch(/^3:10:/);
+        const combined = [...solves, ...markMistakes(makeSolves(5), 10)];
+        const reference = JSON.parse(JSON.stringify(combined)) as Solve[];
+        reference.forEach(solve => { solve.date = new Date(solve.date); });
+        markMistakes(combined, 10, true);
+        markMistakes(reference, 10);
+        expect(combined).toEqual(reference);
+    });
     test('slow steps have separate stage labels and multiple F2L pair outliers count once per solve', () => {
         const names = [StepName.Cross, StepName.F2L_1, StepName.F2L_2, StepName.PLL];
         const solves = makeSolves(20).map(solve => ({ ...solve, steps: names.map(name => makeStep(name, 1)) }));

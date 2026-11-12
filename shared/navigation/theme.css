@@ -30,6 +30,39 @@
   --cp-art: radial-gradient(circle at 23% 38%, #ffcc8199 0 1px, transparent 2px), radial-gradient(circle at 72% 68%, #ff662b88 0 2px, transparent 3px), url('./inferno.svg'), radial-gradient(ellipse at 12% 100%, #ed35194a, transparent 62%), radial-gradient(ellipse at 95% 40%, #ff950032, transparent 60%);
   --cp-glow: 0 0 32px #ff5a182b, 0 16px 64px #0007; --cp-heading: linear-gradient(110deg, #ffe2a3, #ff9a42 50%, #ff5035);
 }
+:root[data-theme="90s"] {
+  --cp-font: "Times New Roman", Times, serif;
+  --cp-bg: #c0c0c0; --cp-panel: #e8e8e8; --cp-subtle: #d3d3d3;
+  --cp-text: #000; --cp-muted: #414141; --cp-border: #777; --cp-accent: #000080;
+  --cp-primary: #000080; --cp-primary-border: #000080; --cp-primary-hover: #00005c;
+  --cp-danger-bg: #ffe4e4; --cp-danger: #9b0000;
+  --bs-border-radius: 0; --bs-border-radius-sm: 0; --bs-border-radius-lg: 0; --bs-border-radius-xl: 0; --bs-border-radius-xxl: 0; --bs-border-radius-pill: 0;
+  --rmsc-radius: 0;
+  --cp-art: none; --cp-glow: none; color-scheme: light;
+}
+:root[data-theme="90s"] :is(button, input, select, textarea, dialog, .card, .panel, .tool-card, .settings-panel, .worksheet-panel, .modal-content, .offcanvas, .dropdown-menu, .alert, .replay-scramble, .replay-step-name, .theme-preview, .theme-preview-swatches i, .saved-cube, .coming-soon-card, .coming-soon-icon, .tool-features li, .database-finder, .filter-card, .analysis-demo, .practice-card, .columns-popover, .turn-count, .color-tag i, .columns-menu summary > span, .algorithm-notification, .pb-celebration, .cuberplus-install, .method-select__control, .method-select__menu) {
+  border-radius: 0; box-shadow: none;
+}
+:root[data-theme="90s"] :is(.card, .panel, .tool-card, .settings-panel, .worksheet-panel, .modal-content, .replay-scramble, .theme-preview, .saved-cube) { border-color: var(--cp-border); }
+:root[data-theme="90s"] :is(.btn:not(.btn-link), .primary-button, .cancel-button, .print-button) {
+  border: 2px outset #ddd; border-radius: 0; background: #e8e8e8; color: #000; box-shadow: none; font-weight: normal;
+}
+:root[data-theme="90s"] :is(.btn:not(.btn-link), .primary-button, .cancel-button, .print-button):not(:disabled):active { border-style: inset; }
+:root[data-theme="90s"] .btn:is([aria-pressed="true"], [aria-expanded="true"], .active) { border-style: inset; background: #000080; color: #fff; font-weight: bold; }
+:root[data-theme="90s"] .btn:disabled { opacity: .5; }
+:root[data-theme="90s"] .btn-link { background: transparent; box-shadow: none; }
+:root[data-theme="90s"] .tooltip { --bs-tooltip-bg: #ffffe1; --bs-tooltip-color: #000; --bs-tooltip-opacity: 1; --bs-tooltip-border-radius: 0; }
+:root[data-theme="90s"] .tooltip-inner { border: 1px solid #777; }
+:root[data-theme="90s"] .alert-info { --bs-alert-bg: var(--cp-panel); --bs-alert-color: var(--cp-text); --bs-alert-border-color: var(--cp-border); }
+:root[data-theme="90s"] .analysis-demo { background: #ffffe1; color: #000; border-color: #777; }
+:root[data-theme="90s"] :is(.form-control, .form-select, .settings-panel input, .settings-panel select, .custom-input input) { border: 2px inset #ddd; border-radius: 0; background-color: #fff; }
+:root[data-theme="90s"] .form-select { appearance: auto; background-image: none; padding-inline-end: .75rem; }
+:root[data-theme="90s"] a { color: #0000ee; }
+:root[data-theme="90s"] a:visited { color: #551a8b; }
+:root[data-theme="90s"] .cuberplus-navigation .cuberplus-brand { color: #000080; text-decoration: underline; letter-spacing: normal; font-weight: bold; }
+:root[data-theme="90s"] :is(.cuberplus-links a, .database-star, .database-unlearn, .database-delete, .move, .badge, .solve-trail) { border-radius: 0; }
+:root[data-theme="90s"] .theme-dots button::after { border-radius: 0; }
+:root[data-theme="90s"] .tool-card:hover { transform: none; box-shadow: none; }
 .cuberplus-page { background-image: var(--cp-art, none); background-attachment: fixed; background-size: auto, auto, cover, cover, cover; }
 :root:is([data-theme="aurora"], [data-theme="disco"], [data-theme="inferno"]) .cuberplus-brand { background: var(--cp-heading); background-clip: text; -webkit-text-fill-color: transparent; }
 :root:is([data-theme="aurora"], [data-theme="disco"], [data-theme="inferno"]) :is(.card, .panel, .tool-card, .settings-panel, .worksheet-panel) { box-shadow: var(--cp-glow); }
@@ -49,14 +82,26 @@
 }
 body { margin: 0; background: var(--cp-bg); color: var(--cp-text); font-family: var(--cp-font); -webkit-font-smoothing: antialiased; }
 .theme-carousel { display: flex; align-items: center; gap: 1rem; max-width: 32rem; }
-.theme-preview { flex: 1; text-align: center; padding: 1.5rem; border: 1px solid var(--cp-border); border-radius: 1rem; background: var(--cp-art, var(--cp-bg)); box-shadow: var(--cp-glow); }
+.theme-preview { flex: 1; min-width: 0; text-align: center; padding: 1.5rem; border: 1px solid var(--cp-border); border-radius: 1rem; background: var(--cp-art, var(--cp-bg)); box-shadow: var(--cp-glow); }
 .theme-preview-swatches { display: flex; justify-content: center; gap: .4rem; margin-bottom: .75rem; }
 .theme-preview-swatches i { width: 2rem; height: 2rem; border-radius: .5rem; background: var(--cp-accent); }
 .theme-preview-swatches i:nth-child(2) { background: var(--cp-primary); }
 .theme-preview-swatches i:nth-child(3) { background: var(--cp-text); }
-.theme-dots { display: flex; justify-content: center; gap: .6rem; margin-top: 1rem; }
-.theme-dots button { width: .75rem; height: .75rem; padding: 0; border-radius: 50%; border: 1px solid var(--cp-muted); background: transparent; }
-.theme-dots button[aria-pressed="true"] { background: var(--cp-accent); border-color: var(--cp-accent); }
+.theme-dots { display: flex; flex-wrap: wrap; justify-content: center; gap: .6rem; margin-top: 1rem; }
+.theme-dots button { width: 2rem; height: 2rem; padding: 8px; border-radius: 50%; border: 0; background: transparent; }
+.theme-dots button::after { content: ''; display: block; width: 100%; height: 100%; border: 1px solid var(--cp-muted); border-radius: 50%; }
+.theme-dots button[aria-pressed="true"]::after { background: var(--cp-accent); border-color: var(--cp-accent); }
+@media (max-width: 540px) {
+  .theme-carousel { gap: .5rem; }
+  .theme-preview { padding: .75rem .5rem; }
+  .theme-dots { gap: .25rem; }
+}
+.info-tip { min-width: 28px; min-height: 28px; }
+@media (pointer: coarse) {
+  .btn, .info-tip { min-height: 44px; }
+  .info-tip, .theme-dots button { min-width: 44px; min-height: 44px; }
+  .theme-dots { gap: 0; }
+}
 button, input, select, textarea { font-family: inherit; }
 a, a:hover { color: var(--cp-accent); }
 :focus-visible { outline-color: var(--cp-accent); }
@@ -96,6 +141,24 @@ a, a:hover { color: var(--cp-accent); }
 .dropdown-menu { --bs-dropdown-link-color: var(--cp-text); --bs-dropdown-link-hover-color: var(--cp-text); --bs-dropdown-link-hover-bg: var(--cp-subtle); --bs-dropdown-link-active-bg: var(--cp-primary); }
 .accordion-button { color: var(--cp-text); background: var(--cp-panel); }
 .accordion-button:not(.collapsed) { color: var(--cp-accent); background: var(--cp-subtle); }
+.settings-section { margin-block: 0; padding-block: 1.5rem; border-top: 1px solid var(--cp-border); }
+.settings-section > h3, .options-general h3 { margin-block: 0 1rem; font-size: 1.15rem; }
+.settings-section > :last-child { margin-bottom: 0; }
+.options-general { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; border-top: 0; }
+.options-general p { margin-bottom: 0; }
+.settings-status { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem 1.5rem; margin-bottom: 1rem; }
+.settings-status > .cuberplus-header-controls { margin-inline-start: 0; justify-content: flex-start; }
+.settings-disclosure { margin-top: 1rem; }
+.settings-disclosure > summary { cursor: pointer; padding-block: .5rem; font-weight: 600; }
+.settings-disclosure > :not(summary) { margin-top: .75rem; }
+.settings-fields { display: flex; align-items: end; flex-wrap: wrap; gap: .75rem; }
+.settings-fields > label { flex: 1 1 12rem; min-width: 0; }
+.settings-fields .form-control { margin-top: .25rem; }
+.saved-cube { border: 1px solid var(--cp-border); border-radius: .5rem; padding: .5rem 1rem; margin-block: .5rem; }
+.saved-cube > summary { cursor: pointer; padding-block: .25rem; font-weight: 600; overflow-wrap: anywhere; }
+.saved-cube > .settings-fields { padding-block: .75rem; }
+.backup-provider { flex: 1 1 14rem; max-width: 24rem; }
+.backup-status { color: var(--cp-muted); font-size: .9rem; }
 @media print {
   :root, :root[data-bs-theme] {
     --cp-bg: #fff; --cp-panel: #fff; --cp-subtle: #fff; --cp-text: #000; --cp-muted: #333; --cp-border: #aaa; --cp-accent: #15271e;

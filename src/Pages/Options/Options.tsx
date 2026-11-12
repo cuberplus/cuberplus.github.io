@@ -5,17 +5,18 @@ import { InstallControl } from '../../pwa/pwa';
 import { CloudOptions } from '../../cloud/CloudOptions';
 import { ImportOptions } from './ImportOptions';
 import { MyCubes } from '../../../shared/Components/CubeConnection';
+import { SolveLimit } from '../../../shared/Components/SolveLimit';
 
 export default function Options() {
-  const { theme, setTheme, precision, setPrecision, error } = useContext(SettingsContext);
+  const { theme, setTheme, precision, setPrecision, solveLimit, setSolveLimit, error } = useContext(SettingsContext);
   const themes = Object.keys(themeColors) as Theme[];
   const nextTheme = (offset: number) => setTheme(themes[(themes.indexOf(theme) + offset + themes.length) % themes.length]);
-  return <div className="cuberplus-page">
+  return <div className="cuberplus-page options-page">
     <header className="cuberplus-header"><Navigation current="options" /></header>
-    <main className="container py-4"><section className="card p-4">
-      <h2>Options</h2>
-      <section className="mb-4" aria-label="Theme picker" aria-roledescription="carousel">
-        <h3 className="h6">Theme</h3>
+    <main className="container py-4"><h1 className="route-heading">Options</h1><section className="card p-4">
+      <div className="settings-section options-general">
+      <section aria-label="Theme picker" aria-roledescription="carousel">
+        <h3>Theme</h3>
         <div className="theme-carousel">
           <button className="btn btn-outline-secondary" aria-label="Previous theme" onClick={() => nextTheme(-1)}>&#10094;</button>
           <div className="theme-preview" data-theme={theme} role="group" aria-roledescription="slide" aria-label={`${themes.indexOf(theme) + 1} of ${themes.length}`}>
@@ -26,10 +27,12 @@ export default function Options() {
           <button className="btn btn-outline-secondary" aria-label="Next theme" onClick={() => nextTheme(1)}>&#10095;</button>
         </div>
       </section>
-      <label className="d-block mb-4">Time precision<select aria-label="Time precision" className="form-select mt-2" value={precision} onChange={event => setPrecision(event.target.value === '3' ? 3 : 2)}>
+      <label className="d-block">Time precision<select aria-label="Time precision" className="form-select mt-2" value={precision} onChange={event => setPrecision(event.target.value === '3' ? 3 : 2)}>
         <option value="2">Hundredths (0.00)</option><option value="3">Thousandths (0.000)</option>
       </select></label>
-      <InstallControl />
+      <SolveLimit value={solveLimit} change={setSolveLimit} />
+      <div><InstallControl /></div>
+      </div>
       <MyCubes />
       <ImportOptions />
       <CloudOptions />

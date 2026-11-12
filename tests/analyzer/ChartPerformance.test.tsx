@@ -45,7 +45,7 @@ jest.mock('../../smartcubeanalyzer/src/Workers/createChartWorker', () => ({
     },
 }));
 
-import { render, screen, cleanup } from '@testing-library/react';
+import { fireEvent, render, screen, cleanup } from '@testing-library/react';
 import { parseCsv } from '../../smartcubeanalyzer/src/Data/CsvParser';
 import { FilterPanel } from '../../smartcubeanalyzer/src/Components/FilterPanel';
 import { ChartPanel } from '../../smartcubeanalyzer/src/Components/ChartPanel';
@@ -232,7 +232,7 @@ function renderChartPanel(solves: Solve[], steps: StepName[] = ALL_CFOP_STEPS) {
 
 describe('full site load time', () => {
     test(
-        'every chart becomes visible to the user within budget',
+        'the focused overview loads within budget and all charts remain available',
         () => {
             installDomStubs();
 
@@ -249,13 +249,15 @@ describe('full site load time', () => {
             expect(screen.queryByText('Computing charts…')).toBeNull();
             const cards = container.querySelectorAll('.card');
             const plotted = container.querySelectorAll('[data-chart]');
-            expect(cards.length).toBeGreaterThanOrEqual(20);
+            expect(cards.length).toBe(4);
             expect(screen.getAllByRole('button', { name: 'Expand' })).toHaveLength(cards.length);
             const titles = Array.from(cards, card => card.getAttribute('aria-label'));
-            expect(titles.indexOf('Mistakes')).toBe(titles.indexOf('Average Turns') + 1);
+            expect(titles).toContain('Current Records');
             expect(plotted.length).toBeGreaterThan(0);
             expect(screen.getByRole('region', { name: 'Mistakes' })).toBeTruthy();
             console.log(`Rendered ${cards.length} chart cards in ${totalMs.toFixed(0)} ms.`);
+            fireEvent.click(screen.getByRole('button', { name: 'All charts', exact: true }));
+            expect(container.querySelectorAll('.card').length).toBeGreaterThanOrEqual(20);
 
             cleanup();
             expect(totalMs).toBeLessThan(PAGE_BUDGET_MS);

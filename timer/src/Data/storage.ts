@@ -258,7 +258,7 @@ export function sessionStats(solves: Solve[]): { name: string; current: number |
 }
 export function newPersonalBests(previous: Solve[], solve: Solve): { name: string; time: number }[] {
   if (solve.status === 'active' || solve.session === 'Retries') return [];
-  const session = previous.filter(item => item.session === solve.session && item.id !== solve.id)
+  const session = previous.filter(item => item.session !== 'Retries' && item.id !== solve.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const before = sessionStats(session), finished = [solve, ...session.filter(item => item.status !== 'active')];
   const current = [solve.status === 'complete' ? solveTime(solve) : 'DNF', ...[5, 12, 100, 1000].map(count => average(finished.slice(0, count), count))];

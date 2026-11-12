@@ -56,6 +56,14 @@ describe('FilterPanel.passesFilters', () => {
         expect(solves.filter(solve => FilterPanel.passesFilters(solve, filters))).toHaveLength(1);
         expect(FilterPanel.exclusionSummary(solves, filters)).toBe('Solving method: 1; Inspection time: 1; Invalid source data: 1. Each excluded solve is counted once.');
     });
+    test('exclusion diagnostics separate older history without filtering its unclassified summaries', () => {
+        const solves = [
+            passingSolve({ date: new Date('2026-01-01'), isMistake: false }),
+            passingSolve({ date: new Date('2026-01-02'), isMistake: true }),
+        ];
+        expect(FilterPanel.exclusionSummary(solves, permissiveFilters({ solveCleanliness: [SolveCleanliness.Mistake] }), 1))
+            .toBe('Outside recent window: 1. Each excluded solve is counted once.');
+    });
     test('retains DNFs in windows despite missing time, but still honors session filters', () => {
         const solve = passingSolve({ dnf: true, time: 0, session: 'Practice' });
         expect(FilterPanel.passesFilters(solve, permissiveFilters({ fastestTime: 10 }))).toBe(true);

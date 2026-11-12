@@ -17,5 +17,5 @@ export function AverageModal({ solves, numbers, percentage, title, close, view }
         turns: solve.turns, tps: Number.isFinite(solve.tps) ? solve.tps : null,
         trimmed: rank < trim ? 'best' : rank >= solves.length - trim ? 'worst' : null,
     }));
-    return <AverageDialog rows={rows} time={Number.isFinite(average) ? average : 'DNF'} precision={precision} close={close} view={view} title={title} />;
+    return <AverageDialog rows={rows} time={Number.isFinite(average) ? average : 'DNF'} precision={precision} close={close} view={view} title={title} clickableFields />;
 }

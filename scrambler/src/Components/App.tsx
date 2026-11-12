@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import Navigation, { Footer } from '@cuberplus/navigation';
+import Navigation, { Footer, usePageDialog } from '@cuberplus/navigation';
+import { PageOptionsButton } from '../../../shared/Components/PageOptionsButton';
 import { COLORS, Color, EDGES, HEX } from '../cube/cube';
 import { GenerationEvent, WorksheetRow } from '../cube/generation';
 import {
@@ -38,6 +39,8 @@ function App() {
   const [custom, setCustom] = useState<CustomColumn[]>([]);
   const [customName, setCustomName] = useState('');
   const [ascending, setAscending] = useState(true);
+  const optionsDialog = useRef<HTMLDialogElement>(null);
+  usePageDialog(optionsDialog, false);
   const worker = useRef<Worker>();
   const customId = useRef(0);
   const busy = status === 'working';
@@ -134,10 +137,11 @@ function App() {
         <Navigation current="scrambler" />
       </header>
       <main>
+        <div className="page-heading"><h1 className="route-heading">Scrambler</h1><div className="page-actions"><PageOptionsButton open={() => optionsDialog.current?.showModal()} /></div></div>
         <div className="workspace">
-          <aside className="settings-panel">
-            <div className="panel-heading"><span className="section-number">01</span><h2>Set your challenge</h2></div>
-            <form onSubmit={event => { event.preventDefault(); generate(settings); }}>
+          <dialog ref={optionsDialog} className="settings-panel page-options-dialog" aria-labelledby="scrambler-options-title">
+            <div className="page-heading"><h2 id="scrambler-options-title">Set your challenge</h2><button type="button" className="btn-close" aria-label="Close options" onClick={() => optionsDialog.current?.close()} /></div>
+            <form onSubmit={event => { event.preventDefault(); generate(settings); optionsDialog.current?.close(); }}>
               <fieldset disabled={busy}>
                 <legend className="sr-only">Solver settings</legend>
                 <label htmlFor="mode">Solve target</label>
@@ -184,11 +188,7 @@ function App() {
                 <button className="primary-button" type="submit">Generate worksheet <span aria-hidden="true">↗</span></button>
               </fieldset>
             </form>
-            {busy && <button className="cancel-button" onClick={() => {
-              worker.current?.terminate(); worker.current = undefined;
-              setStatus('cancelled'); setMessage('Generation stopped. Completed rows are kept.');
-            }}>Stop generation</button>}
-          </aside>
+          </dialog>
           <section className="worksheet-panel" aria-labelledby="worksheet-title">
             <div className="worksheet-heading">
               <div><div className="panel-heading"><span className="section-number">02</span><h2 id="worksheet-title">Your practice sheet</h2></div>
@@ -215,8 +215,25 @@ function App() {
               <span className={busy ? 'status-dot pulsing' : 'status-dot'} /><span>{message}</span>
             </div>}
             {busy && <progress value={rows.length} max={batchSettings.count} aria-label="Worksheet generation progress" />}
+            {busy && <button className="cancel-button" onClick={() => {
+              worker.current?.terminate(); worker.current = undefined;
+              setStatus('cancelled'); setMessage('Generation stopped. Completed rows are kept.');
+            }}>Stop generation</button>}
+            <div className="practice-cards" aria-label="Practice scrambles">
+              {visible.length + custom.length > 0 && sorted.map((row, i) => <article key={row.id} className="practice-card" aria-label={`Practice scramble ${i + 1}`}>
+                <h3>Scramble {i + 1}</h3>
+                {visible.filter(([key]) => key === 'scramble' || key === 'visualization').map(([key]) => <div key={key}>{cell(row, key)}</div>)}
+                {(visible.some(([key]) => key !== 'scramble' && key !== 'visualization') || !!custom.length) && <details>
+                  <summary>Reveal answer</summary>
+                  <dl>{visible.filter(([key]) => key !== 'scramble' && key !== 'visualization').map(([key, label]) => <React.Fragment key={key}><dt>{label}</dt><dd>{cell(row, key)}</dd></React.Fragment>)}
+                    {custom.map(column => <React.Fragment key={column.id}><dt>{column.name}</dt><dd className="practice-blank" /></React.Fragment>)}
+                  </dl>
+                </details>}
+              </article>)}
+            </div>
+            {visible.length + custom.length === 0 && <div className="empty-state">Choose a column above to display your worksheet.</div>}
             <div className="table-scroll">
-              {visible.length + custom.length > 0 ? <table className="worksheet" style={printStyle}>
+              {visible.length + custom.length > 0 && <table className="worksheet" style={printStyle}>
                 <caption className="sr-only">Optimal {MODE_LABELS[batchSettings.mode]} practice scrambles, sorted by solution length</caption>
                 <thead><tr><th scope="col" className="row-number">No.</th>{visible.map(([key, label]) =>
                   <th key={key} scope="col" className={`column-${key}`}>{key === 'turns'
@@ -226,7 +243,7 @@ function App() {
                   {visible.map(([key]) => <td key={key} className={`column-${key}`}>{cell(row, key)}</td>)}
                   {custom.map(c => <td key={c.id} className="column-custom" />)}
                 </tr>)}</tbody>
-              </table> : <div className="empty-state">Choose a column above to display your worksheet.</div>}
+              </table>}
               {!rows.length && visible.length + custom.length > 0 && <div className="empty-state"><h3>{busy ? 'Good starts are worth finding.' : 'A fresh start awaits.'}</h3><p>{busy ? 'Your browser is searching for truly optimal solutions.' : 'Generate a worksheet to fill this space.'}</p>{busy && <small>You can stop at any time. No data leaves your device.</small>}</div>}
             </div>
           </section>

@@ -14,7 +14,13 @@ const pages = {
 };
 export function toolAt(path: string): Tool | null {
   const name = path.replace(/\/index\.html$/, '/').replace(/^\/|\/$/g, '') || 'home';
+  if (name === 'analyzer') return 'smartcubeanalyzer';
   return Object.prototype.hasOwnProperty.call(pages, name) ? name as Tool : null;
+}
+
+function currentAddress() {
+  if (/^\/smartcubeanalyzer(?:\/(?:index\.html)?)?$/.test(location.pathname)) history.replaceState(history.state, '', `/analyzer/${location.search}${location.hash}`);
+  return location.pathname + location.search;
 }
 
 export default function Site() {
@@ -24,17 +30,32 @@ function Router() {
   useInstall();
   const swipe = useRef<{ x: number; y: number; time: number; target: Element } | null>(null);
   const swiped = useRef<{ target: Element; time: number } | null>(null);
-  const [address, setAddress] = useState(() => location.pathname + location.search);
+  const [address, setAddress] = useState(() => {
+    if (toolAt(location.pathname) === 'smartcubeanalyzer') performance.mark?.('analyzer-load-start', { startTime: 0 });
+    return currentAddress();
+  });
   const route = toolAt(address.split('?')[0]);
   const [visited, setVisited] = useState(() => route ? [route] : []);
   const change = () => {
-    const next = toolAt(location.pathname);
-    setAddress(location.pathname + location.search);
+    const address = currentAddress(), next = toolAt(location.pathname);
+    setAddress(address);
     if (next) setVisited(previous => previous.includes(next) ? previous : [...previous, next]);
   };
   useEffect(() => { addEventListener('popstate', change); return () => removeEventListener('popstate', change); }, []);
   useLayoutEffect(() => {
     document.title = route === 'home' ? 'CuberPlus | Tools for better solves' : `CuberPlus - ${links.find(([id]) => id === route)?.[2] ?? 'Page not found'}`;
+    if (!route) return;
+    const focusHeading = () => {
+      const main = document.querySelector<HTMLElement>(`.site-page--${route} main`);
+      if (!main) return false;
+      const heading = main.querySelector<HTMLElement>('h1') ?? main;
+      heading.id = `${route}-content`; heading.tabIndex = -1; heading.focus({ preventScroll: true });
+      return true;
+    };
+    if (focusHeading()) return;
+    const observer = new MutationObserver(() => { if (focusHeading()) observer.disconnect(); });
+    observer.observe(document.querySelector(`.site-page--${route}`)!, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, [route]);
   function navigate(event: MouseEvent) {
     const gesture = swiped.current;
@@ -50,6 +71,7 @@ function Router() {
     go(url.pathname + url.search);
   }
   function go(path: string) {
+    if (toolAt(path.split('?')[0]) === 'smartcubeanalyzer') performance.mark?.('analyzer-load-start');
     history.pushState(null, '', path);
     change();
     window.scrollTo(0, 0);
@@ -81,6 +103,7 @@ function Router() {
   }
   return <PageLocation.Provider value={address}>
     <div onClick={navigate} onTouchStart={startSwipe} onTouchEnd={endSwipe} onTouchCancel={() => { swipe.current = null; }}>
+      {route && <a className="route-skip" href={`#${route}-content`}>Skip to content</a>}
       <CloudNotice />
       {!route && <main><h1>Page not found</h1><a href="/">CuberPlus home</a></main>}
       {visited.map(tool => {

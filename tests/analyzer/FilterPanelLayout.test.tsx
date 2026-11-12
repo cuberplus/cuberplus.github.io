@@ -35,6 +35,11 @@ describe('filter sidebar layout', () => {
     test('orders the filter cards the way the sidebar is meant to read', () => {
         expect(cardTitles(solves)).toEqual([
             'Showing 1 / 1 solves',
+            'Which Method?',
+            'Which Sessions?',
+            'Source',
+            'Pick Start Date',
+            'Pick End Date',
             'Which step to drill down?',
             'PLL Cases',
             'OLL Cases',
@@ -43,17 +48,12 @@ describe('filter sidebar layout', () => {
             'Cross Color',
             'Solve Times',
             'Inspection Time',
-            'Which Method?',
-            'Which Sessions?',
-            'Source',
             'Sliding Window Size',
             'Points Per Graph',
             'Use Logarithmic Scale',
             '4-Segment Timing',
             'Benchmarks',
-            'Chop Rolling Average',
-            'Pick Start Date',
-            'Pick End Date'
+            'Chop Rolling Average'
         ]);
     });
 
@@ -70,7 +70,7 @@ describe('filter sidebar layout', () => {
         expect(titles.slice(drilldown + 3, drilldown + 5)).toEqual(['Solve Cleanliness', 'Solve Luckiness']);
     });
 
-    test('groups method, sessions and source immediately above the window size', () => {
+    test('groups method, sessions and source before the date range', () => {
         const titles = cardTitles(solves);
         const method = titles.indexOf('Which Method?');
 
@@ -78,7 +78,7 @@ describe('filter sidebar layout', () => {
             'Which Method?',
             'Which Sessions?',
             'Source',
-            'Sliding Window Size'
+            'Pick Start Date'
         ]);
     });
 
@@ -89,19 +89,17 @@ describe('filter sidebar layout', () => {
         expect(titles[solveTimes + 1]).toBe('Inspection Time');
     });
 
-    test('renders the spacer between the cross color and the solve times', () => {
+    test('groups basic, case and chart controls in native disclosures', () => {
         const panel = new FilterPanel({ solves });
         Object.assign(panel, { state: { ...panel.state, allSolves: solves, filteredSolves: solves } });
 
         const markup = JSON.stringify(panel.render(), (_key, value: unknown) =>
             typeof value === 'function' ? undefined : value);
 
-        const crossColor = markup.indexOf('Pick the starting cross color');
-        const spacer = markup.indexOf('"br"', crossColor);
-        const solveTimes = markup.indexOf('Choose slowest and fastest solves to keep');
-
-        expect(crossColor).toBeGreaterThan(-1);
-        expect(spacer).toBeGreaterThan(crossColor);
-        expect(solveTimes).toBeGreaterThan(spacer);
+        expect(markup).toContain('"details"');
+        expect(markup).toContain('Basics');
+        expect(markup).toContain('Cases and solve quality');
+        expect(markup).toContain('Chart settings');
+        expect(markup).not.toContain('"br"');
     });
 });

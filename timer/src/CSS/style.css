@@ -52,8 +52,57 @@ details[open] > .visuals-summary::after { transform: rotate(225deg); }
 @media (prefers-reduced-motion: reduce) { .trail-tip { transition: none; } .solving-dots > span { animation: none; width: 3ch; } }
 .table { --bs-table-bg: transparent; }
 .history-sort, .stat-link { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
-.stat-link { text-decoration: underline; text-underline-offset: 0.2em; }
+.stat-link { text-decoration: none; }
+.history-table tbody td { padding: 0; }
+.history-cell { display: block; width: 100%; min-height: 2.75rem; padding: .65rem .5rem; border: 0; background: transparent; color: inherit; font: inherit; text-align: start; text-decoration: none; cursor: pointer; }
+.history-time { font-weight: 600; white-space: nowrap; }
+.history-table tbody tr:is(:hover, :focus-within) { background: var(--cp-subtle); }
+.history-cell:focus-visible { outline: 2px solid var(--cp-accent); outline-offset: -3px; }
 th[aria-sort] .history-sort::after { content: ''; display: inline-block; margin-left: 0.4rem; border-left: 4px solid transparent; border-right: 4px solid transparent; }
 th[aria-sort="ascending"] .history-sort::after { border-bottom: 6px solid currentColor; }
 th[aria-sort="descending"] .history-sort::after { border-top: 6px solid currentColor; }
 @media (max-width: 575px) { .panel { padding: 1rem; } .timer-panel { min-height: 300px; } }
+.history-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; }
+.timer-onboarding a { display: inline-block; margin-left: .75rem; }
+.timer-onboarding { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+.trail-compact, .timer-recent { display: none; }
+@media (max-width: 720px) {
+  .timer-toolbar { flex-wrap: nowrap; gap: 6px; margin-bottom: 8px; }
+  .timer-toolbar .route-heading { font-size: 1.5rem; }
+  .timer-toolbar .page-actions { flex-wrap: nowrap; gap: 4px; }
+  .timer-panel { min-height: 0; padding: 10px; }
+  .timer-panel > .scramble { font-size: .875rem; line-height: 1.7; margin-bottom: 0 !important; }
+  .timer-hero { display: grid; grid-template-columns: minmax(0, 1fr) 100px; gap: 0; margin: 0; align-items: center; }
+  .timer-hero > * { width: auto; padding: 0; margin: 0; }
+  .timer-hero--no-cube { grid-template-columns: minmax(0, 1fr); min-height: 110px; }
+  .timer-hero twisty-player { height: 110px !important; }
+  .timer-display { container-type: inline-size; }
+  .timer-display:has(.solve-penalty) { --time-reserve: 3.5rem; gap: .5rem !important; }
+  .timer-hero .timer-value { font-size: min(clamp(3.5rem, 17vw, 5rem), calc((100cqw - var(--time-reserve, 0px)) * 1.65 / var(--time-length))); white-space: nowrap; }
+  .timer-details { font-size: .8rem; min-height: 18px; }
+  .timer-timeline { margin-block: 6px 0 !important; }
+  .timer-timeline .trail-labels, .timer-timeline .trail-axis { display: none !important; }
+  .timer-timeline .solve-trail { height: 12px; }
+  .trail-compact { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin-top: 4px; font-size: .65rem; color: var(--cp-muted); }
+  .trail-compact strong { display: block; font-size: .75rem; font-weight: 500; color: var(--cp-text); }
+  .timer-feedback { display: none; }
+  .timer-records { padding: 0; background: transparent; border: 0; border-radius: 0; margin-top: 10px !important; }
+  .timer-records .table { margin-bottom: 0; font-size: .8rem; font-variant-numeric: tabular-nums; }
+  .timer-records thead th { color: var(--cp-muted); font-weight: 500; font-size: .7rem; }
+  .timer-records .table :is(th, td) { padding: 4px 8px; }
+  .timer-records .table :is(th, td):not(:first-child) { text-align: right; }
+  .timer-records td:last-child { color: var(--cp-accent); }
+  .timer-recent { display: block; margin-top: 10px; }
+  .timer-recent-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .timer-recent-heading h2 { margin: 0; font-size: .875rem; }
+  .timer-recent-heading a { padding-block: 10px; font-size: .8rem; }
+  .recent-times { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  .recent-times .btn { container-type: inline-size; padding: 8px 2px; min-height: 44px; color: var(--cp-text); font-size: .95rem; font-variant-numeric: tabular-nums; }
+  .recent-times .btn > span { font-size: min(.95rem, calc(165cqw / var(--time-length))); white-space: nowrap; }
+  .timer-history { padding: 10px; }
+  .timer-panel.timer-disconnected { min-height: 0; }
+  .timer-disconnected .timer-display { min-height: 0; }
+  .timer-disconnected .scramble { min-height: 0; }
+  .timer-disconnected .row > .col-lg-5 { display: none; }
+  .history-pagination { font-size: .875rem; }
+}

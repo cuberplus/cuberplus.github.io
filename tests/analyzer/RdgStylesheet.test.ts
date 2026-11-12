@@ -30,12 +30,12 @@ describe('the vendored react-data-grid stylesheet', () => {
 
     test('is linked from index.html so the build copies it verbatim', () => {
         const html = readFileSync(INDEX_HTML, 'utf8');
-        expect(html).toContain('/smartcubeanalyzer/react-data-grid.css');
+        expect(html).toContain('/analyzer/react-data-grid.css');
     });
 
     test('keeps public asset URLs from being rebased twice in development', () => {
         const html = readFileSync(INDEX_HTML, 'utf8');
-        const tags = html.match(/<(?:link|script)\b[^>]*(?:href|src)="\/smartcubeanalyzer\/[^"]+"[^>]*>/g) ?? [];
+        const tags = html.match(/<(?:link|script)\b[^>]*(?:href|src)="\/analyzer\/[^"]+"[^>]*>/g) ?? [];
         expect(tags).toHaveLength(2);
         for (const tag of tags) expect(tag).toContain('vite-ignore');
     });

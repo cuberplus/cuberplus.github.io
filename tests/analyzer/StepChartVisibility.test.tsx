@@ -35,7 +35,7 @@ jest.mock('../../smartcubeanalyzer/src/Workers/createChartWorker', () => ({
     },
 }));
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChartPanel } from '../../smartcubeanalyzer/src/Components/ChartPanel';
 import { FilterPanel } from '../../smartcubeanalyzer/src/Components/FilterPanel';
 import { parseCsv } from '../../smartcubeanalyzer/src/Data/CsvParser';
@@ -64,7 +64,7 @@ const ALWAYS_PRESENT = 'Average Time';
 
 /** Chart titles render with a trailing tooltip marker. */
 function chartTitle(title: string): string {
-    return `${title} \u24D8`;
+    return title;
 }
 
 function filtersFor(method: MethodName): Filters {
@@ -110,6 +110,7 @@ async function renderCharts(solves: Solve[], method: MethodName) {
         use4SegmentTiming: true,
     } as React.ComponentProps<typeof ChartPanel>));
     await waitFor(() => expect(screen.queryByText(chartTitle(ALWAYS_PRESENT))).not.toBeNull(), { timeout: 60_000 });
+    fireEvent.click(screen.getByRole('button', { name: 'All charts', exact: true }));
 }
 
 beforeAll(() => {
@@ -157,6 +158,26 @@ describe('a Cubeast export that does have step timings', () => {
 
     test('the data has step timings', () => {
         expect(solves.some(s => s.steps.some(step => step.time > 0))).toBe(true);
+    });
+
+    test('selected views persist through chart updates and reset only when their step requirements no longer apply', async () => {
+        const solves = prepare('cfop-small.csv', MethodName.CFOP).slice(-12);
+        const props = { solves, steps: [StepName.OLL], methodName: MethodName.CFOP,
+            windowSize: 100, pointsPerGraph: 20, goodTime: 15, badTime: 20, useLogScale: false, use4SegmentTiming: true };
+        const view = render(<ChartPanel {...props} />);
+        await screen.findByText('Average Time');
+        const cases = screen.getByRole('button', { name: 'Cases', exact: true });
+        fireEvent.click(cases);
+        expect(screen.getByRole('button', { name: 'Cases', exact: true }).getAttribute('aria-pressed')).toBe('true');
+        expect(cases.className).toContain('btn-primary');
+        view.rerender(<ChartPanel {...props} solves={[...solves]} windowSize={120} />);
+        expect(cases.getAttribute('aria-pressed')).toBe('true');
+        view.rerender(<ChartPanel {...props} steps={Const.MethodSteps[MethodName.CFOP]} />);
+        expect(screen.getByRole('button', { name: 'Overview', exact: true }).getAttribute('aria-pressed')).toBe('true');
+        expect(screen.getByRole('button', { name: 'Cases', exact: true }).getAttribute('aria-pressed')).toBe('false');
+        fireEvent.click(screen.getByRole('button', { name: 'Progress', exact: true }));
+        view.rerender(<ChartPanel {...props} steps={Const.MethodSteps[MethodName.CFOP]} useLogScale />);
+        expect(screen.getByRole('button', { name: 'Progress', exact: true }).getAttribute('aria-pressed')).toBe('true');
     });
 
     test('the step charts are still shown', async () => {

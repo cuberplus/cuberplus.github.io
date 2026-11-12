@@ -17,7 +17,7 @@ test.each(['home', 'timer', 'smartcubeanalyzer', 'scrambler', 'database', 'train
     expect(links).toHaveLength(7);
     const active = links.filter(link => link.getAttribute('aria-current') === 'page');
     expect(active).toHaveLength(1);
-    expect(active[0].getAttribute('href')).toBe(current === 'home' ? '/' : `/${current}/`);
+    expect(active[0].getAttribute('href')).toBe(current === 'home' ? '/' : `/${current === 'smartcubeanalyzer' ? 'analyzer' : current}/`);
     expect(links.every(link => link.querySelector('svg[aria-hidden="true"]'))).toBe(true);
   },
 );
@@ -25,9 +25,9 @@ test.each(['home', 'timer', 'smartcubeanalyzer', 'scrambler', 'database', 'train
 test('the homepage offers Timer first and the database last, with the correct live paths', () => {
   render(<App />);
   const tools = within(screen.getByRole('region', { name: 'Cubing tools' }));
-  expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('CuberPlus');
+  expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Tools for better solves');
   expect(tools.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual([
-    '/timer/', '/smartcubeanalyzer/', '/scrambler/', '/trainer/', '/database/',
+    '/timer/', '/analyzer/', '/scrambler/', '/trainer/', '/database/',
   ]);
   expect(tools.getAllByRole('heading', { level: 2 }).map(heading => heading.textContent)).toEqual([
     'Timer', 'Smartcube Analyzer', 'Scrambler', 'Trainer', 'Algorithm Database', 'More coming soon',
@@ -60,7 +60,7 @@ test('the brand and skip link remain alongside the shared navigation', () => {
   const links = within(navigation).getAllByRole('link');
   expect(links.map(link => [link.getAttribute('aria-label'), link.getAttribute('href')])).toEqual([
     ['Home', '/'], ['Timer', '/timer/'],
-    ['Smartcube Analyzer', '/smartcubeanalyzer/'], ['Trainer', '/trainer/'], ['Scrambler', '/scrambler/'],
+    ['Smartcube Analyzer', '/analyzer/'], ['Trainer', '/trainer/'], ['Scrambler', '/scrambler/'],
     ['Database', '/database/'], ['Options', '/options/'],
   ]);
   expect(links[0].getAttribute('aria-current')).toBe('page');

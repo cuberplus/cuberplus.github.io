@@ -27,7 +27,7 @@ export const DEFAULT_DEMO_FILE = DEMO_DATASETS[0].file;
 
 /**
  * Builds a URL for a file in public/, relative to the app base path so it works
- * when the app is served from root (/) or a subpath (e.g. /smartcubeanalyzer),
+ * when the app is served from root (/) or a subpath (e.g. /analyzer),
  * with or without a trailing slash.
  */
 function getDemoDataUrl(file: string, pagePath: string): string {
@@ -36,13 +36,17 @@ function getDemoDataUrl(file: string, pagePath: string): string {
 }
 
 export function GetDemoData(file: string = DEFAULT_DEMO_FILE, pagePath = window.location.pathname): Promise<string> {
-    // Ask for CSV explicitly: a dev server hosting the app under a base path
-    // redirects to the right URL for a CSV request, but answers a generic
-    // request with the SPA's index.html fallback.
-    return fetch(getDemoDataUrl(file, pagePath), { headers: { Accept: 'text/csv' } }).then((r) => {
-        if (!r.ok) throw new Error('Failed to load demo data');
-        return r.text();
-    }).then((text) => {
+    const url = getDemoDataUrl(file, pagePath);
+    const plain = () => fetch(url, { headers: { Accept: 'text/csv' } }).then(r => {
+        if (!r.ok) throw new Error('Failed to load demo data'); return r.text();
+    });
+    const compressed = async () => {
+        const response = await fetch(`${url}.gz`);
+        if (!response.ok || !response.body) throw new Error('Compressed demo unavailable');
+        return response.headers.get('Content-Encoding') === 'gzip' ? response.text()
+            : new Response(response.body.pipeThrough(new DecompressionStream('gzip'))).text();
+    };
+    return (typeof DecompressionStream === 'undefined' ? plain() : compressed().catch(plain)).then(text => {
         // Parsing an HTML page as a CSV silently produces junk solves and empty charts.
         if (text.trimStart().startsWith('<')) throw new Error('Demo data request returned a web page instead of the CSV');
         return text;

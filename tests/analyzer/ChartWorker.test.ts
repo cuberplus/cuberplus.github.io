@@ -78,6 +78,25 @@ describe('chartWorker message handling', () => {
         expect(corrected.recordRows[0].time).toBe('12.000');
         expect(corrected.recordHistory.datasets[0].data.at(-1)).toMatchObject({ y: 12 });
     });
+    test('all-time records ignore the recent scope, phase and filters even when no chart solves match', () => {
+        const recordSolves = makeSolves(11010).map((solve, i) => ({
+            ...solve, time: i < 1000 ? 1 : 20, session: i < 1000 ? 'Earlier' : 'Recent',
+        }));
+        const baseline = run({ solves: recordSolves, recordSolves, windowSize: 100 }).chartData;
+        const inputs = [
+            { solves: recordSolves.slice(-10000) },
+            { solves: recordSolves.slice(-20).map(solve => ({ ...solve, time: 0.1 })), steps: [StepName.Cross] },
+            { solves: [], steps: [StepName.PLL], methodName: MethodName.Roux },
+        ];
+        for (const input of inputs) {
+            const data = run({ ...input, recordSolves, windowSize: 100 }).chartData;
+            expect(data.recordRows.map(row => row.time)).toEqual(['1.000', '1.000', '1.000', '1.000', '1.000']);
+            expect(data.recordHistory).toEqual(baseline.recordHistory);
+            expect(data.bestSolvesData).toEqual(baseline.bestSolvesData);
+        }
+        const excluded = recordSolves.slice(0, 1000).map((solve, i) => ({ ...solve, time: 0.01, session: i % 2 ? 'Retries' : solve.session, isCorrupt: i % 2 === 0 }));
+        expect(run({ solves: [], recordSolves: [...excluded, ...recordSolves] }).chartData.recordRows).toEqual(baseline.recordRows);
+    });
 
     test('first-pair percentages respect DNFs, original solve numbers, method and palette', () => {
         const solves = ['Red/Green', 'Orange/Blue', 'Orange/Blue', 'Red/Green'].map((firstF2LPair, index) => makeSolve({ firstF2LPair, dnf: index === 1 }));
@@ -127,6 +146,29 @@ describe('chartWorker OLL/PLL category charts', () => {
             ...(data.ollCategory ? [data.ollCategory] : []),
             ...(data.pllCategory ? [data.pllCategory] : []),
         ];
+
+        test('the latest 10,000 solves retain history numbers 40,770 through 50,769 across sampled charts', () => {
+            const template = makeSolve({ steps: [] });
+            const recordSolves = Array.from({ length: 50769 }, (_, i) => ({ ...template, id: `solve-${i}` }));
+            const solves = recordSolves.slice(-10000).map(solve => ({ ...solve }));
+            const { chartData } = run({ solves, recordSolves, windowSize: 1, pointsPerGraph: 7 });
+            for (const chart of [chartData.runningAverage, chartData.runningFirstPairPercentages!, ...charts(chartData)]) {
+                expect(chart.labels![0]).toBe('40770');
+                expect(chart.labels!.at(-1)).toBe('50769');
+                expect(chart.labels!.length).toBeLessThan(12);
+                chart.datasets.forEach(dataset => expect(dataset.data).toHaveLength(chart.labels!.length));
+            }
+        });
+
+        test('filter gaps, DNFs, and missing inspection data keep full-history window-end numbers', () => {
+            const recordSolves = makeSolves(100).map((solve, i) => ({ ...solve, dnf: i === 94, inspectionTime: i === 92 ? null : 8 }));
+            const solves = recordSolves.slice(80).filter((_, i) => i % 2 === 0).map(solve => ({ ...solve, time: 0.5 }));
+            const { chartData } = run({ solves, recordSolves, windowSize: 5, pointsPerGraph: 100 });
+            expect(chartData.runningAverage.labels).toEqual(['89', '91', '93', '95', '97', '99']);
+            expect(chartData.runningTurns.labels).toEqual(['89', '91', '93', '97', '99']);
+            expect(chartData.runningInspection!.labels).toEqual(['89', '91', '97', '99']);
+            expect(chartData.runningAverage.datasets[0].data).toEqual([0.5, 0.5, 0.5, 0.5, 0.5, 0.5]);
+        });
 
         test('all sampled rolling charts label 400 solves from window end 100 through solve 400', () => {
             const { chartData } = run({ solves: makeSolves(400), windowSize: 100, pointsPerGraph: 100 });

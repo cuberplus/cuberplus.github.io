@@ -4,8 +4,8 @@ import { readFileSync } from 'node:fs';
 const APP_VERSION = readFileSync(new URL('../../shared/config/version.ts', import.meta.url), 'utf8').match(/APP_VERSION = '([^']+)'/)[1];
 const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : undefined });
 const base = process.env.SITE_URL ?? 'http://127.0.0.1:4173';
-const routes = ['/', '/timer/', '/smartcubeanalyzer/', '/scrambler/', '/database/', '/trainer/', '/options/'];
-const links = [['Home', '/'], ['Timer', '/timer/'], ['Smartcube Analyzer', '/smartcubeanalyzer/'], ['Trainer', '/trainer/'], ['Scrambler', '/scrambler/'], ['Database', '/database/'], ['Options', '/options/']];
+const routes = ['/', '/timer/', '/analyzer/', '/scrambler/', '/database/', '/trainer/', '/options/'];
+const links = [['Home', '/'], ['Timer', '/timer/'], ['Smartcube Analyzer', '/analyzer/'], ['Trainer', '/trainer/'], ['Scrambler', '/scrambler/'], ['Database', '/database/'], ['Options', '/options/']];
 const errors = [];
 function contrast(first, second) {
   const luminance = color => {
@@ -31,16 +31,21 @@ try {
     for (const route of routes) {
       await page.goto(`${base}${route}`);
       const nav = page.getByRole('navigation', { name: 'CuberPlus', exact: true });
+      if (width <= 1100) await page.getByRole('button', { name: /^Menu/ }).click();
       await expect(nav).toBeVisible();
       await expect(nav.getByRole('link')).toHaveCount(7);
       for (const [name, href] of links) {
         const link = nav.getByRole('link', { name, exact: true });
         await expect(link).toBeVisible();
         await expect(link).toHaveAttribute('href', href);
+        await link.scrollIntoViewIfNeeded();
         const box = await link.boundingBox();
         expect(box.x).toBeGreaterThanOrEqual(0);
         expect(box.x + box.width).toBeLessThanOrEqual(width);
+        expect(box.width).toBeGreaterThanOrEqual(44);
+        expect(box.height).toBeGreaterThanOrEqual(44);
       }
+      await nav.evaluate(element => { element.scrollLeft = 0; });
       await expect(nav.locator('[aria-current="page"]')).toHaveAttribute('href', route);
       const geometry = await page.locator('.cuberplus-navigation:visible').evaluate(element => {
         const brand = element.querySelector('.cuberplus-brand');
@@ -53,21 +58,25 @@ try {
       });
       reference ??= geometry;
       expect(geometry).toEqual(reference);
-      expect(geometry.brand[0]).toBe(width <= 720 ? 12 : 24);
-      expect(geometry.brand[1]).toBe(width <= 720 ? 16 : 20);
-      await expect(page.locator('.cuberplus-brand:visible')).toHaveCSS('font-size', '28px');
+      expect(geometry.brand[0]).toBe(width <= 1100 ? 12 : 24);
+      expect(geometry.brand[1]).toBe(width <= 1100 ? 8 : 22);
+      await expect(page.locator('.cuberplus-brand:visible')).toHaveCSS('font-size', width <= 1100 ? '24px' : '28px');
+      if (width <= 1100) await page.getByRole('button', { name: /^Menu/ }).click();
       await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(16, 20, 30)');
       await expect(page.locator('.cuberplus-header:visible')).toHaveCSS('background-color', 'rgb(16, 20, 30)');
       await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#10141e');
-      const controls = page.locator('.cuberplus-header-controls, .cuberplus-header > .local-badge');
+      const controls = page.locator('.cuberplus-header > .cuberplus-header-controls, .cuberplus-header > .local-badge');
       if (await controls.count()) {
         const rightInset = await controls.evaluate(element => document.documentElement.clientWidth - element.getBoundingClientRect().right);
         expect(rightInset).toBeCloseTo(width <= 720 ? 12 : 24, 0);
       }
-      const panel = page.locator('.tool-card, .settings-panel, .card, .timer-panel').first();
+      const panel = page.locator('.tool-card:visible, .worksheet-panel:visible, .card:visible, .timer-panel:visible').first();
       await expect(panel).toHaveCSS('background-color', 'rgb(24, 31, 45)');
       await expect(panel).toHaveCSS('border-radius', '16px');
       if (route === '/scrambler/') {
+        const settings = page.getByRole('dialog', { name: 'Set your challenge', exact: true });
+        await expect(settings).not.toBeVisible();
+        await page.getByRole('button', { name: 'Options', exact: true }).click();
         await expect(page.getByRole('spinbutton', { name: 'Minimum turns' })).toHaveValue('4');
         await expect(page.getByRole('spinbutton', { name: 'Maximum turns' })).toHaveValue('8');
         await expect(page.getByLabel('Move metric')).toHaveValue('QTM');
@@ -85,6 +94,7 @@ try {
           expect(field.separated).toBe(true);
           expect(field.available).toBeGreaterThanOrEqual(field.required);
         }
+        await settings.getByRole('button', { name: 'Close options', exact: true }).click();
       }
       const footer = page.getByRole('contentinfo');
       await expect(footer).toHaveCount(1);
@@ -157,6 +167,7 @@ try {
   for (const summary of await groups.first().locator('.database-property > summary').all()) await summary.click();
   await expect(firstCase.locator('.database-algorithm p').first()).toHaveText(fourthAlgorithm);
   await firstCase.locator('.database-algorithm').first().getByRole('button', { name: /^Unfavorite / }).click();
+  await page.getByText('Algorithm tools', { exact: true }).click();
   await page.getByRole('button', { name: 'Add your own algorithm', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Algorithm', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close add algorithm', exact: true }).click();
@@ -194,8 +205,9 @@ try {
   await expect(removeCustom).toHaveCount(0);
   await expect(firstCase.locator('.database-algorithm')).toHaveCount(3);
   await page.setViewportSize({ width: 1440, height: 1000 });
-  const toolbar = page.getByRole('button', { name: 'Add your own algorithm', exact: true }).locator('..');
+  const toolbar = page.locator('.database-heading');
   const toolbarHeight = (await toolbar.boundingBox()).height;
+  await page.getByText('Algorithm tools', { exact: true }).click();
   for (const [name, result] of [['Automatically find favorites', 'Added 0 favorites'], ['Learn algorithms from solves', 'Learned 0 algorithms']]) {
     page.once('dialog', dialog => dialog.accept());
     await page.getByRole('button', { name, exact: true }).click();
@@ -294,13 +306,14 @@ try {
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
   }
-  await page.goto(`${base}/smartcubeanalyzer/`);
-  await page.getByRole('button', { name: 'Demo Data', exact: true }).click();
+  await page.goto(`${base}/analyzer/`);
+  await page.getByRole('button', { name: 'Data', exact: true }).click();
+  await page.getByRole('button', { name: /^Dev Solves/ }).click();
   const filters = page.getByRole('button', { name: 'Open filters', exact: true });
   await expect(filters).toBeVisible({ timeout: 60000 });
   await expect(page.locator('canvas').first()).toBeVisible({ timeout: 60000 });
   await expect(page.locator('.cuberplus-brand:visible')).toHaveCSS('font-size', '28px');
-  expect(await filters.evaluate(element => element.closest('.cuberplus-header-controls') !== null)).toBe(true);
+  expect(await filters.evaluate(element => element.closest('main') !== null)).toBe(true);
   await filters.click();
   await expect(page.locator('.offcanvas.show')).toBeVisible();
   await expect(page.locator('.offcanvas.show')).toHaveCSS('background-color', 'rgb(24, 31, 45)');
@@ -328,16 +341,15 @@ try {
     await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   }
   for (const [name, path] of links.slice(1)) {
-    await expect(phone.getByRole('navigation')).toBeVisible();
+    await expect(phone.getByRole('button', { name: /^Menu/ })).toBeVisible();
     await swipe(true);
     await expect(phone).toHaveURL(`${base}${path}`);
-    await expect(phone.getByRole('link', { name, current: 'page', exact: true })).toBeVisible();
+    await expect(phone.locator(`nav a[aria-current="page"][href="${path}"]`)).toHaveCount(1);
   }
   for (const [name, path] of links.slice(0, -1).reverse()) {
     await swipe(false);
     await expect(phone).toHaveURL(`${base}${path}`);
-    await expect(phone.getByRole('link', { name, current: 'page', exact: true })).toBeVisible();
-    await expect(phone.getByRole('link', { name, current: 'page', exact: true })).toBeVisible();
+    await expect(phone.locator(`nav a[aria-current="page"][href="${path}"]`)).toHaveCount(1);
   }
   const cardImage = phone.locator('.tool-card img').first(), cardBox = await cardImage.boundingBox();
   const y = Math.max(100, Math.min(700, cardBox.y + 60));

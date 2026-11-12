@@ -12,6 +12,8 @@ let onmessage: ((event: MessageEvent<GenerationEvent>) => void) | null;
 let onerror: ((event: ErrorEvent) => void) | null;
 
 beforeEach(() => {
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function(this: HTMLDialogElement) { this.open = true; } });
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function(this: HTMLDialogElement) { this.open = false; } });
   postMessage = jest.fn(); terminate = jest.fn(); onmessage = null; onerror = null;
   factory.mockImplementation(() => ({
     postMessage, terminate,
@@ -24,6 +26,10 @@ beforeEach(() => {
   }));
 });
 
+function worksheetButton() {
+  if (!document.querySelector<HTMLDialogElement>('.settings-panel')!.open) fireEvent.click(screen.getByRole('button', { name: 'Options', exact: true }));
+  return screen.getByRole('button', { name: /Generate worksheet/ });
+}
 function emit(data: GenerationEvent) {
   act(() => { onmessage?.({ data } as MessageEvent<GenerationEvent>); });
 }
@@ -48,11 +54,27 @@ test('branding is CuberPlus with shared navigation and without a cube logo', () 
 
 test('the workspace starts below the header without a promotional intro', () => {
   render(<App />);
-  expect(screen.getByRole('main').firstElementChild).toHaveClass('workspace');
+  expect(screen.getByRole('main').firstElementChild).toHaveTextContent('Scrambler');
+  expect(screen.getByRole('main').querySelector('.workspace')).toBeInTheDocument();
   expect(screen.queryByText(/a better start to every solve/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/nothing sent to a server/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/from the first edge/i)).not.toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Set your challenge' })).toBeInTheDocument();
+  expect(screen.getByText('Set your challenge')).toBeInTheDocument();
+});
+
+test('challenge controls open from the far-right page Options and close after generating', () => {
+  const { container } = render(<App />);
+  const dialog = container.querySelector<HTMLDialogElement>('.settings-panel')!;
+  expect(dialog.open).toBe(false);
+  expect(container.querySelector('.page-heading > .page-actions')!.lastElementChild).toHaveAttribute('aria-label', 'Options');
+  addRows();
+  fireEvent.click(screen.getByRole('button', { name: 'Options', exact: true }));
+  expect(dialog.open).toBe(true);
+  fireEvent.change(screen.getByLabelText('Number of scrambles'), { target: { value: '5' } });
+  fireEvent.click(worksheetButton());
+  expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ count: 5 }));
+  expect(dialog.open).toBe(false);
+  expect(screen.getByRole('button', { name: 'Stop generation' })).toBeEnabled();
 });
 
 test('initial generation requests 20 optimal X-Cross scrambles in a worker and keeps controls responsive', () => {
@@ -61,7 +83,7 @@ test('initial generation requests 20 optimal X-Cross scrambles in a worker and k
     mode: 'xcross', count: 20, minimum: 4, maximum: 8, metric: 'QTM',
   }));
   expect(screen.getByLabelText('Minimum turns')).toHaveValue(4);
-  expect(screen.getByRole('button', { name: /Generate worksheet/ })).toBeDisabled();
+  expect(worksheetButton()).toBeDisabled();
   expect(screen.getByText('Columns')).toBeEnabled();
   expect(screen.getByRole('progressbar')).toHaveAttribute('max', '20');
 });
@@ -92,7 +114,7 @@ test('rows are sorted by HTM, diagrams are inline SVGs, and column subsets and b
   fireEvent.click(screen.getByRole('button', { name: /# Turns Required/ }));
   expect(within(screen.getAllByRole('row')[1]).getByText('7')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: /# Turns Required/ }));
-  expect(screen.getAllByRole('img', { name: /Scrambled cube/ })).toHaveLength(2);
+  expect(within(screen.getByRole('table')).getAllByRole('img', { name: /Scrambled cube/ })).toHaveLength(2);
   fireEvent.click(screen.getByRole('checkbox', { name: 'Solution Algorithm' }));
   expect(screen.queryByRole('columnheader', { name: 'Solution Algorithm' })).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Add a blank column'), { target: { value: 'My first pair' } });
@@ -109,7 +131,7 @@ test('QTM is sent to the solver and used for worksheet counts and sorting withou
   addRows();
   const metric = screen.getByLabelText('Move metric');
   fireEvent.change(metric, { target: { value: 'HTM' } });
-  fireEvent.click(screen.getByRole('button', { name: /Generate worksheet/ }));
+  fireEvent.click(worksheetButton());
   addRows();
   expect(metric).toHaveValue('HTM');
   fireEvent.change(metric, { target: { value: 'QTM' } });
@@ -118,7 +140,7 @@ test('QTM is sent to the solver and used for worksheet counts and sorting withou
   expect(range).toContainElement(metric);
   expect(screen.getByLabelText('Maximum turns').compareDocumentPosition(metric) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(container.querySelector('.turn-count small')).toHaveTextContent('HTM');
-  fireEvent.click(screen.getByRole('button', { name: /Generate worksheet/ }));
+  fireEvent.click(worksheetButton());
   expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ metric: 'QTM' }));
   for (const [id, moves, algorithm] of [[1, [1, 4], 'U2 R2'], [2, [0, 3, 6], 'U R F']] as const) {
     emit({ type: 'row', row: { id, scramble: 'R U F2', moves: [...moves], algorithm, cross: 'White', pairs: [], nodes: 1, elapsedMs: 1 } });
@@ -143,7 +165,7 @@ test('XX-Cross options, fixed colors/pairs, turn bounds, printing, and cancellat
   fireEvent.change(screen.getByLabelText('Pair relationship'), { target: { value: 'diagonal' } });
   fireEvent.change(screen.getByLabelText('Minimum turns'), { target: { value: '4' } });
   fireEvent.change(screen.getByLabelText('Maximum turns'), { target: { value: '10' } });
-  fireEvent.click(screen.getByRole('button', { name: /Generate worksheet/ }));
+  fireEvent.click(worksheetButton());
   expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({
     mode: 'xxcross', cross: 'White', pair: '11', relation: 'diagonal', minimum: 4, maximum: 10,
   }));
@@ -177,12 +199,12 @@ test('invalid constraints and solver errors are visible, and a stopped worksheet
   render(<App />);
   emit({ type: 'row', row: { id: 1, scramble: 'R', moves: [2], algorithm: "R'", cross: 'White', pairs: ['Blue / Red'], nodes: 1, elapsedMs: 1 } });
   fireEvent.click(screen.getByRole('button', { name: 'Stop generation' }));
-  expect(screen.getByRole('img', { name: 'Scrambled cube: R' })).toBeInTheDocument();
+  expect(within(screen.getByRole('table')).getByRole('img', { name: 'Scrambled cube: R' })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Solve target'), { target: { value: 'xxcross' } });
   fireEvent.change(screen.getByLabelText('Cross / base color'), { target: { value: 'White' } });
   fireEvent.change(screen.getByLabelText('Required F2L pair'), { target: { value: '11' } });
   fireEvent.change(screen.getByLabelText('Second required pair'), { target: { value: '11' } });
-  fireEvent.click(screen.getByRole('button', { name: /Generate worksheet/ }));
+  fireEvent.click(worksheetButton());
   expect(screen.getByRole('alert')).toHaveTextContent('different');
   emit({ type: 'error', message: 'Exact search time limit' });
   expect(screen.getByRole('alert')).toHaveTextContent('Exact search time limit');
@@ -206,6 +228,7 @@ test.each([
 ])('%s base offers exactly its four valid pairs in every pair-solving mode', (color, expected) => {
   render(<App />);
   addRows();
+  fireEvent.click(screen.getByRole('button', { name: 'Options', exact: true }));
   fireEvent.change(screen.getByLabelText('Cross / base color'), { target: { value: color } });
   for (const mode of ['xcross', 'block', 'xxcross']) {
     fireEvent.change(screen.getByLabelText('Solve target'), { target: { value: mode } });
@@ -244,7 +267,7 @@ test('changing the base preserves valid selected pairs and resets invalid select
   fireEvent.change(cross, { target: { value: 'Red' } });
   expect(first).toHaveValue('any');
   expect(second).toHaveValue('any');
-  fireEvent.click(screen.getByRole('button', { name: /Generate worksheet/ }));
+  fireEvent.click(worksheetButton());
   expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({
     cross: 'Red', pair: 'any', secondPair: 'any',
   }));

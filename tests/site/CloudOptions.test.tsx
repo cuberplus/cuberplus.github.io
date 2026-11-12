@@ -23,6 +23,7 @@ test('cloud options expose both providers, manual actions and independent automa
   expect(configureCloud).toHaveBeenLastCalledWith('google', true, false);
   fireEvent.click(screen.getByRole('checkbox', { name: /Back up after a PB/ }));
   expect(configureCloud).toHaveBeenLastCalledWith('google', false, true);
+  fireEvent.click(screen.getByText('Restore and connection settings'));
   fireEvent.click(screen.getByRole('button', { name: 'Reconnect Google Drive' }));
   fireEvent.click(screen.getByRole('button', { name: 'Back up now' }));
   fireEvent.click(screen.getByRole('button', { name: 'Restore backup' }));
@@ -36,7 +37,7 @@ test('missing deployment IDs disable cloud sign-in instead of presenting a broke
   jest.mocked(cloudState).mockReturnValue({ ...initial, configured: false, connected: false });
   render(<CloudOptions />);
   expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Connect Google Drive' }).disabled).toBe(true);
-  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Back up now' }).disabled).toBe(true);
+  expect(screen.queryByRole('button', { name: 'Back up now' })).toBeNull();
   expect(screen.getByRole('status').textContent).toContain('Provider unavailable');
   fireEvent.focus(screen.getByRole('status').querySelector('button')!);
   expect((await screen.findByRole('tooltip')).textContent).toContain('not configured');
@@ -58,6 +59,7 @@ test('automatic backup failures are dismissible and link to reconnection options
 });
 test('backup semantics tooltip follows the last successful backup, not Disconnect', () => {
   render(<CloudOptions />);
+  fireEvent.click(screen.getByText('Restore and connection settings'));
   const label = screen.getByText(/Last successful backup: Never/);
   const tooltip = label.querySelector('button')!;
   expect(tooltip).not.toBeNull();

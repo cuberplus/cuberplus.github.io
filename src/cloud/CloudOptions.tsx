@@ -11,31 +11,39 @@ function useCloud() {
 export function CloudOptions() {
   const state = useCloud();
   useEffect(() => { void initializeCloud(); }, []);
-  return <section className="mt-4 border-top pt-4" aria-labelledby="cloud-heading">
+  return <section className="settings-section" aria-labelledby="cloud-heading">
     <h3 id="cloud-heading" className="d-flex align-items-center">Cloud backup<InfoTip>Back up solves and move recordings, settings, sessions, custom algorithms, favorites, and Unlearn selections to your own cloud storage.</InfoTip></h3>
-    <label className="d-block mb-3">Backup provider
+    <div className="settings-fields mb-3">
+    <label className="backup-provider">Backup provider
       <select className="form-select mt-2" value={state.provider} disabled={state.busy}
         onChange={event => configureCloud(event.target.value as Provider, state.every100, state.onPb)}>
         {Object.entries(providerNames).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
       </select>
     </label>
-    {!state.configured && <div role="status" className="text-secondary mb-3">Provider unavailable<InfoTip>{`${providerNames[state.provider]} is not configured by this site's owner yet. Public OAuth application IDs must be added to the deployment configuration.`}</InfoTip></div>}
-    <div className="d-flex flex-wrap gap-2 mb-3">
-      <button className="btn btn-primary" disabled={state.busy || !state.configured} onClick={() => { void connectCloud(); }}>
-        {state.connected ? 'Reconnect' : 'Connect'} {providerNames[state.provider]}
-      </button>
-      <button className="btn btn-outline-primary" disabled={state.busy || !state.connected} onClick={() => { void backupNow(); }}>Back up now</button>
-      <button className="btn btn-outline-primary" disabled={state.busy || !state.connected} onClick={() => {
-        void restoreNow().then(success => { if (success) window.location.reload(); });
-      }}>Restore backup</button>
-      <button className="btn btn-outline-secondary" disabled={state.busy || !state.connected} onClick={() => { void disconnectCloud(); }}>Disconnect</button>
+      {state.connected
+        ? <button className="btn btn-primary" disabled={state.busy} onClick={() => { void backupNow(); }}>Back up now</button>
+        : <button className="btn btn-primary" disabled={state.busy || !state.configured} onClick={() => { void connectCloud(); }}>Connect {providerNames[state.provider]}</button>}
     </div>
+    {!state.configured ? <div role="status" className="backup-status mb-3">Provider unavailable<InfoTip>{`${providerNames[state.provider]} is not configured by this site's owner yet. Public OAuth application IDs must be added to the deployment configuration.`}</InfoTip></div>
+      : <p className="backup-status">{state.connected ? `Connected to ${providerNames[state.provider]}` : 'Not connected'}</p>}
+    <fieldset className="my-3">
+    <legend className="h6">Automatic backups <InfoTip>PB backups follow a Single, Ao5, or Ao12. Automatic backups run while CuberPlus is open and authorized. If sign-in expires, reconnect here to send pending backups.</InfoTip></legend>
     <label className="d-block mb-2"><input className="form-check-input me-2" type="checkbox" checked={state.every100} disabled={state.busy}
       onChange={event => configureCloud(state.provider, event.target.checked, state.onPb)} />Back up every 100 solves</label>
     <label className="d-block mb-3"><input className="form-check-input me-2" type="checkbox" checked={state.onPb} disabled={state.busy}
-      onChange={event => configureCloud(state.provider, state.every100, event.target.checked)} />Back up after a PB<InfoTip>Single, Ao5, or Ao12. Automatic backups run while CuberPlus is open and authorized. If sign-in expires, reconnect here to send pending backups.</InfoTip></label>
-    <p className="mb-1">Last successful backup: {state.lastBackup ? new Date(state.lastBackup).toLocaleString() : 'Never'}<InfoTip>Backups are compressed and merge by solve ID: local data wins on backup; cloud data wins on restore. Restoring preserves local-only solves and reloads the site to apply settings. This is a backup, not live sync; deleting a local solve does not delete its cloud copy.</InfoTip></p>
-    {state.every100 && <p className="mb-1">{state.pending} / 100 new solves since the last successful backup</p>}
+      onChange={event => configureCloud(state.provider, state.every100, event.target.checked)} />Back up after a PB</label>
+    </fieldset>
+    <p className="backup-status mb-1">Last successful backup: {state.lastBackup ? new Date(state.lastBackup).toLocaleString() : 'Never'}<InfoTip>Backups are compressed and merge by solve ID: local data wins on backup; cloud data wins on restore. Restoring preserves local-only solves and reloads the site to apply settings. This is a backup, not live sync; deleting a local solve does not delete its cloud copy.</InfoTip></p>
+    {state.every100 && <p className="backup-status mb-1">{state.pending} / 100 new solves since the last successful backup</p>}
+    <details className="settings-disclosure"><summary>Restore and connection settings</summary>
+      <div className="d-flex flex-wrap gap-2">
+        <button className="btn btn-outline-secondary" disabled={state.busy || !state.connected} onClick={() => {
+          void restoreNow().then(success => { if (success) window.location.reload(); });
+        }}>Restore backup</button>
+        {state.connected && <button className="btn btn-outline-secondary" disabled={state.busy || !state.configured} onClick={() => { void connectCloud(); }}>Reconnect {providerNames[state.provider]}</button>}
+        <button className="btn btn-outline-secondary" disabled={state.busy || !state.connected} onClick={() => { void disconnectCloud(); }}>Disconnect</button>
+      </div>
+    </details>
   </section>;
 }
 export function CloudNotice() {

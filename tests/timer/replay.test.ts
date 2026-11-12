@@ -181,20 +181,30 @@ test('opens replay as a modal and closes with its button or Escape', async () =>
   expect(close).toHaveBeenCalledTimes(2);
 });
 
-test('the compact header keeps inspection beside turns and the X separate from horizontal solve actions', async () => {
+test('replay prioritizes time and playback while keeping solution, analysis and recording details available on demand', async () => {
   await draw({ ...recording('R U2', "U2 R'"), inspection: 2345 });
   const header = container.querySelector('.replay-header')!;
   expect(header.querySelector('[aria-label="Solve time"]')!.textContent).toBe('0.100s');
-  const inspection = header.querySelector('[aria-label="Inspection time"]')!;
-  expect(inspection.previousElementSibling!.textContent).toBe('3 turns');
+  expect(header.querySelector('[aria-label="Inspection time"]')).toBeNull();
+  const inspection = container.querySelector('[aria-label="Inspection time"]')!;
+  expect(inspection.closest('details')!.open).toBe(false);
   expect(inspection.textContent).toBe('Inspection: 2.345s');
   expect(header.querySelector('[aria-label="Close replay"]')).not.toBeNull();
   expect(header.querySelector('a')).toBeNull();
   expect(container.querySelector('.replay-scramble a')!.textContent).toBe('Retry');
-  expect(inspection.nextElementSibling!.getAttribute('aria-label')).toBe('Solve date');
+  expect(header.querySelector('[aria-label="Solve date"]')).not.toBeNull();
   expect(Array.from(container.querySelectorAll('[aria-label="Solve penalties and deletion"] button'), element => element.textContent)).toEqual(['Delete']);
-  expect(header.querySelector('h2')).toBeNull();
-  expect(header.textContent).not.toMatch(/Solve replay|complete|host timing|quarter turns/i);
+  expect(header.querySelector('h2')!.textContent).toBe('Solve replay');
+  expect(header.textContent).not.toMatch(/complete|host timing|quarter turns/i);
+  const solution = container.querySelector('[aria-label="Solution steps"]')!.closest('details')!;
+  expect(solution.open).toBe(false);
+  await act(async () => solution.querySelector('summary')!.click());
+  expect(solution.open).toBe(true);
+  await click('Next move');
+  expect(position()).toBe('1');
+  await draw({ ...recording('R', "R'") }, jest.fn());
+  expect(container.querySelector('[aria-label="Base cross color"]')!.closest('details')!.open).toBe(false);
+  expect(container.querySelector('[aria-label="Solve penalties and deletion"]')!.closest('details')).toBeNull();
 });
 
 test('Delete removes only the selected saved solve, notifies mounted pages, and closes read-only replay', async () => {
@@ -284,10 +294,11 @@ test('replay lists real undo mistakes without flagging sensor-split double turns
   expect(feedback.querySelectorAll('li')).toHaveLength(1);
   const explanation = "A move immediately cancelled by its inverse (R R') in the named step or AUF.";
   expect(feedback.textContent).not.toContain(explanation);
-  const info = feedback.querySelector<HTMLButtonElement>('button[aria-label^="About "]')!;
+  const info = feedback.querySelector<HTMLButtonElement>('li .info-tip')!;
+  expect(info.getAttribute('aria-label')).toBe(explanation);
   expect(info.textContent).toBe('\u24d8');
   await act(async () => info.focus());
-  const tooltip = feedback.querySelector('[role="tooltip"]')!;
+  const tooltip = container.querySelector('[role="tooltip"]')!;
   expect(tooltip.textContent).toBe(explanation);
   expect(tooltip.closest('dialog')).toBe(container.querySelector('dialog'));
   await act(async () => info.blur());
@@ -367,7 +378,8 @@ test.each([
   const source = container.querySelector('[aria-label="Solve source"]')!;
   expect(source.previousElementSibling!.getAttribute('aria-label')).toBe('Solve ID');
   expect(source.firstChild!.textContent).toBe(label);
-  expect(source.querySelector('button')).not.toBeNull();
+  const recording = source.closest('.replay-recording')!;
+  expect(recording.querySelector('button')!.closest('details')).toBeNull();
 });
 
 test('keyboard seeking distinguishes turns sharing a timestamp and background visibility pauses playback', async () => {
@@ -555,7 +567,14 @@ test('replay shows recognized F2L, OLL and PLL labels beside the step headings, 
     expect(container.querySelectorAll('dialog.case-dialog .database-case')).toHaveLength(1);
     await click('Close algorithm case');
     expect(container.querySelector('dialog[aria-label="Solve replay"]')!.hasAttribute('open')).toBe(true);
+    const heading = container.querySelector<HTMLButtonElement>(`[aria-label="${label} solution"] h3 button`)!;
+    expect(heading.textContent).toBe(label);
+    expect(heading.getAttribute('aria-label')).toContain('open');
+    await act(async () => heading.click());
+    await waitFor(() => expect(container.querySelector('dialog.case-dialog .database-case')?.id).toBe(caseId));
+    await click('Close algorithm case');
   }
+  expect(container.querySelector('[aria-label="Cross solution"] h3 button')).toBeNull();
   expect({ ...solve, analysis: undefined, cfop: undefined }).toEqual(before);
   await draw({ ...solve, status: 'incomplete' });
   expect(container.querySelector('[aria-label="OLL case"]')!.textContent).toBe('OLL 34');
@@ -565,6 +584,7 @@ test('replay shows recognized F2L, OLL and PLL labels beside the step headings, 
   expect(solved.textContent).toBe('Solved');
   expect(solved.tagName).toBe('SPAN');
   expect(solved.hasAttribute('href')).toBe(false);
+  expect(container.querySelector('[aria-label="PLL solution"] h3 button')).toBeNull();
 });
 
 test('combined turns seek to the last raw move while next, previous and playback preserve intermediate states', async () => {

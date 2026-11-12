@@ -1,7 +1,22 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { usePageDialog } from '@cuberplus/navigation';
 import { cubeConnection, useCubeConnection } from '../cube/connection';
 import { InfoTip } from './InfoTip';
 
+export function CubeButton({ connected, open }: { connected: boolean; open: () => void }) {
+  return <button type="button" className={`btn btn-outline-secondary cube-setup-button${connected ? ' is-connected' : ''}`} aria-label="Bluetooth cube setup" onClick={open}><span aria-hidden="true">&#9679;</span> Cube</button>;
+}
+export function CubeConnectionMenu() {
+  const dialog = useRef<HTMLDialogElement>(null), { connection } = useCubeConnection();
+  usePageDialog(dialog, false);
+  useEffect(() => { if (connection) dialog.current?.close(); }, [connection]);
+  return <><CubeButton connected={!!connection} open={() => dialog.current?.showModal()} />
+    <dialog ref={dialog} className="page-options-dialog" aria-labelledby="trainer-cube-title">
+      <div className="page-heading"><h2 id="trainer-cube-title">Bluetooth cube setup <InfoTip>Choose a saved cube or connect another device. Manage saved cubes and Bluetooth addresses in the site Options. Bluetooth requires HTTPS and a supported browser, such as Chrome or Edge.</InfoTip></h2><button ref={button => { if (button) button.autofocus = true; }} type="button" className="btn-close" aria-label="Close cube setup" onClick={() => dialog.current?.close()} /></div>
+      <CubeConnectionControls />
+      {(!navigator.bluetooth || !window.isSecureContext) && <p className="mt-3 mb-0">Bluetooth needs a supported browser and HTTPS or localhost.</p>}
+    </dialog></>;
+}
 export function CubePicker({ disabled = false, change }: { disabled?: boolean; change?: (mac: string) => void }) {
   const { cubes, selected } = useCubeConnection();
   return cubes.length ? <select aria-label="My cube" className="form-select w-auto" disabled={disabled} value={selected} onChange={event => {
@@ -22,11 +37,18 @@ export function CubeConnectionControls() {
   </div>;
 }
 export function MyCubes() {
-  const { cubes, connection, connecting, error } = useCubeConnection();
+  const { cubes, connection, connecting } = useCubeConnection();
   const [name, setName] = useState(''), [mac, setMac] = useState('');
-  return <section className="mb-4" aria-label="My cubes">
-    <h3 className="h5">My cubes <InfoTip>Save a name and optional Bluetooth MAC for each cube. Choose a saved cube in Timer or Trainer before connecting. The browser may still ask you to select the Bluetooth device. One connection is shared across pages.</InfoTip></h3>
-    {cubes.map(cube => <div key={cube.id} className="d-flex align-items-center gap-2 flex-wrap mb-2">
+  return <section className="settings-section" aria-label="My cubes">
+    <h3>Connect cube <InfoTip>One Bluetooth connection is shared across pages. Choose a saved cube or connect another device. Expand a saved cube to edit its name or optional Bluetooth MAC. The browser may still ask you to select the device. Bluetooth requires a secure connection and a supported browser, such as Chrome or Edge.</InfoTip></h3>
+    <div className="settings-status">
+      <span className="backup-status" role="status">{connection ? `Connected to ${connection.deviceName}` : connecting ? 'Connecting...' : !navigator.bluetooth || !window.isSecureContext ? 'Bluetooth unavailable in this browser' : 'No cube connected'}</span>
+      <CubeConnectionControls />
+    </div>
+    {!!cubes.length && <h4 className="h6 mt-4">Saved cubes</h4>}
+    {cubes.map(cube => <details key={cube.id} className="saved-cube">
+      <summary>{cube.name}</summary>
+      <div className="settings-fields">
       <label>Cube name<input className="form-control" aria-label={`Name for ${cube.name}`} maxLength={100} value={cube.name}
         onChange={event => cubeConnection.save({ ...cube, name: event.target.value })} /></label>
       <label>Bluetooth MAC<input className="form-control" aria-label={`MAC for ${cube.name}`} placeholder="AA:BB:CC:DD:EE:FF" maxLength={17} value={cube.mac}
@@ -35,15 +57,16 @@ export function MyCubes() {
         cubeConnection.select(cube.id); void cubeConnection.connect().catch(() => {});
       }}>Connect {cube.name}</button>
       <button className="btn btn-outline-danger" onClick={() => cubeConnection.forget(cube.id)}>Forget {cube.name}</button>
-    </div>)}
-    <form className="d-flex gap-2 align-items-end flex-wrap mt-3" onSubmit={event => {
+      </div>
+    </details>)}
+    <details className="settings-disclosure"><summary>Add a cube</summary>
+    <form className="settings-fields" onSubmit={event => {
       event.preventDefault(); cubeConnection.save({ id: crypto.randomUUID(), name: name.trim(), deviceName: '', mac: mac.trim() }); setName(''); setMac('');
     }}>
       <label>New cube name<input className="form-control" required maxLength={100} value={name} onChange={event => setName(event.target.value)} /></label>
       <label>MAC (if required)<input className="form-control" placeholder="AA:BB:CC:DD:EE:FF" pattern="([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}" value={mac} onChange={event => setMac(event.target.value)} /></label>
       <button className="btn btn-outline-primary" disabled={!name.trim()}>Save cube</button>
     </form>
-    <div className="mt-3"><CubeConnectionControls /></div>
-    {error && <p role="status" className="text-warning">{error}</p>}
+    </details>
   </section>;
 }

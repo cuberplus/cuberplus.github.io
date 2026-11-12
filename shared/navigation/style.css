@@ -2,7 +2,7 @@
 
 :is(dialog, .modal, .offcanvas) .btn-close { flex-shrink: 0; width: 1rem; height: 1rem; padding: .5rem; font-size: 16px; background-size: 1rem 1rem; box-sizing: content-box; }
 :is(dialog, .modal, .offcanvas) .btn-close:focus-visible { outline: 2px solid var(--cp-accent); outline-offset: 2px; }
-html:not([data-theme="light"]) .btn-close { filter: invert(1) grayscale(100%) brightness(200%); }
+html[data-bs-theme="dark"] .btn-close { filter: invert(1) grayscale(100%) brightness(200%); }
 .case-dialog .cuberplus-page { min-height: 0; }
 .case-dialog .database-main { padding: 0 !important; }
 .case-dialog .cuberplus-page { background: transparent; }
@@ -11,7 +11,7 @@ html:not([data-theme="light"]) .btn-close { filter: invert(1) grayscale(100%) br
 .case-dialog .database-group-content { padding: 0; }
 .case-dialog .database-case { border: 0; padding: 0; }
 
-.cuberplus-page { display: flex; flex-direction: column; min-height: 100vh; }
+.cuberplus-page { display: flex; flex-direction: column; min-height: 100dvh; }
 .cuberplus-footer { flex-shrink: 0; margin-top: auto; padding: 24px; background: color-mix(in srgb, var(--cp-bg) 75%, transparent); color: var(--cp-muted); text-align: center; font: 400 13px/20px var(--cp-font); }
 
 .cuberplus-page .cuberplus-header {
@@ -31,23 +31,59 @@ html:not([data-theme="light"]) .btn-close { filter: invert(1) grayscale(100%) br
   color: var(--cp-text);
   box-shadow: none;
 }
-.cuberplus-navigation { display: flex; align-items: center; flex-shrink: 0; gap: 16px; }
+.cuberplus-navigation { display: flex; align-items: center; min-width: 0; width: 100%; gap: 16px; }
 .cuberplus-title { margin: 0; font: 800 28px/40px var(--cp-font); letter-spacing: -1px; }
 .cuberplus-navigation .cuberplus-brand { display: block; color: var(--cp-text); font: inherit; letter-spacing: inherit; text-decoration: none; white-space: nowrap; }
-.cuberplus-links { display: flex; align-items: center; gap: 4px; }
-.cuberplus-links a { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex-shrink: 0; border-radius: 6px; color: var(--cp-text); text-decoration: none; }
+.cuberplus-links { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.cuberplus-menu { display: none; }
+.cuberplus-links a { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 8px; flex-shrink: 0; border-radius: 6px; color: var(--cp-text); font-size: .875rem; text-decoration: none; }
 .cuberplus-links svg { display: block; }
 .cuberplus-links a:hover, .cuberplus-links a[aria-current="page"] { color: var(--cp-accent); background: var(--cp-subtle); }
 .cuberplus-navigation a:focus-visible { outline: 2px solid var(--cp-accent); outline-offset: 3px; }
 .cuberplus-header-controls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-left: auto; }
 .cuberplus-header > .local-badge { margin-left: auto; }
-@media (max-width: 720px) {
-  .cuberplus-page .cuberplus-header { min-height: 72px; padding: 16px 12px; }
-  .cuberplus-navigation { gap: 12px; flex-wrap: wrap; max-width: 100%; }
-  .cuberplus-links { gap: 0; }
-  .cuberplus-links a { width: 36px; }
+@media (max-width: 1100px) {
+  .cuberplus-page .cuberplus-header { min-height: 56px; padding: 6px 12px; }
+  .cuberplus-navigation { gap: 8px; flex-wrap: wrap; justify-content: space-between; }
+  .cuberplus-title { font-size: 24px; }
+  .cuberplus-menu { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+  .cuberplus-links { display: none; gap: 4px; width: 100%; margin: 0; }
+  .cuberplus-links.is-open { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cuberplus-links a { flex-direction: column; gap: 2px; min-width: 0; min-height: 60px; font-size: .8rem; }
+  .cuberplus-links svg { width: 20px; height: 20px; }
+  .cuberplus-header-controls { width: 100%; }
 }
+.cuberplus-page > main { width: 100%; max-width: 1440px; margin-inline: auto; padding: 24px; }
+.cuberplus-page > main > .container { max-width: none; padding: 0; margin: 0 !important; }
+.cuberplus-page .route-heading { margin-block: 0 1rem; font: 650 1.5rem/1.3 var(--cp-font); letter-spacing: normal; }
+.page-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.page-heading .route-heading { margin: 0; }
+.page-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.page-heading > .page-actions { margin-left: auto; }
+.page-options-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 44px; min-height: 44px; }
+.cube-setup-button { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
+.cube-setup-button > span { font-size: .65rem; }
+.cube-setup-button.is-connected { color: var(--cp-accent); }
+.page-options-dialog { width: min(480px, calc(100% - 2rem)); max-height: calc(100% - 2rem); margin: auto; overflow-y: auto; padding: 24px; color: var(--cp-text); background: var(--cp-panel); border: 1px solid var(--cp-border); border-radius: 16px; box-shadow: 0 16px 64px #0008; }
+.page-options-dialog::backdrop { background: #000a; }
+dialog:modal { overscroll-behavior: contain; }
+dialog::backdrop { overflow: hidden; overscroll-behavior: contain; }
+.page-options-dialog > .page-heading h2 { font-size: 1.25rem; margin: 0; }
+.page-options-dialog .btn-close { flex-shrink: 0; }
+.page-options-dialog:not([open]) { display: none; }
+.solve-limit { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: .875rem; }
+.solve-limit .form-select { width: auto; min-height: 44px; }
+.solve-limit .ms-2 { margin-left: 0 !important; }
+@media (max-width: 720px) {
+  .cuberplus-page > main { padding: 16px 12px !important; }
+  .page-options-button > span { display: none; }
+  .page-heading > .page-actions > .btn { padding: 8px; white-space: nowrap; font-size: .875rem; }
+}
+.route-heading:focus-visible { outline: 2px solid var(--cp-accent); outline-offset: 4px; }
+.route-skip { position: fixed; top: -100px; left: 12px; z-index: 1200; padding: 12px; background: var(--cp-panel); }
+.route-skip:focus { top: 8px; }
 @media print {
+  .page-heading > .page-actions { display: none; }
   .cuberplus-page { display: block; min-height: 0; }
   .cuberplus-page .cuberplus-header, .cuberplus-footer { display: none; }
 }

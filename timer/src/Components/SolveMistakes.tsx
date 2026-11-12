@@ -1,6 +1,5 @@
 import { useContext, useEffect, useRef, useState } from 'react';
 import { PageVisible } from '@cuberplus/navigation';
-import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { MISTAKES, mistakeKey, mistakeLabel, rankedMistakes } from '../../../smartcubeanalyzer/src/Analysis/MistakeAnalysis';
 import { StepName, type Solve as AnalyzedSolve } from '../../../smartcubeanalyzer/src/Models/Types';
 import { type Solve } from '../Core/engine';
@@ -62,9 +61,7 @@ export function SolveMistakes({ solve, cube, history = emptyHistory, brief = fal
       </li>)}
       {mistakes.map(mistake => <li key={mistakeKey(mistake)}>
       <strong>{mistakeLabel(mistake)}</strong> ({loss(mistake.estimatedSeconds ?? 0)}){' '}
-      <OverlayTrigger placement="top" container={feedback} overlay={<Tooltip id={`replay-mistake-${mistakeKey(mistake)}`}>{MISTAKES[mistake.kind].rule}</Tooltip>}>
-        <button type="button" className="btn btn-link btn-sm p-0 border-0 text-secondary text-decoration-none" aria-label={`About ${mistakeLabel(mistake)}`}>&#9432;</button>
-      </OverlayTrigger>
+      <InfoTip id={`replay-mistake-${mistakeKey(mistake)}`}>{MISTAKES[mistake.kind].rule}</InfoTip>
     </li>)}</ul>}
   </section>;
 }

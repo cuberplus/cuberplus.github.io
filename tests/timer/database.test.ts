@@ -1,4 +1,4 @@
-import { algorithms, casePattern, categories, illustrateCases } from '../../src/database/algorithms';
+import { algorithms, casePattern, illustrateCases } from '../../src/database/algorithms';
 import { CASE_IDS, recognizeCase } from '../../timer/src/Analysis/cases';
 import { type Cube, loadCube, SOLVED } from '../../timer/src/Core/puzzle';
 import { caseStates } from './fixtures/cfop-cases';
@@ -25,12 +25,11 @@ const target = (category: string, facelets: string) => category === 'PLL' ? face
   f2lIndices.every(i => facelets[i] === SOLVED[i]) && (category !== 'OLL' || facelets.slice(0, 9) === 'U'.repeat(9));
 
 test('database retains every recognized case and includes all advanced F2L variants', () => {
-  for (const category of categories) {
-    if (category === 'AF2L') continue;
+  for (const category of ['F2L', 'OLL', 'PLL'] as const) {
     expect(algorithms.filter(entry => entry.category === category).map(entry => entry.id).sort()).toEqual([...CASE_IDS[category]].sort());
   }
   for (const entry of algorithms) {
-    expect(entry.options.length).toBeGreaterThanOrEqual(2);
+    expect(entry.options.length).toBeGreaterThanOrEqual(entry.category === 'OF2L' ? 1 : 2);
     expect(new Set(entry.options).size).toBe(entry.options.length);
     expect(entry.options[0]).toBe(entry.algorithm);
   }
@@ -38,7 +37,7 @@ test('database retains every recognized case and includes all advanced F2L varia
     .toEqual(Array.from({ length: 42 }, (_, i) => i < 12 ? [String(i + 1), `${i + 1}a`] : [String(i + 1)]).flat());
 });
 
-test.each(options.filter(entry => entry.category !== 'AF2L'))('$category $id: $algorithm matches its case and solves independent case states', entry => {
+test.each(options.filter(entry => entry.category === 'F2L' || entry.category === 'OLL' || entry.category === 'PLL'))('$category $id: $algorithm matches its case and solves independent case states', entry => {
   const before = casePattern(cube, entry.algorithm);
   expect(before.patternData.CENTERS.pieces).toEqual(cube.solved().patternData.CENTERS.pieces);
   expect(recognizeCase(entry.category === 'F2L' ? 4 : entry.category === 'OLL' ? 5 : 6,

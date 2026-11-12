@@ -7,7 +7,7 @@ and printable practice worksheets. One React/Vite app serves all tools at
 | Tool | Route | Purpose |
 | --- | --- | --- |
 | Timer | `/timer/` | Bluetooth timing, CFOP splits, replay, sessions, and records |
-| Smartcube Analyzer | `/smartcubeanalyzer/` | Timing, efficiency, mistakes, and case-level statistics |
+| Smartcube Analyzer | `/analyzer/` | Timing, efficiency, mistakes, and case-level statistics |
 | Scrambler | `/scrambler/` | Optimal partial-cube practice worksheets |
 | Algorithm database | `/database/` | F2L, Advanced F2L, OLL, and PLL algorithms and favorites |
 | Options | `/options/` | Theme, time precision, CSV imports, and cloud backups |

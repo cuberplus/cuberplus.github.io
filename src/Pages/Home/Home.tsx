@@ -24,7 +24,7 @@ const tools = [
     id: 'analyzer',
     name: 'Smartcube Analyzer',
     category: 'Understand your solves',
-    href: '/smartcubeanalyzer/',
+    href: '/analyzer/',
     image: analyzerScreenshot,
     alt: 'Smartcube Analyzer showing solve time, recognition and execution, solve distribution, and turns-per-second charts with 5,000-solve windows.',
     description: 'Turn your Cubeast or Acubemy exports into clear charts. Find patterns in your recognition, execution, and progress over time.',
@@ -74,6 +74,7 @@ function App() {
         <Navigation current="home" />
       </header>
       <main className="page-width">
+        <h1 className="route-heading">Tools for better solves</h1>
         <section className="tools" id="tools" aria-label="Cubing tools" tabIndex={-1}>
           {tools.map(tool => <article key={tool.id}>
             <a className="tool-card" href={tool.href} aria-labelledby={`${tool.id}-title`} aria-describedby={`${tool.id}-description`}>

@@ -45,6 +45,32 @@ test('persisted analysis and CFOP are reused after an IndexedDB and backup round
     expect(await readLocalAnalysis()).toEqual(first);
   } finally { parse.mockRestore(); }
 });
+test('recent analysis skips historical CFOP, preserves original caches and recordings, and All restores details', async () => {
+  const cached = { ...sample(), id: 'cached', createdAt: '2026-01-01T00:00:00.000Z' };
+  solveAnalysis(cached, cube);
+  const uncached = { ...sample(), id: 'uncached', createdAt: '2026-01-02T00:00:00.000Z' };
+  const newest = { ...sample(), id: 'newest', createdAt: '2026-01-03T00:00:00.000Z' };
+  solveAnalysis(newest, cube);
+  await saveSolves([cached, uncached, newest]);
+  const before = await readSolves();
+  const parse = jest.spyOn(cube, 'parse').mockImplementation(() => { throw new Error('Historical CFOP must not run'); });
+  try {
+    const records = await readLocalAnalysis(1);
+    expect(records.map(record => record.id)).toEqual(['cached', 'uncached', 'newest']);
+    expect(records.map(record => record.time)).toEqual([cached, uncached, newest].map(solve => solve.duration / 1000));
+    expect(records[0].steps.every(step => !step.moves)).toBe(true);
+    expect(records[0].recording).toBeUndefined();
+    expect(records[1].steps).toEqual([]);
+    expect(records[2].steps.some(step => !!step.moves)).toBe(true);
+    const stored = await readSolves();
+    for (const id of ['cached', 'uncached']) expect(stored.find(solve => solve.id === id)).toEqual(before.find(solve => solve.id === id));
+  } finally { parse.mockRestore(); }
+  const all = await readLocalAnalysis(0);
+  expect(all.every(record => record.steps.some(step => !!step.moves))).toBe(true);
+  const stored = await readSolves();
+  expect(stored.find(solve => solve.id === 'uncached')!.analysis).toBeDefined();
+  expect(stored.map(solve => solve.moves)).toEqual(before.map(solve => solve.moves));
+});
 test('background derived writes do not overwrite newer edits or resurrect deleted solves', async () => {
   const solve = sample(), record = solveAnalysis(solve, cube);
   await saveSolves([{ ...solve, penalty: 2000, penaltyReason: 'manual' }]);

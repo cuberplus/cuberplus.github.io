@@ -53,8 +53,7 @@ jest.mock('../../smartcubeanalyzer/src/Workers/createChartWorker', () => ({
 
 const DEMO_CSV = join(process.cwd(), "smartcubeanalyzer", "public", "demo", "demo-solves.csv");
 const EXPECTED_SOLVES = 21793;
-// One solve exceeds the default filters; the DNF now stays in average windows.
-const EXPECTED_SHOWN = 21792;
+const EXPECTED_SHOWN = 10000;
 
 let rawCsv: string;
 
@@ -118,19 +117,21 @@ describe('loading the bundled dev stats through the UI', () => {
     });
 
     test(
-        'the app shows every solve, plots real numbers, and restores identical data after filter changes',
+        'the app retains all solves for records, scopes detailed charts, and restores identical data after filter changes',
         async () => {
             mockChartProps.length = 0;
             mockWorkerResults.length = 0;
             render(React.createElement(FileInput));
 
             await waitFor(() => expect(mockChartProps.length).toBeGreaterThan(0), { timeout: 240_000 });
+            fireEvent.click(screen.getByRole('button', { name: 'All charts', exact: true }));
 
             fireEvent.click(screen.getByLabelText('Open filters'));
-            const label = await screen.findByText(/Showing .* solves/);
+            const label = await screen.findByText(`Showing ${EXPECTED_SHOWN} / ${EXPECTED_SOLVES} solves`);
             const [shown, total] = (label.textContent?.match(/\d+/g) ?? []).map(Number);
             expect(total).toBe(EXPECTED_SOLVES);
             expect(shown).toBe(EXPECTED_SHOWN);
+            expect(mockWorkerResults.at(-1)!.input.recordSolves).toHaveLength(EXPECTED_SOLVES);
 
             // The reported failure rendered every chart as a flat line of zeroes,
             // so require each chart to plot real values, not just the set overall.
@@ -154,11 +155,13 @@ describe('loading the bundled dev stats through the UI', () => {
             };
             // Capture values, not references: mistake classification mutates source solves.
             const baseline = snapshot();
+            const baselineRecords = mockWorkerResults.at(-1)!.chartData.recordRows;
             const changeAndRestore = async (change: () => void | Promise<void>, restore: () => void) => {
                 let requests = mockWorkerResults.length;
                 await change();
                 await waitFor(() => expect(mockWorkerResults.length).toBeGreaterThan(requests));
                 expect(snapshot().charts === baseline.charts).toBe(false);
+                expect(mockWorkerResults.at(-1)!.chartData.recordRows).toEqual(baselineRecords);
                 requests = mockWorkerResults.length;
                 restore();
                 await waitFor(() => expect(mockWorkerResults.length).toBeGreaterThan(requests));
@@ -179,14 +182,16 @@ describe('loading the bundled dev stats through the UI', () => {
                 );
             }
             fireEvent.click(screen.getByLabelText('Open filters'));
+            (screen.getByText('Cases and solve quality').closest('details') as HTMLDetailsElement).open = true;
+            (screen.getByText('Chart settings').closest('details') as HTMLDetailsElement).open = true;
+            const cleanliness = within(document.getElementById('filter-SolveCleanliness')!.closest('fieldset')!);
             for (const excluded of ['Mistake', 'Clean']) {
-                // Cleanliness is the fourth multi-select in the filter drawer.
-                fireEvent.click(screen.getAllByText('All items are selected.')[3]);
+                fireEvent.click(cleanliness.getByText('All items are selected.'));
                 await changeAndRestore(
                     () => fireEvent.click(screen.getByRole('option', { name: excluded, exact: true })),
                     () => fireEvent.click(screen.getByRole('option', { name: excluded, exact: true }))
                 );
-                fireEvent.click(screen.getAllByText('All items are selected.')[3]);
+                fireEvent.click(cleanliness.getByText('All items are selected.'));
             }
             const input = (id: string) => screen.getAllByRole('spinbutton').find(field => field.getAttribute('id') === id)!;
             const toggle = (id: string) => screen.getAllByRole('switch').find(field => field.getAttribute('id') === id)!;
@@ -211,7 +216,7 @@ describe('loading the bundled dev stats through the UI', () => {
             await changeAndRestore(
                 async () => {
                     fireEvent.change(input('fastestSolve'), { target: { value: '300' } });
-                    await waitFor(() => expect(screen.getByText(/Showing .* solves/).textContent).toContain('Showing 1 /'));
+                    await waitFor(() => expect(screen.getAllByText(/Showing .* solves/).some(label => label.textContent?.includes('Showing 0 /'))).toBe(true));
                 },
                 () => fireEvent.change(input('fastestSolve'), { target: { value: '0' } })
             );

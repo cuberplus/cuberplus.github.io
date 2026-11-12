@@ -1,14 +1,29 @@
 /** @jest-environment jsdom */
 import { createRef } from 'react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { FilterPanel } from '../../smartcubeanalyzer/src/Components/FilterPanel';
 import { makeSolves } from './testUtils';
+import { StepName } from '../../smartcubeanalyzer/src/Models/Types';
 
 jest.mock('../../smartcubeanalyzer/src/Components/ChartPanel', () => ({ ChartPanel: () => null }));
 beforeAll(() => Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({
   matches: false, addListener: jest.fn(), removeListener: jest.fn(), addEventListener: jest.fn(), removeEventListener: jest.fn(),
 }) }));
 afterEach(() => { cleanup(); jest.useRealTimers(); });
+test('step selection reports actual presets, manual changes, and reset without losing the recent scope', () => {
+  const ref = createRef<FilterPanel>(), changed = jest.fn();
+  const solves = makeSolves(12), view = render(<FilterPanel ref={ref} solves={solves} onStepsChange={changed} />);
+  expect(changed.mock.calls.at(-1)![0]).toHaveLength(7);
+  act(() => ref.current!.applyStepsPreset([StepName.OLL]));
+  expect(changed).toHaveBeenLastCalledWith([StepName.OLL]);
+  act(() => ref.current!.chosenStepsChanged([{ value: StepName.PLL, label: StepName.PLL }]));
+  expect(changed).toHaveBeenLastCalledWith([StepName.PLL]);
+  view.rerender(<FilterPanel ref={ref} solves={solves} solveLimit={25000} onStepsChange={changed} />);
+  act(() => ref.current!.resetFilters());
+  expect(changed.mock.calls.at(-1)![0]).toHaveLength(7);
+  expect(ref.current!.state.lastAppliedSolveLimit).toBe(25000);
+  expect(screen.queryByRole('combobox', { name: 'Recent solves' })).toBeNull();
+});
 test('analyzer keeps its applied filters and chart data while a numeric filter is being retyped', () => {
   jest.useFakeTimers();
   const ref = createRef<FilterPanel>();
@@ -17,7 +32,7 @@ test('analyzer keeps its applied filters and chart data while a numeric filter i
   const input = document.getElementById('slowestSolve') as HTMLInputElement;
   const filtered = ref.current!.state.compressedSolves;
   fireEvent.change(input, { target: { value: '1' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reset filters' }));
   act(() => jest.advanceTimersByTime(500));
   expect(ref.current!.state.filters.slowestTime).toBe(300);
   const activeInput = document.getElementById('slowestSolve') as HTMLInputElement;
@@ -33,7 +48,7 @@ test('analyzer keeps its applied filters and chart data while a numeric filter i
   expect(ref.current!.state.filters.slowestTime).toBe(25);
   expect(ref.current!.state.compressedSolves).not.toBe(filtered);
   fireEvent.change(activeInput, { target: { value: '1' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reset filters' }));
   act(() => jest.advanceTimersByTime(500));
   expect(ref.current!.state.filters.slowestTime).toBe(300);
   view.unmount();
@@ -81,7 +96,7 @@ test('date filters debounce independently and discard pending edits on reset or 
   expect(ref.current!.state.filters.endDate.toDateString()).toBe(new Date(2024, 0, 2).toDateString());
   fireEvent.change(document.getElementById('startDate')!, { target: { value: '01/03/2024' } });
   fireEvent.change(document.getElementById('endDate')!, { target: { value: '01/04/2024' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reset filters' }));
   const reset = ref.current!.state.filters;
   act(() => jest.advanceTimersByTime(500));
   expect(ref.current!.state.filters).toBe(reset);

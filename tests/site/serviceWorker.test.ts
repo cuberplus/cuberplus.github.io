@@ -48,7 +48,7 @@ test('case images cache sequentially after the shell, so offline cases need no r
   await installing;
   expect(app.cache.add.mock.calls).toEqual([['/case-images/F2L.svg'], ['/case-images/OLL-27.svg']]);
 });
-test.each(['/', '/timer/', '/timer/index.html', '/smartcubeanalyzer/', '/scrambler/', '/database/', '/database/index.html', '/trainer/', '/trainer/index.html'])('offline navigation to %s returns the cached single-app shell', async path => {
+test.each(['/', '/timer/', '/timer/index.html', '/analyzer/', '/analyzer', '/analyzer/index.html', '/smartcubeanalyzer/', '/scrambler/', '/database/', '/database/index.html', '/trainer/', '/trainer/index.html'])('offline navigation to %s returns the cached single-app shell', async path => {
   const app = worker();
   app.entries.set('/index.html', new Response('offline shell'));
   app.fetch.mockRejectedValue(new Error('Offline'));

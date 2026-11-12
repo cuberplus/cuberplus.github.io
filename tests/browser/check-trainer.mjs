@@ -45,7 +45,7 @@ try {
   await page.goto(`${base}/trainer/`);
   await expect(page.getByRole('button', { name: /OLL Blitz/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /PLL Blitz/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Options', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Options', exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: /OLL Blitz/ }).click();
   const options = page.locator('.site-page--trainer').getByRole('dialog');
   await expect(page.getByLabel('Upcoming cases', { exact: true })).toBeHidden();
@@ -55,6 +55,7 @@ try {
   await expect(options.getByLabel('Hide PLL stickers', { exact: true })).not.toBeChecked();
   await page.getByRole('button', { name: 'Close options', exact: true }).click();
   await expect(options).toBeHidden();
+  await page.getByRole('button', { name: 'Bluetooth cube setup', exact: true }).click();
   await page.getByRole('button', { name: 'Connect cube', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Start Blitz', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Start Blitz', exact: true }).click();
@@ -130,6 +131,7 @@ try {
   const result = page.getByRole('region', { name: 'Blitz result' });
   await expect(result).toHaveClass(/card/);
   await expect(result.locator('tbody svg')).toHaveCount(21);
+  for (const setup of await result.locator('.trainer-case-setup > summary').all()) await setup.click();
   await expect(result.getByText(/^Pre-AUF:/)).toHaveCount(21);
   await expect(result.getByText(/^Post-AUF:/)).toHaveCount(21);
   const timingTotals = ['recognitionMilliseconds', 'executionMilliseconds'].map(key =>
@@ -150,14 +152,21 @@ try {
   expect(await result.locator('tbody tr td:first-child').allTextContents()).toEqual(Array.from({ length: 21 }, (_, i) => String(21 - i)));
   // The same connection remains active when changing tools.
   await page.getByRole('link', { name: 'Timer', exact: true }).click();
+  await page.getByRole('button', { name: 'Bluetooth cube setup', exact: true }).click();
   await expect(page.locator('.site-page--timer').getByRole('button', { name: 'Disconnect', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close cube setup', exact: true }).click();
   await page.getByRole('link', { name: 'Trainer', exact: true }).filter({ visible: true }).click();
+  await page.getByRole('button', { name: 'Bluetooth cube setup', exact: true }).click();
   await expect(page.locator('.site-page--trainer').getByRole('button', { name: 'Disconnect', exact: true })).toBeVisible();
   await page.locator('.site-page--trainer').getByRole('button', { name: 'Disconnect', exact: true }).click();
+  await page.getByRole('button', { name: 'Close cube setup', exact: true }).click();
   await page.getByRole('link', { name: 'Timer', exact: true }).click();
+  await page.getByRole('button', { name: 'Bluetooth cube setup', exact: true }).click();
   await page.locator('.site-page--timer').getByRole('button', { name: 'Connect cube', exact: true }).click();
   await page.getByRole('link', { name: 'Trainer', exact: true }).click();
+  await page.getByRole('button', { name: 'Bluetooth cube setup', exact: true }).click();
   await expect(page.locator('.site-page--trainer').getByRole('button', { name: 'Disconnect', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close cube setup', exact: true }).click();
   await page.getByRole('button', { name: 'Back to drills', exact: true }).click();
   await page.getByRole('button', { name: /OLL Blitz/ }).click();
   await page.getByRole('button', { name: 'Options', exact: true }).click();
@@ -189,10 +198,13 @@ try {
   await page.getByRole('button', { name: 'Give up', exact: true }).click();
   await page.getByRole('link', { name: 'Options', exact: true }).click();
   const myCubes = page.getByRole('region', { name: 'My cubes', exact: true });
+  await myCubes.locator('.saved-cube > summary').filter({ hasText: 'GAN 356 i Carry' }).click();
   await expect(myCubes.getByLabel('Name for GAN 356 i Carry', { exact: true })).toBeVisible();
+  await myCubes.getByText('Add a cube', { exact: true }).click();
   await myCubes.getByLabel('New cube name', { exact: true }).fill('Travel cube');
   await myCubes.getByLabel('MAC (if required)', { exact: true }).fill('11:22:33:44:55:66');
   await myCubes.getByRole('button', { name: 'Save cube', exact: true }).click();
+  await myCubes.locator('.saved-cube > summary').filter({ hasText: 'Travel cube' }).click();
   await expect(myCubes.getByLabel('Name for Travel cube', { exact: true })).toBeVisible();
   await myCubes.getByRole('button', { name: 'Forget Travel cube', exact: true }).click();
   await expect(myCubes.getByLabel('Name for Travel cube', { exact: true })).toHaveCount(0);
@@ -210,9 +222,10 @@ try {
     history.pushState(null, '', '/timer/');
     dispatchEvent(new PopStateEvent('popstate'));
   });
-  await expect(page.locator('.site-page--trainer dialog')).not.toHaveAttribute('open', '');
+  await expect(page.locator('.site-page--trainer .trainer-settings')).not.toHaveAttribute('open', '');
   await page.getByRole('link', { name: 'Trainer', exact: true }).click();
   await expect(options).toBeHidden();
+  await page.getByRole('button', { name: 'Bluetooth cube setup', exact: true }).click();
   await page.getByRole('button', { name: 'Connect cube', exact: true }).click();
   await page.getByRole('button', { name: 'Start Blitz', exact: true }).click();
   await page.evaluate(() => window.trainerEvent({ type: 'DISCONNECT' }));
@@ -242,8 +255,8 @@ try {
     localStorage.setItem('cuberplus-trainer-blitz-v1', JSON.stringify([run, legacy, ...runs]));
   });
   await page.reload();
-  await page.getByText(/^OLL Blitz - 3.00s -/).click();
-  const ollHistory = page.locator('details').filter({ has: page.getByText(/^OLL Blitz - 3.00s -/) });
+  const ollHistory = page.locator('.trainer-run').filter({ has: page.locator('.trainer-run-time', { hasText: '3.00s' }) });
+  await ollHistory.locator(':scope > summary').click();
   await expect(ollHistory.locator('tbody svg')).toHaveCount(3);
   expect(await ollHistory.locator('tbody svg rect').evaluateAll(stickers => new Set(stickers.map(sticker => sticker.getAttribute('fill'))).size)).toBe(2);
   await expect(ollHistory.locator('tbody svg rect[fill="#697384"]').first()).toBeVisible();
@@ -256,8 +269,8 @@ try {
   expect(await ollHistory.locator('tbody tr td:first-child').allTextContents()).toEqual(['2', '1', '3']);
   await ollHistory.getByRole('button', { name: 'Execution', exact: true }).click();
   expect(await ollHistory.locator('tbody tr td:first-child').allTextContents()).toEqual(['2', '1', '3']);
-  await page.getByText(/^OLL Blitz - 6.00s -/).click();
-  const legacyHistory = page.locator('details').filter({ has: page.getByText(/^OLL Blitz - 6.00s -/) });
+  const legacyHistory = page.locator('.trainer-run').filter({ has: page.locator('.trainer-run-time', { hasText: '6.00s' }) });
+  await legacyHistory.locator(':scope > summary').click();
   expect(await legacyHistory.locator('dl[aria-label="Timing breakdown"] dd').allTextContents()).toEqual(['Not recorded', 'Not recorded']);
   expect(await legacyHistory.locator('tbody tr td:nth-child(3)').allTextContents()).toEqual(['Not recorded', 'Not recorded', 'Not recorded']);
   expect(await legacyHistory.locator('tbody tr td:nth-child(4)').allTextContents()).toEqual(['Not recorded', 'Not recorded', 'Not recorded']);

@@ -38,7 +38,13 @@ import { CaseThumbnail } from '../../../src/database/CaseThumbnail';
 const TimerReplay = React.lazy(() => import('../../../timer/src/Components/analyzer-replay'));
 
 ChartJS.register(CategoryScale);
-
+const SECTIONS: Record<string, string[]> = {
+    Overview: ['Average Time', 'Current Records', 'mistakes', 'Average Recognition and Execution'],
+    Progress: ['Average Time', 'Average Turns Per Second', 'Average Turns', 'Average Standard Deviation', "Percentage of 'Good' and 'Bad' Solves", 'Count of Solves by How Long They Took'],
+    Technique: ['Average Recognition and Execution', 'Solve Efficiency', 'Percentage of Solves by Cross Color', 'First F2L Pair', 'Average solve time by inspection time', 'Average Time by Step', 'Average Inspection Time', 'Time Per Step, Compared to Typical Solver', 'Percentage of the Solve Each Step Took', 'mistakes'],
+    Cases: ['Average Recognition Time and Execution Time per Case', 'Algorithm Practice', 'OLL Edge Orientation', 'PLL Corner Permutation'],
+    Records: ['Current Records', 'History of Records', 'Longest Daily Streaks', 'Daily Fastest Solve', `Top ${Const.FastestSolvesCount} Fastest Solves`],
+};
 /** Each watched prop is compared with !==, so only identity-comparable values belong here. */
 type WatchedProp = Solve[] | number | string | boolean | MethodName;
 
@@ -86,7 +92,7 @@ export function algoCols(step: StepName, openCase: (key: string) => void = () =>
             renderCell: ({ row }: RenderCellProps<AlgoPracticeRow>) => {
                 const url = databaseCaseUrl(step, row.case);
                 return url === null ? row.case :
-                    <button type="button" aria-label={row.case} className="algo-case-link btn btn-link p-0" onClick={() => openCase(url.split('#')[1])}>
+                    <button type="button" aria-label={row.case} className="algo-case-link btn btn-link" onClick={() => openCase(url.split('#')[1])}>
                         <CaseThumbnail category={step === StepName.OLL ? 'OLL' : step === StepName.PLL ? 'PLL' : 'F2L'} id={row.case} />{row.case}
                     </button>;
             },
@@ -140,7 +146,8 @@ export function SortableGrid<R>({ rows, columns, className, onCellClick }: Sorta
     return <div style={chartDataGridWrapStyle} className={className}>
         <DataGrid style={chartDataGridStyle} rows={sorted} columns={columns} rowHeight={columns[0]?.key === 'case' ? 64 : 35}
             sortColumns={sortColumns} onSortColumnsChange={setSortColumns}
-            defaultColumnOptions={{ sortable: true, minWidth: MIN_COL_WIDTH }} onCellClick={onCellClick} />
+            defaultColumnOptions={{ sortable: true, minWidth: MIN_COL_WIDTH }} onCellClick={onCellClick}
+            onCellKeyDown={(args, event) => { if (onCellClick && args.mode === 'SELECT' && !(event.target instanceof Element && event.target.closest('button,a,input,select,textarea')) && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); event.preventGridDefault(); onCellClick({ ...args, selectCell: () => {} }); } }} />
     </div>;
 }
 
@@ -159,12 +166,13 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
 
     static getDerivedStateFromProps(nextProps: ChartPanelProps, prevState: ChartPanelState & { _propsKey?: string }): Partial<ChartPanelState & { _propsKey?: string }> | null {
         const propsKey = `${nextProps.steps.join(',')}|${nextProps.methodName}`;
-        return prevState._propsKey === propsKey ? null : { chartData: null, isComputing: true, _propsKey: propsKey };
+        return prevState._propsKey === propsKey ? null : { chartData: null, isComputing: true, _propsKey: propsKey, section: prevState.section === 'Cases' && !caseCategory(nextProps.steps) ? 'Overview' : prevState.section };
     }
 
     private _worker: Worker | null = null;
     private caseColumns = new Map([StepName.OLL, StepName.PLL, StepName.F2L].map(step => [step, algoCols(step, caseKey => this.setState({ caseKey }))]));
     private _pendingRequestId = 0;
+    private readyFrame = 0;
 
     /** Snapshot of the props the worker depends on; `solves` is compared by reference. */
     private _lastWatched: WatchedProp[] = [];
@@ -176,7 +184,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
 
     private _watched(): WatchedProp[] {
         const p = this.props;
-        return [p.solves, p.windowSize, p.pointsPerGraph, p.steps.join(','), p.useLogScale,
+        return [p.solves, p.recordSolves ?? p.solves, p.windowSize, p.pointsPerGraph, p.steps.join(','), p.useLogScale,
             p.goodTime, p.badTime, p.methodName, p.use4SegmentTiming, p.chopAverages !== false, p.chopPercentage ?? 5, this._isDark(), this._precision()];
     }
 
@@ -194,6 +202,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
         this._worker.postMessage({
             requestId: this._pendingRequestId,
             solves: p.solves,
+            recordSolves: p.recordSolves?.map(solve => ({ ...solve, steps: [], recording: undefined, mistakes: undefined })),
             windowSize: p.windowSize,
             pointsPerGraph: p.pointsPerGraph,
             steps: p.steps,
@@ -211,7 +220,11 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
         this._worker = createChartWorker();
         this._worker.onmessage = (e: MessageEvent<WorkerOutput>) => {
             if (e.data.requestId !== this._pendingRequestId) return; // stale response
-            this.setState({ chartData: e.data.chartData, isComputing: false });
+            this.setState({ chartData: e.data.chartData, isComputing: false }, () => {
+                const request = e.data.requestId;
+                cancelAnimationFrame(this.readyFrame);
+                this.readyFrame = requestAnimationFrame(() => { this.readyFrame = requestAnimationFrame(() => { if (request === this._pendingRequestId) this.props.onReady?.(); }); });
+            });
         };
         this._sendWork();
     }
@@ -221,6 +234,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
     }
 
     componentWillUnmount() {
+        cancelAnimationFrame(this.readyFrame);
         this._worker?.terminate();
         this._worker = null;
     }
@@ -235,8 +249,8 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
 
     selectSolves(solves: Solve[], percentage = 0, title?: string) {
         if (!solves.length) return;
-        const numbers = new Map(this.props.solves.map((solve, index) => [solve, index + 1]));
-        this.setState({ average: { solves, numbers: solves.map(solve => numbers.get(solve)!), percentage, title: title && `${title} (${solves.length} solves)` } });
+        const numbers = new Map((this.props.recordSolves ?? this.props.solves).map((solve, index) => [solve.id, index + 1]));
+        this.setState({ average: { solves, numbers: solves.map(solve => numbers.get(solve.id)!), percentage, title: title && `${title} (${solves.length} solves)` } });
     }
 
     openMistakes(mistake: Mistake) {
@@ -248,8 +262,9 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
         const data = this.state.chartData?.[key], p = this.props;
         if (!point || !data || !('datasets' in data)) return;
         const dataset = data.datasets[point.datasetIndex], label = String(data.labels?.[point.index] ?? '');
+        const endingSolve = (p.recordSolves ?? p.solves)[Number(label) - 1];
         if (!dataset || dataset.data[point.index] == null) return;
-        let solves = p.solves, percentage = p.chopAverages === false ? 0 : p.chopPercentage ?? 5;
+        let solves = key === 'recordHistory' || key === 'dailyRecord' ? (p.recordSolves ?? p.solves).filter(solve => !solve.isCorrupt && solve.session !== 'Retries') : p.solves, percentage = p.chopAverages === false ? 0 : p.chopPercentage ?? 5;
         if (key === 'dailyRecord') {
             const solve = fastestByDay(solves.filter(solve => !solve.dnf)).get(label);
             if (solve) this.openSolveSource(solve);
@@ -264,7 +279,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
             if (!window || !end) return;
             solves = solves.slice(end - window, end); percentage = 5;
         } else if (key === 'runningAverage') {
-            const end = Number(label);
+            const end = solves.findIndex(solve => solve.id === endingSolve?.id) + 1;
             solves = solves.slice(end - p.windowSize, end);
         } else {
             solves = solves.filter(s => !s.dnf);
@@ -275,8 +290,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
                 if (key === 'typicalCompare' && point.datasetIndex !== 0) return;
                 solves = solves.slice(-p.windowSize);
             } else {
-                const end = p.solves[Number(label) - 1];
-                solves = solves.slice(0, solves.indexOf(end) + 1).slice(-p.windowSize);
+                solves = solves.slice(0, solves.findIndex(solve => solve.id === endingSolve?.id) + 1).slice(-p.windowSize);
             }
         }
         let title: string | undefined;
@@ -314,9 +328,9 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
             const options = { ...createOptions(type, x, y, p.useLogScale, stacked, date, isDark),
                 ...(y.endsWith('(s)') && key !== 'runningTps' ? { plugins: { tooltip: { callbacks: { label: (item: { dataset: { label?: string }; parsed: number | { y: number | null } }) => `${item.dataset.label}: ${Number(typeof item.parsed === 'number' ? item.parsed : item.parsed.y).toFixed(this._precision())}s` } } } } : {}),
                 onClick: (_event: ChartEvent, points: ActiveElement[]) => this.openAverage(key, points[0]), ...(key === 'runningAverage' ? { spanGaps: false } : {}) };
-            const chart = type === ChartType.Line ? <Line data={data as ChartData<'line', (number | null | DatedPoint)[], string>} options={options} />
-                : type === ChartType.Bar ? <Bar data={data as LabelledChart<'bar', string | number>} options={key === 'caseData' ? withCaseTooltip(options, this._precision()) : options} />
-                : <Doughnut data={data as LabelledChart<'doughnut'>} options={options} />;
+            const chart = type === ChartType.Line ? <Line aria-label={title} data={data as ChartData<'line', (number | null | DatedPoint)[], string>} options={options} />
+                : type === ChartType.Bar ? <Bar aria-label={title} data={data as LabelledChart<'bar', string | number>} options={key === 'caseData' ? withCaseTooltip(options, this._precision()) : options} />
+                : <Doughnut aria-label={title} data={data as LabelledChart<'doughnut'>} options={options} />;
             charts.push(buildChartHtml(chart, title, tooltip));
         };
 
@@ -339,19 +353,19 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
         plot('runningTurns', "Average Turns", "This chart shows your average number of turns, in quarter turn metric", ChartType.Line, 'Solve Number', 'Turns');
         charts.push(<MistakeChart key="mistakes" summary={c.mistakes} select={mistake => this.openMistakes(mistake)} />);
         plot('runningEfficiency', "Solve Efficiency", "Move efficiency measures redundant moves, not optimal solution length. OLL/PLL success and combined efficiency require case labels; missing recordings or cases produce gaps, not perfect scores. Import and re-analyze saved recordings in Options to fill missing cases.", ChartType.Line, 'Solve Number', 'Percentage');
-        charts.push(buildChartHtml(<SortableGrid rows={c.bestSolvesData} columns={BEST_SOLVES_COLS} className="clickable-grid" onCellClick={({ row }) => this.openSolveSource(row)} />, `Top ${Const.FastestSolvesCount} Fastest Solves`, `This shows your ${Const.FastestSolvesCount} fastest solves, given the filters`));
+        charts.push(buildChartHtml(<SortableGrid rows={c.bestSolvesData} columns={BEST_SOLVES_COLS} className="clickable-grid" onCellClick={({ row }) => this.openSolveSource(row)} />, `Top ${Const.FastestSolvesCount} Fastest Solves`, `Your ${Const.FastestSolvesCount} fastest solves across all history, without analysis filters or the recent-solves limit.`));
         plot('runningStdDev', "Average Standard Deviation", "This chart shows your running average's standard deviation");
         plot('runningColorPercentages', "Percentage of Solves by Cross Color", "This chart shows what percentage of solves started with cross on White/Yellow/etc...", ChartType.Line, 'Solve Number', 'Percentage');
         plot('runningFirstPairPercentages', "First F2L Pair", "The four F2L pairs for your most-used cross axis (opposite cross colors are combined). Each window totals 100% among identified pairs on that axis; windows without identified pairs are gaps.", ChartType.Line, 'Solve Number', 'Percentage');
         plot('inspection', "Average solve time by inspection time", "This chart shows your average, grouped up by how much inspection time (For example, the left bar is the 1/7 of your solves with the lowest inspection time, and the right bar is the 1/7 of your solves with the most inspection time)", ChartType.Bar, 'Inspection Time (s)', 'Solve Time (s)');
         if (hasStepTimings) plot('stepAverages', "Average Time by Step", "This chart shows what percentage of your solve each step takes");
         plot('runningInspection', "Average Inspection Time", "This chart shows how much inspection time you use on average");
-        charts.push(buildChartHtml(<SortableGrid rows={c.streakRows} columns={STREAK_COLS} onCellClick={({ row, column }) => this.selectSolves(streakSolves(p.solves, column.key === 'currentstreak' ? row.currentDays : row.bestDays), 0, `Daily best - ${row.time}`)} />, "Longest Daily Streaks", "Consecutive local calendar days. Current streaks include yesterday until today is over. Click Current or Longest to view each day's best solve in that streak; click a target to view its longest streak."));
-        plot('dailyRecord', "Daily Fastest Solve", "This chart shows the fastest solve for each day, based on the selected filters", ChartType.Line, 'Date', 'Time (s)', true, true);
+        charts.push(buildChartHtml(<SortableGrid rows={c.streakRows} columns={STREAK_COLS} onCellClick={({ row, column }) => this.selectSolves(streakSolves((p.recordSolves ?? p.solves).filter(solve => !solve.isCorrupt && solve.session !== 'Retries'), column.key === 'currentstreak' ? row.currentDays : row.bestDays), 0, `Daily best - ${row.time}`)} />, "Longest Daily Streaks", "Consecutive local calendar days across all history, without filters or the recent-solves limit. Current streaks include yesterday until today is over. Click a streak to view each day's best solve."));
+        plot('dailyRecord', "Daily Fastest Solve", "The fastest solve for each day across all history, without analysis filters or the recent-solves limit.", ChartType.Line, 'Date', 'Time (s)', true, true);
         charts.push(buildChartHtml(<SortableGrid rows={c.recordRows} columns={RECORD_COLS} onCellClick={({ row }) => {
             const datasetIndex = c.recordHistory.datasets.findIndex(dataset => dataset.label === `Record ${row.recordType}`), dataset = c.recordHistory.datasets[datasetIndex];
             if (dataset?.data.length) this.openAverage('recordHistory', { datasetIndex, index: dataset.data.length - 1 } as ActiveElement);
-        }} />, "Current Records", "Your current records for Single, Ao5, Ao12, Ao100, and Ao1000. Click to view the record solve or average."));
+        }} />, "Current Records", "All-time Single, Ao5, Ao12, Ao100, and Ao1000 across all sessions, without analysis filters or the recent-solves limit. Click to view the record solve or average."));
 
         if (hasOll) plot('ollCategory', "OLL Edge Orientation", "Percentages among recognized OLL cases in each window. Missing case data produces gaps; import and re-analyze saved recordings in Options to reconstruct it.", ChartType.Line, 'Solve Number', 'Percentage');
         if (hasPll) plot('pllCategory', "PLL Corner Permutation", "Percentages among recognized PLL cases in each window. Missing case data produces gaps; import and re-analyze saved recordings in Options to reconstruct it.", ChartType.Line, 'Solve Number', 'Percentage');
@@ -366,12 +380,14 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
 
         if (p.steps.length === Const.MethodSteps[p.methodName].length) {
             plot('goodBad', "Percentage of 'Good' and 'Bad' Solves", "This chart shows your running average of solves considered 'good' and 'bad'. This can be configured in the filter panel. Just set the good and bad values to times you feel are correct", ChartType.Line, 'Solve Number', 'Percentage');
-            plot('recordHistory', "History of Records", "This chart shows your history of PBs. Note that this will only show solves that meet the criteria in your filters, so don't be alarmed if you don't see your PB here. As a note, Ao12 removes the best and worst solves of the 12. Ao100 removes the best and worst 5. Ao1000 removes the best and worst 50.", ChartType.Line, 'Date', 'Time (s)', true, true);
         }
+        plot('recordHistory', "History of Records", "All-time PBs, without analysis filters or the recent-solves limit. Standard averages trim 5% from each end, rounded up.", ChartType.Line, 'Date', 'Time (s)', true, true);
 
         return (
             <div>
-                <Row className="g-2 g-md-3">{charts}</Row>
+                <nav aria-label="Analysis views" className="analysis-views">{[...Object.keys(SECTIONS), 'All charts'].map(section => <button key={section} className={`btn btn-${(this.state.section ?? 'Overview') === section ? 'primary' : 'outline-primary'}`} aria-pressed={(this.state.section ?? 'Overview') === section} onClick={() => this.setState({ section })}>{section}</button>)}</nav>
+                {this.state.section === 'Cases' && !category && <div className="alert alert-info">Choose the F2L, OLL or PLL preset for individual case statistics.</div>}
+                <Row className="g-3">{charts.filter(chart => this.state.section === 'All charts' || SECTIONS[this.state.section ?? 'Overview'].includes(String(chart.key)))}</Row>
                 {this.state.average && <AverageModal {...this.state.average} close={() => this.setState({ average: undefined })} view={solve => this.openSolveSource(solve)} />}
                 {this.state.replayId && <React.Suspense fallback={<Spinner role="status" animation="border" />}><TimerReplay key={this.state.replayId} id={this.state.replayId} close={() => this.setState({ replayId: undefined })} /></React.Suspense>}
                 {this.state.caseKey && <CaseModal caseKey={this.state.caseKey} close={() => this.setState({ caseKey: undefined })} />}

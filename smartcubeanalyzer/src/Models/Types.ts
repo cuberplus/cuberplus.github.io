@@ -2,6 +2,7 @@
 // pulling in React so this file can be safely imported by Web Workers.
 // The chart.js import is type-only, so it is erased before the worker bundle is built.
 import type { ChartData, DefaultDataPoint } from 'chart.js/auto';
+import type { ReactNode } from 'react';
 import type { Mistake, MistakeSummary } from '../Analysis/MistakeAnalysis';
 
 /** Every chart in this app labels its axis with strings, so TLabel is pinned rather than left as Chart.js' default. */
@@ -157,13 +158,16 @@ export const caseCategory = (steps: StepName[]): StepName | undefined => steps.l
     : steps.length === 1 && [StepName.OLL, StepName.PLL].includes(steps[0]) ? steps[0] : undefined;
 
 export interface FilterPanelProps {
-    solves: Solve[],
+    solves: Solve[], solveLimit?: number,
+    preparedSolves?: Solve[],
     suggestedMethod?: Option<MethodName>,
     suggestedSessions?: Option[],
     suggestedWindowSize?: number,
-    showTestAlert?: boolean,
+    source?: string, presets?: ReactNode,
     isParsing?: boolean,
-    onMethodChange?: (method: MethodName) => void
+    onMethodChange?: (method: MethodName) => void,
+    onStepsChange?: (steps: StepName[]) => void,
+    onReady?: () => void
 }
 
 export interface FilterPanelState {
@@ -173,6 +177,7 @@ export interface FilterPanelState {
     lastAppliedSolves: Solve[],
     lastAppliedFilters: Filters | null,
     lastAppliedWindowSize: number,
+    lastAppliedSolveLimit: number,
     filters: Filters,
 
     // Objects required for filter objects to work
@@ -190,7 +195,6 @@ export interface FilterPanelState {
     windowSize: number,
     pointsPerGraph: number,
     showFilters: boolean,
-    showTestAlert: boolean,
     badTime: number,
     goodTime: number,
     method: Option<MethodName>,
@@ -209,18 +213,19 @@ export interface FileInputState {
     suggestedMethod?: Option<MethodName>,
     suggestedSessions?: Option[],
     suggestedWindowSize?: number,
-    showTestAlert?: boolean,
     isParsing: boolean,
     loadError?: string,
     unloadedCount?: number,
     savedAnalysisChanged?: boolean,
     currentMethod: MethodName
+    selectedSteps?: StepName[]
+    source?: string
 }
 
 export interface ChartPanelProps {
     windowSize: number,
     pointsPerGraph: number,
-    solves: Solve[],
+    solves: Solve[], recordSolves?: Solve[],
     badTime: number,
     goodTime: number,
     methodName: MethodName,
@@ -228,10 +233,11 @@ export interface ChartPanelProps {
     useLogScale: boolean,
     use4SegmentTiming: boolean,
     chopAverages?: boolean,
-    chopPercentage?: number
+    chopPercentage?: number,
+    onReady?: () => void
 }
 
-export interface ChartPanelState { chartData: ChartDataBundle | null; isComputing: boolean; replayId?: string; caseKey?: string; average?: { solves: Solve[]; numbers: number[]; percentage: number; title?: string }; }
+export interface ChartPanelState { chartData: ChartDataBundle | null; isComputing: boolean; section?: string; replayId?: string; caseKey?: string; average?: { solves: Solve[]; numbers: number[]; percentage: number; title?: string }; }
 
 /** A record chart plots one point per personal best, so its x axis is a date rather than a category. */
 export type DatedPoint = { x: Date; y: number; endIndex?: number };

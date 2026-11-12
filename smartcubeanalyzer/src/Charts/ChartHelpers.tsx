@@ -1,5 +1,6 @@
 import { ReactNode, useId, useState } from "react";
-import { Card, CardText, Col, OverlayTrigger, Tooltip } from "react-bootstrap";
+import { Card, CardText, Col, Tooltip } from "react-bootstrap";
+import { InfoTip } from '../../../shared/Components/InfoTip';
 import type { TooltipItem } from "chart.js";
 import { ChartType, StepName } from "../Models/Types";
 import { DARK_AXIS_COLORS } from "./ChartColors";
@@ -24,16 +25,16 @@ export function createTooltip(description: string) {
     return <Tooltip id="tooltip">{description}</Tooltip>;
 }
 
-export function ChartCard({ children, title, tooltip, label = title, scrollable = false }: {
-    children: ReactNode; title: string; tooltip?: string; label?: string; scrollable?: boolean;
+export function ChartCard({ children, title, tooltip, label = title, scrollable = false, explorer }: {
+    children: ReactNode; title: string; tooltip?: string; label?: string; scrollable?: boolean; explorer?: ReactNode;
 }) {
     const [expanded, setExpanded] = useState(false);
     const id = useId();
-    const heading = <CardText as="h2" className="fs-6 lh-base text-center fw-bold flex-grow-1 mb-0">{title}{tooltip && ' ⓘ'}</CardText>;
     return <Col className={expanded ? 'col-12' : 'col-12 col-md-6'}>
         <Card as="section" aria-label={label} className={`p-2 p-md-3 shadow-sm${expanded ? ' chart-card-expanded' : ''}`}>
             <div className="d-flex align-items-start gap-2 mb-3">
-                {tooltip ? <OverlayTrigger placement="top" overlay={<Tooltip id={`${id}-tooltip`}>{tooltip}</Tooltip>}>{heading}</OverlayTrigger> : heading}
+                <CardText as="h2" className="fs-6 lh-base fw-bold flex-grow-1 mb-0">{title}{tooltip && <InfoTip>{tooltip}</InfoTip>}</CardText>
+                {explorer}
                 <button type="button" className="btn btn-sm btn-outline-secondary d-none d-md-block flex-shrink-0" aria-expanded={expanded} aria-controls={id} onClick={() => setExpanded(!expanded)}>{expanded ? 'Collapse' : 'Expand'}</button>
             </div>
             <div id={id} role="group" aria-label={`${label} details`} className={`ratio ratio-4x3${scrollable ? ' chart-card-scroll' : ''}`}>
@@ -43,8 +44,8 @@ export function ChartCard({ children, title, tooltip, label = title, scrollable 
     </Col>;
 }
 
-export function buildChartHtml(chart: JSX.Element, title: string, tooltip: string): JSX.Element {
-    return <ChartCard key={title} title={title} tooltip={tooltip}>{chart}</ChartCard>;
+export function buildChartHtml(chart: JSX.Element, title: string, tooltip: string, explorer?: ReactNode): JSX.Element {
+    return <ChartCard key={title} title={title} tooltip={tooltip} explorer={explorer}>{chart}</ChartCard>;
 }
 
 interface ScaleTitle { display?: boolean; text?: string; color?: string; }

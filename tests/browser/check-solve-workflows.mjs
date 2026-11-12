@@ -19,7 +19,9 @@ try {
   await expect(page.getByLabel('Move metric')).toHaveValue('QTM');
   await expect(page.getByLabel('Minimum turns')).toHaveValue('4');
   await expect(page.getByLabel('Maximum turns')).toHaveValue('8');
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
   await expect(page.getByRole('button', { name: /Generate worksheet/ })).toBeEnabled({ timeout: 240000 });
+  await page.getByRole('button', { name: 'Close options', exact: true }).click();
   await screenshot('Scrambler');
   await page.goto(`${base}/timer/`);
   await expect(page.getByText('Try simulated cube', { exact: true })).toBeEnabled({ timeout: 60000 });
@@ -36,6 +38,7 @@ try {
   await expect(replay).toBeVisible();
   await expect(replay.locator('.replay-scramble').getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
   await expect(replay.getByLabel('Solve date', { exact: true })).toBeVisible();
+  await replay.getByText('Recording details', { exact: true }).click();
   await expect(replay.getByLabel('Solve source', { exact: true })).toHaveText('CuberPlus');
   const closeSize = await replay.getByRole('button', { name: 'Close replay' }).evaluate(button => {
     const style = getComputedStyle(button), box = button.getBoundingClientRect();
@@ -53,6 +56,7 @@ try {
   expect(Number(await replay.getByRole('slider').getAttribute('aria-valuenow'))).toBeGreaterThan(0);
   await replay.getByRole('slider').press('Home');
   await expect(replay.getByRole('slider')).toHaveAttribute('aria-valuenow', '0');
+  await replay.getByText('Solution moves', { exact: true }).click();
   const caseButton = replay.locator('button[aria-label$=" case"]').first();
   if (await caseButton.count()) {
     await caseButton.click();
@@ -117,7 +121,9 @@ try {
     await page.goto(`${base}/timer/?solve=${encodeURIComponent(solve.id)}`);
     await expect(replay).toBeVisible({ timeout: 60000 });
     await expect(replay.getByRole('img', { name: 'Live 3x3 cube state' })).toBeVisible();
+    await replay.getByText('Recording details', { exact: true }).click();
     await expect(replay.getByLabel('Solve source', { exact: true })).toContainText(source === 'cubeast' ? 'Cubeast (imported)' : 'Acubemy (imported)');
+    await replay.getByText('Solution moves', { exact: true }).click();
     await expect(replay.locator('button.move').first()).toBeVisible();
     await replay.getByRole('button', { name: 'Play', exact: true }).click();
     await expect(async () => {
@@ -141,10 +147,10 @@ try {
     }
     await page.setViewportSize({ width: 1440, height: 900 });
     await replay.getByRole('button', { name: 'Close replay' }).click();
-    await expect(page.getByRole('table', { name: 'Solve history' }).getByRole('columnheader')).toHaveText(['Solve', 'Time', 'Turns', 'TPS', 'View']);
+    await expect(page.getByRole('table', { name: 'Solve history' }).getByRole('columnheader')).toHaveText(['Solve', 'Time', 'Turns', 'TPS']);
   }
-  await page.goto(`${base}/smartcubeanalyzer/`);
-  await expect(page.getByRole('button', { name: 'Display My Stats!', exact: true })).toBeEnabled({ timeout: 60000 });
+  await page.goto(`${base}/analyzer/`);
+  await expect(page.getByRole('button', { name: 'Data', exact: true })).toBeEnabled({ timeout: 60000 });
   await expect(page.locator('canvas').first()).toBeVisible();
   const fastest = page.locator('.clickable-grid');
   await expect(fastest.getByRole('columnheader').nth(0)).toContainText('Time');
@@ -157,6 +163,7 @@ try {
   await page.goto(`${base}/database/#PLL-T`);
   const favorite = page.getByRole('button', { name: 'Favorite PLL T algorithm 1', exact: true });
   await favorite.click();
+  await page.getByText('Algorithm tools', { exact: true }).click();
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Un-Favorite All', exact: true }).click();
   await expect(favorite).toHaveAttribute('aria-pressed', 'false');

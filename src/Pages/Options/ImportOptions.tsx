@@ -35,7 +35,7 @@ export function ImportOptions() {
     } catch (failure) { setError(true); setMessage(failure instanceof Error ? failure.message : 'CSV import failed.'); }
     finally { setBusy(false); }
   }
-  return <section className="mt-4 border-top pt-4" aria-labelledby="import-heading">
+  return <section className="settings-section" aria-labelledby="import-heading">
     <h3 id="import-heading" className="d-flex align-items-center">Import solves<InfoTip>Merge Cubeast or Acubemy CSV exports into your local solve database. Existing solves and source labels are kept; duplicate source IDs are skipped. Valid original move recordings are retained for replay and reanalysis.</InfoTip></h3>
     <label className={`btn btn-outline-primary ${busy ? 'disabled' : ''}`}>{busy ? 'Importing...' : 'Import Cubeast / Acubemy CSV'}
       <input className="visually-hidden" aria-label="Import solve CSV files" type="file" accept=".csv,text/csv" multiple disabled={busy}

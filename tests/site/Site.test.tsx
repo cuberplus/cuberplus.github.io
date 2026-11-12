@@ -1,21 +1,21 @@
 import { useContext, useEffect, useRef, useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import Navigation, { SettingsContext, usePageDialog } from '@cuberplus/navigation';
+import Navigation, { PageVisible, SettingsContext, usePageDialog } from '@cuberplus/navigation';
 import Site, { toolAt } from '../../src/Site';
 
 const lifecycle = { mounts: 0, unmounts: 0 };
 jest.mock('../../timer/src/Bluetooth/bluetooth', () => ({ BluetoothCube: class {} }));
-jest.mock('../../src/Pages/Home/Home', () => ({ __esModule: true, default: () => <><Navigation current="home" /><a href="/timer/?solve=one">Shared solve<svg aria-hidden="true"><path /></svg></a><a href="https://example.com/timer/">External</a><input aria-label="Control" /></> }));
-jest.mock('../../smartcubeanalyzer/src/Components/App', () => ({ __esModule: true, default: () => <Navigation current="smartcubeanalyzer" /> }));
+jest.mock('../../src/Pages/Home/Home', () => ({ __esModule: true, default: () => <><Navigation current="home" /><main><h1>Home</h1><a href="/timer/?solve=one">Shared solve<svg aria-hidden="true"><path /></svg></a><a href="https://example.com/timer/">External</a><input aria-label="Control" /></main></> }));
+jest.mock('../../smartcubeanalyzer/src/Components/App', () => ({ __esModule: true, default: () => <><Navigation current="smartcubeanalyzer" /><main><h1>Analyzer</h1></main></> }));
 jest.mock('../../scrambler/src/Components/App', () => ({ __esModule: true, default: () => <Navigation current="scrambler" /> }));
 jest.mock('../../src/database/Database', () => ({ __esModule: true, default: () => <Navigation current="database" /> }));
 jest.mock('../../src/trainer/Trainer', () => ({ __esModule: true, default: () => <Navigation current="trainer" /> }));
 jest.mock('../../timer/src/App', () => ({ __esModule: true, default: function Timer() {
   const [solves, setSolves] = useState(0), dialog = useRef<HTMLDialogElement>(null);
-  const { precision } = useContext(SettingsContext);
+  const { precision, solveLimit } = useContext(SettingsContext);
   usePageDialog(dialog);
   useEffect(() => { lifecycle.mounts++; return () => { lifecycle.unmounts++; }; }, []);
-  return <><Navigation current="timer" /><p>Time: {(1.234).toFixed(precision)}</p><button onClick={() => setSolves(solves + 1)}>Record {solves}</button><dialog ref={dialog} aria-label="Retained modal" /></>;
+  return <><Navigation current="timer" /><p>Time: {(1.234).toFixed(precision)}</p><p>Recent scope: {solveLimit}</p><button onClick={() => setSolves(solves + 1)}>Record {solves}</button><dialog ref={dialog} aria-label="Retained modal" /></>;
 } }));
 beforeEach(() => {
   history.replaceState(null, '', '/');
@@ -29,10 +29,69 @@ afterEach(cleanup);
 const nav = () => within(screen.getByRole('navigation', { name: 'CuberPlus' }));
 async function visit(name: string) { fireEvent.click(nav().getByRole('link', { name, exact: true })); await screen.findByRole('link', { name, current: 'page' }); }
 
+test('the site-wide recent-solve setting updates retained tools and survives a reload', async () => {
+  const view = render(<Site />);
+  await screen.findByRole('heading', { name: 'Home' });
+  await visit('Timer');
+  expect(screen.getByText('Recent scope: 10000')).toBeDefined();
+  await visit('Options');
+  const select = screen.getByRole('combobox', { name: 'Recent solves', exact: true });
+  fireEvent.change(select, { target: { value: '25000' } });
+  expect(localStorage.getItem('recent-solve-limit')).toBe('25000');
+  await visit('Timer');
+  expect(screen.getByText('Recent scope: 25000')).toBeDefined();
+  view.unmount();
+  render(<Site />);
+  expect(await screen.findByText('Recent scope: 25000')).toBeDefined();
+  await visit('Options');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Recent solves', exact: true }), { target: { value: '0' } });
+  await visit('Timer');
+  expect(screen.getByText('Recent scope: 0')).toBeDefined();
+});
+
+test('navigation disclosure closes on Escape, navigation, and leaving a retained page', () => {
+  const view = render(<PageVisible.Provider value={true}><Navigation current="home" /></PageVisible.Provider>);
+  const menu = screen.getByRole('button', { name: /^Menu/ });
+  expect(menu.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(menu);
+  expect(menu.getAttribute('aria-expanded')).toBe('true');
+  fireEvent.keyDown(menu, { key: 'Escape' });
+  expect(menu.getAttribute('aria-expanded')).toBe('false');
+  expect(document.activeElement).toBe(menu);
+  fireEvent.click(menu);
+  fireEvent.click(nav().getByRole('link', { name: 'Timer', exact: true }));
+  expect(menu.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(menu);
+  view.rerender(<PageVisible.Provider value={false}><Navigation current="home" /></PageVisible.Provider>);
+  expect(menu.getAttribute('aria-expanded')).toBe('false');
+});
+
+test('lazy and retained routes focus their heading and give the skip link a stable target', async () => {
+  render(<Site />);
+  const home = await screen.findByRole('heading', { name: 'Home' });
+  await act(async () => {});
+  expect(document.activeElement).toBe(home);
+  expect(home.id).toBe('home-content');
+  await visit('Smartcube Analyzer');
+  const analyzer = await screen.findByRole('heading', { name: 'Analyzer' });
+  expect(document.activeElement).toBe(analyzer);
+  expect(screen.getByRole('link', { name: 'Skip to content' }).getAttribute('href')).toBe('#smartcubeanalyzer-content');
+  await visit('Home');
+  expect(document.activeElement).toBe(home);
+});
 test('tool URLs accept existing index paths but reject other files and nested routes', () => {
-  expect(['/','/index.html','/timer','/timer/index.html','/smartcubeanalyzer/','/scrambler/','/database/','/database/index.html'].map(toolAt)).toEqual(['home','home','timer','timer','smartcubeanalyzer','scrambler','database','database']);
+  expect(['/','/index.html','/timer','/timer/index.html','/analyzer/','/analyzer','/analyzer/index.html','/smartcubeanalyzer/','/scrambler/','/database/','/database/index.html'].map(toolAt)).toEqual(['home','home','timer','timer','smartcubeanalyzer','smartcubeanalyzer','smartcubeanalyzer','smartcubeanalyzer','scrambler','database','database']);
+  expect(toolAt('/analyzer/help/')).toBeNull();
   expect(toolAt('/timer/help/mac-address.html')).toBeNull();
   expect(toolAt('/not-a-tool/')).toBeNull();
+});
+test.each(['/smartcubeanalyzer', '/smartcubeanalyzer/', '/smartcubeanalyzer/index.html'])('legacy Analyzer link %s redirects without dropping query or fragment', async path => {
+  history.replaceState({ shared: true }, '', `${path}?source=timer#records`);
+  render(<Site />);
+  await screen.findByRole('heading', { name: 'Analyzer' });
+  expect(location.pathname + location.search + location.hash).toBe('/analyzer/?source=timer#records');
+  expect(history.state).toEqual({ shared: true });
+  expect(nav().getByRole('link', { name: 'Smartcube Analyzer' }).getAttribute('href')).toBe('/analyzer/');
 });
 test('tool navigation retains Timer state and lifecycle, closes hidden top-layer modals, and restores them on return', async () => {
   render(<Site />);
@@ -55,7 +114,7 @@ test('database appears immediately after Scrambler in navigation and swipe order
   render(<Site />);
   const navigation = await screen.findByRole('navigation');
   expect(within(navigation).getAllByRole('link').map(link => link.getAttribute('href')))
-    .toEqual(['/', '/timer/', '/smartcubeanalyzer/', '/trainer/', '/scrambler/', '/database/', '/options/']);
+    .toEqual(['/', '/timer/', '/analyzer/', '/trainer/', '/scrambler/', '/database/', '/options/']);
   swipe(navigation, -100);
   await screen.findByRole('link', { name: 'Database', current: 'page' });
   expect(location.pathname).toBe('/database/');
@@ -109,12 +168,12 @@ test.each(['missing', 'invalid', 'blocked'])('Aurora is the default when the sav
   } finally { read?.mockRestore(); }
 }, 15000);
 
-test.each(['light', 'dark', 'aurora', 'disco', 'inferno'])('options apply and persist the %s theme across all pages', async theme => {
+test.each(['light', 'dark', 'aurora', 'disco', 'inferno', '90s'])('options apply and persist the %s theme across all pages', async theme => {
   history.replaceState(null, '', '/options/');
   const view = render(<Site />);
   fireEvent.click(await screen.findByRole('button', { name: `${theme[0].toUpperCase() + theme.slice(1)} theme` }));
   expect(document.documentElement.dataset.theme).toBe(theme);
-  expect(document.documentElement.dataset.bsTheme).toBe(theme === 'light' ? 'light' : 'dark');
+  expect(document.documentElement.dataset.bsTheme).toBe(theme === 'light' || theme === '90s' ? 'light' : 'dark');
   expect(localStorage.getItem('theme')).toBe(theme);
   await visit('Scrambler');
   expect(document.documentElement.dataset.theme).toBe(theme);
@@ -159,7 +218,7 @@ test('theme carousel wraps in both directions and keeps the selected theme acces
   render(<Site />);
   fireEvent.click(await screen.findByRole('button', { name: 'Light theme' }));
   fireEvent.click(screen.getByRole('button', { name: 'Previous theme' }));
-  expect(screen.getByRole('button', { name: 'Inferno theme' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByRole('button', { name: '90s theme' }).getAttribute('aria-pressed')).toBe('true');
   fireEvent.click(screen.getByRole('button', { name: 'Next theme' }));
   expect(screen.getByRole('button', { name: 'Light theme' }).getAttribute('aria-pressed')).toBe('true');
   expect(localStorage.getItem('theme')).toBe('light');

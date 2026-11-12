@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import Database from '../../src/database/Database';
 import { loadCube } from '../../timer/src/Core/puzzle';
 import { discoverFavorites } from '../../timer/src/Analysis/favoriteAlgorithms';
+import { algorithms } from '../../src/database/algorithms';
 
 jest.mock('../../timer/src/Core/puzzle', () => ({ loadCube: jest.fn().mockResolvedValue({}) }));
 jest.mock('../../timer/src/Data/storage', () => ({ readSolves: jest.fn().mockResolvedValue([]) }));
@@ -30,6 +31,47 @@ beforeEach(() => {
   jest.mocked(loadCube).mockClear();
 });
 afterEach(cleanup);
+test('favorite search reveals only saved algorithms and preserves favorite storage', async () => {
+  localStorage.setItem('cuberplus-database-favorites', JSON.stringify(["PLL-1:R U2 R'"]));
+  render(<Database />);
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Search cases or algorithms' }), { target: { value: 'PLL-1' } });
+  expect(screen.getAllByRole('article')).toHaveLength(1);
+  expect(screen.getByRole('article').getAttribute('id')).toBe('PLL-1');
+  expect(screen.queryByRole('checkbox', { name: 'Favorites only' })).toBeNull();
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'favorite PLL-1' } });
+  expect(document.querySelectorAll('.database-algorithm')).toHaveLength(1);
+  expect(screen.getByText("R U2 R'")).toBeDefined();
+  fireEvent.click(screen.getByRole('button', { name: 'Unfavorite PLL 1 algorithm 2' }));
+  expect(screen.queryAllByRole('article')).toHaveLength(0);
+  expect(localStorage.getItem('cuberplus-database-favorites')).toBe('[]');
+  fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+  fireEvent.click(screen.getByRole('button', { name: 'F2L', exact: true }));
+  expect(document.querySelectorAll('.database-group')).toHaveLength(3);
+  expect(Array.from(document.querySelectorAll('.database-group > summary')).map(summary => summary.textContent)).toEqual([
+    expect.stringContaining('F2L'), expect.stringContaining('Advanced F2L'), expect.stringContaining('Other F2L'),
+  ]);
+});
+test('PLL search accepts spaces, hyphens, and the perm suffix', () => {
+  const originalCount = algorithms.length;
+  algorithms.push(...['Ja', 'Jb'].map(id => ({ category: 'PLL' as const, id, algorithm: "R U R'", options: ["R U R'"] })));
+  try {
+    render(<Database />);
+    const search = screen.getByRole('searchbox');
+    for (const value of ['J perm', 'PLL J', 'PLL-J']) {
+      fireEvent.change(search, { target: { value } });
+      expect(screen.getAllByRole('article').map(article => article.id)).toEqual(['PLL-Ja', 'PLL-Jb']);
+    }
+    expect(screen.getByRole('navigation', { name: 'Algorithm categories' }).querySelectorAll('button')).toHaveLength(3);
+  } finally { algorithms.splice(originalCount); }
+});
+test('a case hash clears finding filters and reveals the linked case', async () => {
+  render(<Database />);
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'no matching case' } });
+  expect(screen.queryAllByRole('article')).toHaveLength(0);
+  await act(async () => { history.replaceState(null, '', '/database/#OLL-1'); dispatchEvent(new HashChangeEvent('hashchange')); });
+  expect(screen.getByRole<HTMLInputElement>('searchbox').value).toBe('');
+  expect(await screen.findByRole('article', { name: 'OLL 1' })).toBeDefined();
+});
 test('Un-Favorite All respects cancellation and preserves custom algorithms and Unlearn selections', async () => {
   const custom = { 'F2L-1': ["F R U R' U' F'"] }, unlearn = ["F2L-1:R U2 R'"];
   localStorage.setItem('cuberplus-custom-algorithms', JSON.stringify(custom));
@@ -37,7 +79,7 @@ test('Un-Favorite All respects cancellation and preserves custom algorithms and 
   localStorage.setItem('cuberplus-database-favorites', JSON.stringify(["F2L-1:R U R'", "PLL-1:R U R'"]));
   const confirm = jest.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
   try {
-    render(<Database />); await openGroup();
+    render(<Database />); await openGroup(); openTools();
     fireEvent.click(screen.getByRole('button', { name: 'Un-Favorite All' }));
     expect(screen.getByRole('button', { name: 'Unfavorite F2L 1 algorithm 1' })).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: 'Un-Favorite All' }));
@@ -82,7 +124,8 @@ test.each(['F2L', 'AF2L', 'OF2L', 'OLL', 'PLL'])('a direct %s link renders and r
 });
 test('collapsed groups do not render case rows or run cube algorithms on page load', async () => {
   render(<Database />);
-  expect(document.querySelectorAll('details')).toHaveLength(5);
+  expect(document.querySelectorAll('.database-group')).toHaveLength(5);
+  expect(document.querySelector<HTMLDetailsElement>('.database-tools')!.open).toBe(false);
   expect(document.querySelectorAll('.database-case')).toHaveLength(0);
   const group = await openGroup();
   expect(within(group).getByText("R U R'")).toBeDefined();
@@ -178,6 +221,9 @@ test('legacy favorites and cross-tab preference updates are retained', async () 
 });
 test('manual algorithms are validated on submit, saved, and can be favorited after remount', async () => {
   const view = render(<Database />);
+  expect(screen.getByRole('button', { name: 'Add your own algorithm' }).closest<HTMLDetailsElement>('details')?.open).toBe(false);
+  openTools();
+  expect(screen.getByRole('button', { name: 'Add your own algorithm' }).closest('details')?.className).toBe('database-tools');
   fireEvent.click(screen.getByRole('button', { name: 'Add your own algorithm' }));
   fireEvent.change(screen.getByLabelText('Algorithm'), { target: { value: 'bad' } });
   fireEvent.click(screen.getByRole('button', { name: 'Add algorithm', exact: true }));
@@ -193,6 +239,7 @@ test('manual algorithms are validated on submit, saved, and can be favorited aft
 });
 test('the add-algorithm form has an explicit close button that does not save the draft', async () => {
   render(<Database />);
+  openTools();
   fireEvent.click(screen.getByRole('button', { name: 'Add your own algorithm' }));
   fireEvent.change(screen.getByLabelText('Algorithm'), { target: { value: "F R U R' U' F'" } });
   fireEvent.click(screen.getByRole('button', { name: 'Close add algorithm' }));
@@ -259,6 +306,7 @@ test('deleting the last custom algorithm removes its case entry without changing
 test('database exposes the shared favorite discovery and learning actions', async () => {
   jest.spyOn(window, 'confirm').mockReturnValue(true);
   render(<Database />);
+  openTools();
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Automatically find favorites' })));
   expect(screen.getByText(/Added 1 favorite/)).toBeDefined();
   expect(screen.getByRole('button', { name: 'Learn algorithms from solves' })).toBeDefined();
@@ -267,6 +315,7 @@ test('database exposes the shared favorite discovery and learning actions', asyn
 test('discovery and learning share one dismissible notification outside the action toolbar', async () => {
   jest.spyOn(window, 'confirm').mockReturnValue(true);
   render(<Database />);
+  openTools();
   const button = screen.getByRole('button', { name: 'Automatically find favorites' });
   const toolbar = button.parentElement!.parentElement!;
   await act(async () => fireEvent.click(button));
@@ -287,9 +336,11 @@ test('a failed discovery reports an actionable notification without changing fav
   jest.mocked(discoverFavorites).mockRejectedValueOnce(new Error('Failed to analyze'));
   localStorage.setItem('cuberplus-database-favorites', JSON.stringify(["F2L-1:R U2 R'"]));
   render(<Database />);
+  openTools();
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Automatically find favorites' })));
   const notice = screen.getByRole('complementary', { name: 'Algorithm notification' });
   expect(within(notice).getByRole('alert').textContent).toContain('Your existing favorites have not changed');
   expect(JSON.parse(localStorage.getItem('cuberplus-database-favorites')!)).toEqual(["F2L-1:R U2 R'"]);
   jest.restoreAllMocks();
 });
+function openTools() { fireEvent.click(screen.getByText('Algorithm tools')); }
