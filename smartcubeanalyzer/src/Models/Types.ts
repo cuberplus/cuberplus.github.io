@@ -158,7 +158,7 @@ export const caseCategory = (steps: StepName[]): StepName | undefined => steps.l
     : steps.length === 1 && [StepName.OLL, StepName.PLL].includes(steps[0]) ? steps[0] : undefined;
 
 export interface FilterPanelProps {
-    solves: Solve[], solveLimit?: number,
+    solves: Solve[], solveLimit?: number, sessionScope?: string, onSessionsChange?: (sessions: string[]) => void,
     preparedSolves?: Solve[],
     suggestedMethod?: Option<MethodName>,
     suggestedSessions?: Option[],
@@ -171,13 +171,13 @@ export interface FilterPanelProps {
 }
 
 export interface FilterPanelState {
-    allSolves: Solve[],
+    allSolves: Solve[], recordSolves: Solve[],
     filteredSolves: Solve[],
     compressedSolves: Solve[],
     lastAppliedSolves: Solve[],
     lastAppliedFilters: Filters | null,
     lastAppliedWindowSize: number,
-    lastAppliedSolveLimit: number,
+    lastAppliedSolveLimit: number, lastAppliedSession?: string, sessionOverride?: boolean,
     filters: Filters,
 
     // Objects required for filter objects to work

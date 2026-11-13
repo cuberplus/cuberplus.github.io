@@ -60,7 +60,7 @@ test('deleted Timer solves leave the loaded Analyzer data without removing other
     act(() => window.dispatchEvent(new CustomEvent('timer-solves-changed', { detail: { reanalyzed: true } })));
     expect(ref.current!.state.savedAnalysisChanged).toBe(true);
     expect(ref.current!.state.solves).toEqual([external]);
-    expect(screen.getByText('Load saved solves')).not.toBeNull();
+    expect(screen.getByText('Reload all solves')).not.toBeNull();
     unmount();
 });
 

@@ -11,7 +11,8 @@ import { analyzeCFOP, cfopFrame, CFOP_STEPS } from '../../timer/src/Analysis/cfo
 import { algorithms } from '../../src/database/algorithms';
 import { favoriteId, FAVORITES_KEY, MISTAKES_KEY, CATEGORIES_KEY, UNLEARN_KEY } from '../../src/database/favorites';
 import { waitFor } from '@testing-library/react';
-
+await jest.unstable_mockModule('../../timer/src/Bluetooth/bluetooth', () => ({ BluetoothCube: class {} }));
+const { cubeConnection } = await import('../../shared/cube/connection');
 await jest.unstable_mockModule('../../timer/src/Components/CubeView', () => ({
   CubeView: ({ facelets, cross, rotation, seekVersion, playback }: { facelets: string; cross: number | null; rotation: string; seekVersion: number; playback: boolean }) => createElement('div', { 'data-facelets': facelets, 'data-cross': cross, 'data-rotation': rotation, 'data-seek-version': seekVersion, 'data-playback': playback, 'aria-label': 'Replay cube' }),
 }));
@@ -74,6 +75,25 @@ test('unlearned algorithm feedback appears with non-favorite tracking turned off
   await act(async () => window.dispatchEvent(new StorageEvent('storage', { key: UNLEARN_KEY })));
   await feedbackReady();
   expect(container.querySelector('[aria-label="Solve mistakes"]')!.textContent).not.toContain('Unlearn algorithm');
+});
+test('a mistake opens an in-place case practice dialog and releases timer ownership on close', async () => {
+  const entry = algorithms.find(entry => entry.category === 'PLL' && entry.id === 'T')!;
+  localStorage.setItem(UNLEARN_KEY, JSON.stringify([favoriteId(entry, entry.algorithm)]));
+  await draw(recording(entry.algorithm.split(' ').reverse().map(inverse).join(' '), entry.algorithm));
+  const address = location.href;
+  const button = Array.from(container.querySelectorAll<HTMLButtonElement>('[aria-label="Solve mistakes"] button')).find(button => button.textContent?.includes('Unlearn algorithm'))!;
+  await act(async () => button.click());
+  const dialog = container.querySelector<HTMLDialogElement>('.mistake-practice-dialog')!;
+  expect(dialog.open).toBe(true);
+  expect(dialog.querySelector('.trainer-practice')!.getAttribute('data-case')).toBe('PLL-T');
+  expect(dialog.textContent).toContain('PLL T drill');
+  expect(dialog.querySelector('fieldset')!.hidden).toBe(true);
+  expect(dialog.querySelector('[aria-label="Back to cases"]')).toBeNull();
+  expect(location.href).toBe(address);
+  expect(cubeConnection.getSnapshot().practicing).toBe(true);
+  await act(async () => dialog.dispatchEvent(new Event('close')));
+  expect(container.querySelector('.mistake-practice-dialog')).toBeNull();
+  expect(cubeConnection.getSnapshot().practicing).toBe(false);
 });
 test('feedback yields before analysis and handles invalid recordings without an unhandled rejection', async () => {
   jest.useFakeTimers();

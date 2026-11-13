@@ -4,9 +4,21 @@ import { join } from 'node:path';
 const base = process.env.SITE_URL ?? 'http://127.0.0.1:5180';
 const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : undefined });
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, hasTouch: true });
-await context.addInitScript(() => localStorage.setItem('theme', 'dark'));
+await context.addInitScript(() => {
+  localStorage.setItem('theme', 'dark');
+  Object.defineProperty(navigator, 'bluetooth', { configurable: true, value: {} });
+});
 const page = await context.newPage(), errors = [];
 page.on('pageerror', error => errors.push(error.message));
+await page.route(/\/timer\/src\/Bluetooth\/bluetooth\.ts(?:\?.*)?$/, route => route.fulfill({
+  contentType: 'text/javascript',
+  body: `export class BluetoothCube {
+    connection = null;
+    async connect(mac, receive, connected) { this.connection = { deviceName: 'Practice test cube', capabilities: { facelets: true } }; connected(this.connection); receive({ type: 'FACELETS', facelets: 'UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB' }); }
+    async disconnect() { this.connection = null; }
+    async refresh() {}
+  }`,
+}));
 await page.route('**/timer/src/Core/engine.ts*', async route => {
   const response = await route.fetch(), body = await response.text();
   await route.fulfill({ response, body: body.replace('this.record = record;', 'this.record = record; globalThis.testTimer = this;') });
@@ -16,7 +28,8 @@ try {
   await page.getByLabel('Import solve CSV files').setInputFiles(join('smartcubeanalyzer', 'public', 'demo', 'cfop-small.csv'));
   await expect(page.locator('[aria-labelledby="import-heading"]').getByRole('status')).toContainText('Imported 467 solves', { timeout: 120000 });
   await page.goto(`${base}/trainer/?case=F2L-1`);
-  await expect(page.getByRole('combobox', { name: 'Case', exact: true })).toHaveValue('F2L-1');
+  await expect(page.getByRole('heading', { name: /F2L 1 drill/ })).toBeVisible();
+  await expect(page.locator('.trainer-practice')).toHaveAttribute('data-case', 'F2L-1');
   await page.getByRole('link', { name: 'Timer', exact: true }).click();
   await page.getByRole('button', { name: 'Options', exact: true }).click();
   const importedSession = await page.evaluate(async () => {
@@ -24,8 +37,10 @@ try {
     return (await readSolves())[0].session;
   });
   await page.getByRole('combobox', { name: 'Session', exact: true }).selectOption(importedSession);
-  await page.getByRole('checkbox', { name: 'Show all sessions in history' }).check();
   await page.getByRole('button', { name: 'Close options', exact: true }).click();
+  await page.getByRole('link', { name: 'Options', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Show all sessions', exact: true }).check();
+  await page.getByRole('link', { name: 'Timer', exact: true }).click();
   const history = page.getByRole('table', { name: 'Solve history' });
   await expect(page.getByText('Full history', { exact: true })).toHaveCount(0);
   await expect(history.getByRole('columnheader')).toHaveText(['Solve', 'Time', 'Turns', 'TPS', 'Date']);
@@ -43,6 +58,9 @@ try {
   });
   await expect(page.locator('.timer-feedback')).toBeVisible();
   await expect(page.locator('.timer-feedback')).not.toContainText('Analyzing solve mistakes', { timeout: 30000 });
+  await expect(page.getByRole('button', { name: 'Dismiss personal best', exact: true }).first()).toBeVisible();
+  const notifications = page.getByRole('button', { name: /^Dismiss (personal best|daily streak)$/ });
+  while (await notifications.count()) await notifications.first().click();
   await expect(page.locator('.trail-compact [data-comparison]')).toHaveCount(7);
   expect(await page.locator('.trail-compact [data-comparison]').evaluateAll(nodes => nodes.every(node =>
     ['faster', 'slower', 'equal'].includes(node.dataset.comparison) && node.getAttribute('aria-label').includes('recent 1000')))).toBe(true);
@@ -53,17 +71,16 @@ try {
     await expect(page.locator('.timer-hero twisty-player')).toBeVisible();
     const cubeSize = await page.locator('.timer-hero twisty-player').boundingBox();
     expect(cubeSize.height).toBeLessThanOrEqual(160);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), { message: `Timer overflow at ${width}px` }).toBe(true);
     expect(await page.locator('.timer-records table').evaluate(node => parseFloat(getComputedStyle(node).fontSize))).toBeGreaterThan(width <= 720 ? 12.8 : 16);
     const recent = page.getByRole('region', { name: 'Recent solves', exact: true });
     await expect(recent).toBeVisible();
     await expect(recent.getByRole('button')).toHaveCount(5);
-    const recordsBox = await page.locator('.timer-records').boundingBox();
-    const recentBox = await recent.boundingBox();
-    const buttons = await recent.getByRole('button').evaluateAll(nodes => nodes.map(node => {
-      const { x, y, width, height } = node.getBoundingClientRect();
-      return { x, y, width, height };
-    }));
+    const { recordsBox, recentBox, buttons } = await page.evaluate(() => {
+      const bounds = node => { const { x, y, width, height } = node.getBoundingClientRect(); return { x, y, width, height }; };
+      return { recordsBox: bounds(document.querySelector('.timer-records')), recentBox: bounds(document.querySelector('.timer-recent')),
+        buttons: [...document.querySelectorAll('.timer-recent button')].map(bounds) };
+    });
     if (width > 575) {
       expect(recentBox.x).toBeGreaterThanOrEqual(recordsBox.x + recordsBox.width);
       expect(Math.abs(recentBox.y - recordsBox.y)).toBeLessThan(1);
@@ -79,13 +96,13 @@ try {
   await expect(page.getByRole('dialog', { name: 'Solve replay', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close replay', exact: true }).click();
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.getByRole('button', { name: 'Options', exact: true }).click();
-  await page.getByRole('checkbox', { name: 'Show all sessions in history' }).uncheck();
-  await page.getByRole('button', { name: 'Close options', exact: true }).click();
+  await page.getByRole('link', { name: 'Options', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Show all sessions', exact: true }).uncheck();
+  await page.getByRole('link', { name: 'Timer', exact: true }).click();
   await expect(history.getByRole('columnheader')).toHaveText(['Solve', 'Time', 'Turns', 'TPS', 'Date']);
-  await page.getByRole('button', { name: 'Options', exact: true }).click();
-  await page.getByRole('checkbox', { name: 'Show all sessions in history' }).check();
-  await page.getByRole('button', { name: 'Close options', exact: true }).click();
+  await page.getByRole('link', { name: 'Options', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Show all sessions', exact: true }).check();
+  await page.getByRole('link', { name: 'Timer', exact: true }).click();
   let linked = false;
   for (let index = 1; index < 12 && !linked; index++) {
     await history.locator('tbody tr').nth(index).locator('td button').first().click();
@@ -96,12 +113,33 @@ try {
     expect(await insights.getAttribute('open')).toBeNull();
     await insights.locator('summary').click();
     await expect(replay.getByRole('region', { name: 'Solve mistakes', exact: true })).not.toContainText('Analyzing solve mistakes', { timeout: 30000 });
-    const link = replay.locator('a[href^="/trainer/?case="]').first();
+    const link = replay.locator('[aria-label="Solve mistakes"] button.btn-link:not(.info-tip)').first();
     if (await link.count()) {
-      const key = new URL(await link.getAttribute('href'), base).searchParams.get('case');
+      const address = page.url();
       await link.click();
-      await expect(page.getByRole('combobox', { name: 'Case', exact: true })).toHaveValue(key);
-      await expect(replay).not.toBeVisible();
+      const practice = page.locator('.mistake-practice-dialog');
+      await expect(practice).toBeVisible();
+      await expect(practice.locator('.trainer-practice[data-case]')).toBeVisible();
+      await expect(practice.getByRole('button', { name: 'Back to cases', exact: true })).toHaveCount(0);
+      await expect(practice.locator('.trainer-picker')).not.toBeVisible();
+      await expect(practice.getByRole('button', { name: 'Start practice', exact: true })).toBeDisabled();
+      expect(page.url()).toBe(address);
+      await practice.getByRole('button', { name: 'Bluetooth cube setup', exact: true }).click();
+      const setup = practice.getByRole('dialog', { name: /^Bluetooth cube setup/ });
+      await expect(setup).toBeVisible();
+      await setup.getByRole('button', { name: 'Connect cube', exact: true }).click();
+      await expect(setup).not.toBeVisible();
+      await expect(practice.getByRole('button', { name: 'Stop drill', exact: true })).toBeVisible();
+      await practice.getByRole('button', { name: 'Bluetooth cube setup', exact: true }).click();
+      await expect(setup).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(setup).not.toBeVisible();
+      await expect(practice).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(practice).toHaveCount(0);
+      await expect(replay).toBeVisible();
+      await expect(link).toBeFocused();
+      await replay.getByRole('button', { name: 'Close replay', exact: true }).click();
       linked = true;
     } else await replay.getByRole('button', { name: 'Close replay', exact: true }).click();
   }

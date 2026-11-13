@@ -11,7 +11,7 @@ import { InfoTip } from '../../../shared/Components/InfoTip';
 import { CFOP_STEPS } from '../Analysis/cfop';
 import { solveFeedback } from '../../../shared/workers/dataClient';
 import { mistakeTrainingKey, potentialGain } from '../Analysis/mistakeSummary';
-import { trainingLink } from '../../../src/trainer/cases';
+import { PracticeDialog } from '../../../src/trainer/PracticeDialog';
 
 const emptyHistory: Solve[] = [];
 export function SolveMistakes({ solve, cube, history = emptyHistory, brief = false }: { solve: Solve; cube: Cube; history?: Solve[]; brief?: boolean }) {
@@ -20,6 +20,8 @@ export function SolveMistakes({ solve, cube, history = emptyHistory, brief = fal
   const { favorites, unlearn, enabled, categories } = useAlgorithmPreferences();
   const [result, setResult] = useState<{ solve: Solve; analysis: AnalyzedSolve; nonFavorites: AlgorithmUse[]; unlearned: AlgorithmUse[]; observed: { step: string; caseKey: string }[] } | null>(null);
   const [failure, setFailure] = useState<Solve | null>(null);
+  const [practice, setPractice] = useState<string | null>(null);
+  const practiceButton = (key: string, label: string) => <button type="button" className="btn btn-link p-0 border-0 text-start align-baseline" style={{ font: 'inherit' }} onClick={() => setPractice(key)}>{label}</button>;
   const analysis = result?.solve === solve ? result.analysis : null;
   const nonFavorites = result?.solve === solve ? result.nonFavorites : [], unlearned = result?.solve === solve ? result.unlearned : [];
   const favoriteLabel = (use: typeof nonFavorites[number]) => `${CFOP_STEPS[use.step]}: Non-favorite algorithm (${use.caseKey.replace('-', ' ')})`;
@@ -56,17 +58,18 @@ export function SolveMistakes({ solve, cube, history = emptyHistory, brief = fal
   const loss = (seconds: number) => `~${seconds.toFixed(2)}s estimated loss`;
   return <section ref={feedback} className="mt-3" aria-label="Solve mistakes" aria-live="polite">
     <p className="mb-1">{solve.status !== 'complete' ? 'Incomplete solve - mistakes could not be fully assessed.' : failure === solve ? 'Solve mistakes could not be assessed.' : !analysis ? 'Analyzing solve mistakes...' : unlearned.length || nonFavorites.length || mistakes.length
-      ? brief ? <><strong>Worst mistake: </strong>{worst.caseKey ? <a href={trainingLink(worst.caseKey)}>{worst.label}</a> : worst.label} ({loss(worst.seconds)})</>
+      ? brief ? <><strong>Worst mistake: </strong>{worst.caseKey ? practiceButton(worst.caseKey, worst.label) : worst.label} ({loss(worst.seconds)})</>
         : <><strong>Potential time gain: </strong>~{totalGain.toFixed(2)}s <InfoTip>Only the largest estimated loss per step is counted, excluding unusually slow solve. The estimate is capped at the solve time. Estimates use excess recognition time, wasted moves at your recorded execution speed, or time above your rolling baseline. Algorithm preferences use potential move savings, not an assumed speed advantage.</InfoTip></> : 'No clear mistakes detected.'}</p>
     {!brief && !!(unlearned.length || nonFavorites.length || mistakes.length) && <ul>
-      {unlearned.map(use => <li key={`unlearn-${use.step}`}><a href={trainingLink(use.caseKey)}><strong>{CFOP_STEPS[use.step]}: Unlearn algorithm ({use.caseKey.replace('-', ' ')})</strong></a> ({loss(cost(use, true))})</li>)}
-      {nonFavorites.map(use => <li key={`favorite-${use.step}`}><a href={trainingLink(use.caseKey)}><strong>{favoriteLabel(use)}</strong></a>{' '}
+      {unlearned.map(use => <li key={`unlearn-${use.step}`}><strong>{practiceButton(use.caseKey, `${CFOP_STEPS[use.step]}: Unlearn algorithm (${use.caseKey.replace('-', ' ')})`)}</strong> ({loss(cost(use, true))})</li>)}
+      {nonFavorites.map(use => <li key={`favorite-${use.step}`}><strong>{practiceButton(use.caseKey, favoriteLabel(use))}</strong>{' '}
         ({loss(cost(use))}) <a href={`/database/#${use.caseKey}`} target="_blank" rel="noopener noreferrer">Choose favorites</a>
       </li>)}
       {mistakes.map(mistake => <li key={mistakeKey(mistake)}>
-      {trainingKey(mistake) ? <a href={trainingLink(trainingKey(mistake)!)}><strong>{mistakeLabel(mistake)}</strong></a> :
+      {trainingKey(mistake) ? <strong>{practiceButton(trainingKey(mistake)!, mistakeLabel(mistake))}</strong> :
         <strong>{mistakeLabel(mistake)}</strong>} ({loss(mistake.estimatedSeconds ?? 0)}){' '}
       <InfoTip id={`replay-mistake-${mistakeKey(mistake)}`}>{MISTAKES[mistake.kind].rule}</InfoTip>
     </li>)}</ul>}
+    {practice && <PracticeDialog key={practice} cube={cube} caseKey={practice} close={() => setPractice(null)} />}
   </section>;
 }

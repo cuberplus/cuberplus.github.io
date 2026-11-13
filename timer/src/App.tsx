@@ -5,7 +5,8 @@ import { cubeConnection, useCubeConnection } from '../../shared/cube/connection'
 import { CubeButton, CubePicker } from '../../shared/Components/CubeConnection';
 import { PageOptionsButton } from '../../shared/Components/PageOptionsButton';
 import { TimerEngine, inspectionPenalty, solveTime, type Solve } from './Core/engine';
-import { generateScramble, inverse, loadCube, movesOf, simplifyMoves, SOLVED, type Cube } from './Core/puzzle';
+import { inverse, loadCube, movesOf, simplifyMoves, SOLVED, type Cube } from './Core/puzzle';
+import { readSessionScramblers, SESSION_SCRAMBLERS, sessionScramble, type Scrambler } from './Core/scramblers';
 import { averageDetails, backupJSON, cubeastCSV, dailyStreak, deleteSolve, formatTime, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, recoverLocalSolves, saveSolves, sessionStats, solveEndDate, turns, updateSession, validateBackup } from './Data/storage';
 import { AverageDetails } from './Components/AverageDetails';
 import { CubeView } from './Components/CubeView';
@@ -40,10 +41,10 @@ function SolvePenalty({ solve }: { solve: Solve | null | undefined }) {
 export default function App() {
   const address = useContext(PageLocation);
   const visible = useRef(true); visible.current = useContext(PageVisible);
-  const trainerActive = /^\/trainer(?:\/|$)/.test(address || location.pathname);
+  const sharedCube = useCubeConnection();
+  const trainerActive = sharedCube.practicing || /^\/trainer(?:\/|$)/.test(address || location.pathname);
   const acceptingMoves = useRef(!trainerActive);
   acceptingMoves.current = !trainerActive;
-  const sharedCube = useCubeConnection();
   useScreenWakeLock();
   const [, render] = useReducer((n: number) => n + 1, 0);
   const [cube, setCube] = useState<Cube | null>(null);
@@ -61,11 +62,11 @@ export default function App() {
   const [demo, setDemo] = useState(false);
   const [battery, setBattery] = useState<number | null>(null);
   const [mac, setMac] = useState(() => { try { return localStorage.getItem('timer-last-cube-mac') ?? ''; } catch { return ''; } });
-  const { precision, solveLimit } = useContext(SettingsContext);
+  const { precision, solveLimit, session: selectedSession, setSession, allSessions, setAllSessions } = useContext(SettingsContext);
   const [overTurnPenalty, setOverTurnPenalty] = useState(() => { try { return localStorage.getItem('timer-over-turn-penalty') === 'true'; } catch { return false; } });
   const [inspection, setInspection] = useState(() => { try { return localStorage.getItem('timer-inspection') === 'true'; } catch { return false; } });
   const [showEveryLongPb, setShowEveryLongPb] = useState(() => { try { return localStorage.getItem('timer-show-every-long-pb') === 'true'; } catch { return false; } });
-  const [allSessions, setAllSessions] = useState(() => { try { return localStorage.getItem('timer-all-session-history') === 'true'; } catch { return false; } });
+  const allSessionsRef = useRef(allSessions); allSessionsRef.current = allSessions;
   const [historyNow, setHistoryNow] = useState(Date.now);
   useEffect(() => {
     setHistoryNow(Date.now());
@@ -79,7 +80,9 @@ export default function App() {
       return { timer: value === true || hidden.timer === true, cube: value === true || hidden.cube === true, progressBar: value === true || hidden.progressBar === true };
     } catch { return { timer: false, cube: false, progressBar: false }; }
   });
-  const [session, setSession] = useState('Default');
+  const [retrying, setRetrying] = useState(false);
+  const session = retrying ? 'Retries' : selectedSession;
+  const sessionScramblers = useRef(readSessionScramblers());
   const [historyPage, setHistoryPage] = useState(0);
   const [changingSession, setChangingSession] = useState(false);
   const sessionChange = useRef(false);
@@ -105,6 +108,7 @@ export default function App() {
   const failedSaves = useRef(new Set<string>());
   const deletedSolves = useRef(new Set<string>());
   const generation = useRef(0);
+  const scrambleAbort = useRef<AbortController | null>(null);
   const preparing = useRef(false);
   const resynchronizing = useRef(false);
   const calibrating = useRef(false);
@@ -125,10 +129,19 @@ export default function App() {
   }, [sharedCube.selected, sharedCube.cubes]);
 
   function updateHistory(items: Solve[]) { historyRef.current = items; setHistory(items); }
-  function createSession(name: string) {
+  function sessionGenerator(name: string): Scrambler {
+    return name !== 'Default' && Object.hasOwn(sessionScramblers.current, name) ? sessionScramblers.current[name] : 'default';
+  }
+  function selectSession(name: string) {
+    const previous = sessionGenerator(sessionRef.current);
+    sessionRef.current = name; setSession(name); setAllSessions(false);
+    if (!retry.current && previous !== sessionGenerator(name)) { cancelPreparation(); void prepareScramble(); }
+  }
+  function createSession(name: string, scrambler: Scrambler) {
     const next = [...new Set([...createdSessions, name])];
-    setCreatedSessions(next); setSession(name);
-    try { localStorage.setItem('timer-sessions', JSON.stringify(next)); }
+    sessionScramblers.current = { ...sessionScramblers.current, [name]: scrambler };
+    setCreatedSessions(next); selectSession(name);
+    try { localStorage.setItem('timer-sessions', JSON.stringify(next)); localStorage.setItem(SESSION_SCRAMBLERS, JSON.stringify(sessionScramblers.current)); }
     catch { setError('Session created, but its name could not be saved in this browser.'); }
   }
   async function manageSession(name: string | null): Promise<boolean> {
@@ -145,11 +158,16 @@ export default function App() {
       if (engine.current?.phase === 'solving' || retry.current) throw new Error('Finish or abort the current solve before changing sessions.');
       const next = [...new Set([...sessions.filter(session => session !== previous), ...(name === null ? [] : [name])])];
       const stored = localStorage.getItem('timer-sessions');
+      const storedScramblers = localStorage.getItem(SESSION_SCRAMBLERS);
+      const nextScramblers = { ...sessionScramblers.current, ...(name !== null && previous !== 'Default' ? { [name]: sessionGenerator(previous) } : {}) };
+      delete nextScramblers[previous];
       localStorage.setItem('timer-sessions', JSON.stringify(next));
-      try { await updateSession([...affected], name); }
+      try { localStorage.setItem(SESSION_SCRAMBLERS, JSON.stringify(nextScramblers)); await updateSession([...affected], name); }
       catch (failure) {
         if (stored === null) localStorage.removeItem('timer-sessions');
         else localStorage.setItem('timer-sessions', stored);
+        if (storedScramblers === null) localStorage.removeItem(SESSION_SCRAMBLERS);
+        else localStorage.setItem(SESSION_SCRAMBLERS, storedScramblers);
         throw failure;
       }
       const target = name ?? 'Default';
@@ -168,6 +186,9 @@ export default function App() {
       setReplay(current => current && (name !== null || !affected.has(current.id)) ? relabel(current) : null);
       setAverage(null); setCelebrations([]); setStreaks([]);
       setCreatedSessions(next); sessionRef.current = target; setSession(target);
+      const resetScramble = name === null && sessionGenerator(previous) !== 'default';
+      sessionScramblers.current = nextScramblers;
+      if (resetScramble) { cancelPreparation(); void prepareScramble(); }
       if (pending.current === 0) setStorage(failedSaves.current.size ? 'Some solves not saved - export a backup now' : 'Saved locally');
       return true;
     });
@@ -178,7 +199,7 @@ export default function App() {
   function finishRetry() {
     if (!retry.current) return;
     sessionRef.current = retry.current.previousSession;
-    setSession(retry.current.previousSession);
+    setRetrying(false);
     retry.current = null;
   }
 
@@ -221,7 +242,8 @@ export default function App() {
             const { current, best } = dailyStreak(historyRef.current, date);
             setStreaks(items => [...items, { id: copy.id, current, best }]);
           }
-          const personalBests = newPersonalBests(candidate.previous, candidate.solve);
+          const previousRecords = candidate.previous.filter(solve => allSessionsRef.current || solve.session === candidate.solve.session);
+          const personalBests = newPersonalBests(previousRecords, candidate.solve);
           if (!candidate.previous.some(item => item.id === copy.id && item.status !== 'active')) {
             void writes.current.then(() => {
               if (!failedSaves.current.has(copy.id) && !deletedSolves.current.has(copy.id)) return noteCloudSolve(candidate.solve, personalBests);
@@ -229,7 +251,7 @@ export default function App() {
           }
           const records = notificationRecords(personalBests);
           if (records.length) {
-            const solves = [candidate.solve, ...candidate.previous.filter(item => item.session !== 'Retries' && item.id !== copy.id)
+            const solves = [candidate.solve, ...previousRecords.filter(item => item.session !== 'Retries' && item.id !== copy.id)
               .sort((a, b) => b.createdAt.localeCompare(a.createdAt))];
             setCelebrations(current => [...current, ...records.map(record => ({
               ...record, id: `${copy.id}-${record.name}`, solve: candidate.solve,
@@ -318,12 +340,12 @@ export default function App() {
     }, 30);
     const checks = recordChecks.current;
     const unsubscribe = cubeConnection.onEvent(event => {
-      if (!acceptingMoves.current && event.type !== 'DISCONNECT') return;
+      if ((!acceptingMoves.current || cubeConnection.getSnapshot().practicing) && event.type !== 'DISCONNECT') return;
       const connection = cubeConnection.getSnapshot().connection;
       if (connection && engine.current?.phase === 'disconnected') engine.current.connect(connection.deviceName);
       receive(event);
     });
-    return () => { mounted.current = false; unsubscribe(); window.removeEventListener('timer-solve-deleted', removeSavedSolve); window.removeEventListener('timer-solves-changed', refreshHistory); clearInterval(interval); checks.forEach(check => clearTimeout(check.timeout)); checks.clear(); };
+    return () => { mounted.current = false; scrambleAbort.current?.abort(); unsubscribe(); window.removeEventListener('timer-solve-deleted', removeSavedSolve); window.removeEventListener('timer-solves-changed', refreshHistory); clearInterval(interval); checks.forEach(check => clearTimeout(check.timeout)); checks.clear(); };
   }, []);
 
   useEffect(() => {
@@ -358,9 +380,10 @@ export default function App() {
     const allowed = ['synchronizing', 'scrambling', 'ready', 'finished', ...(recover ? ['recovery', 'recovering'] : [])];
     if (!timer || preparing.current || !allowed.includes(timer.phase)) return;
     const token = ++generation.current, initial = timer.facelets;
+    scrambleAbort.current = new AbortController();
     preparing.current = true; setBusy(true); setStatus(recover || existingScramble ? 'Finding moves to return the cube to solved...' : 'Generating scramble and setup locally...');
     try {
-      const [scramble, setup] = await Promise.all([recover || existingScramble ? Promise.resolve(recover ? '' : existingScramble) : generateScramble(), initial === SOLVED ? Promise.resolve([]) : timer.cube.solution(initial)]);
+      const [scramble, setup] = await Promise.all([recover || existingScramble ? Promise.resolve(recover ? '' : existingScramble) : sessionScramble(sessionGenerator(sessionRef.current), Math.random, scrambleAbort.current.signal), initial === SOLVED ? Promise.resolve([]) : timer.cube.solution(initial)]);
       if (token !== generation.current) return;
       if (timer.facelets !== initial || !allowed.includes(timer.phase)) throw new Error('Cube changed during preparation. Resynchronize and try again.');
       if (recover) timer.prepareRecovery(setup);
@@ -376,7 +399,7 @@ export default function App() {
     }
   }
 
-  function cancelPreparation() { generation.current++; preparing.current = false; queued.current = []; setBusy(false); setStatus(''); }
+  function cancelPreparation() { generation.current++; scrambleAbort.current?.abort(); preparing.current = false; queued.current = []; setBusy(false); setStatus(''); }
 
   function receive(event: SmartCubeEvent, hostTime = performance.now()) {
     const timer = engine.current; if (!timer || (event.type === 'FACELETS' && (event.source === 'moves' || calibrating.current))) return;
@@ -456,7 +479,7 @@ export default function App() {
     if (!timer || resynchronizing.current) return;
     if (timer.phase === 'solving') { setError('Finish or abort the current solve before retrying.'); return; }
     retry.current = { scramble: simplifyMoves(movesOf(solve.scramble)).join(' '), previousSession: retry.current?.previousSession ?? sessionRef.current };
-    sessionRef.current = 'Retries'; setSession('Retries'); setReplay(null); setAverage(null); setError('');
+    sessionRef.current = 'Retries'; setRetrying(true); setReplay(null); setAverage(null); setError('');
     if (timer.phase === 'disconnected') timer.message = 'Connect your cube to retry this scramble.';
     else if (['recovery', 'recovering'].includes(timer.phase)) void resynchronize();
     else void prepareScramble();
@@ -518,13 +541,13 @@ export default function App() {
   const inspectionStatus = inspectionPenalty(inspectionTime);
   const message = status || timer?.message || 'Loading local puzzle tools...';
   const sessions = useMemo(() => [...new Set([...createdSessions, ...history.map(solve => solve.session)])], [createdSessions, history]);
-  const sessionHistory = useMemo(() => history.filter(solve => solve.session === session && solve.status !== 'active'), [history, session]);
+  const sessionHistory = useMemo(() => history.filter(solve => (allSessions || solve.session === selectedSession) && solve.status !== 'active'), [history, selectedSession, allSessions]);
   const filtered = useMemo(() => latestSolves(sessionHistory, solveLimit, solve => Date.parse(solve.createdAt)).reverse(), [sessionHistory, solveLimit]);
-  const recordHistory = useMemo(() => history.filter(solve => solve.status !== 'active' && solve.session !== 'Retries'), [history]);
+  const recordHistory = useMemo(() => sessionHistory.filter(solve => solve.session !== 'Retries'), [sessionHistory]);
   const previousStatistics = useMemo(() => sessionStats(recordHistory.slice(1, 1001)), [recordHistory]);
   const statistics = useMemo(() => sessionStats(recordHistory), [recordHistory]);
   const historyRows = useMemo(() => {
-    const numbered = numberedSolves(allSessions ? history : sessionHistory);
+    const numbered = numberedSolves(sessionHistory);
     const rows = (solveLimit ? numbered.slice(-solveLimit) : numbered).map(({ solve, number }) => {
       const count = historySort.column === 'turns' || historySort.column === 'tps' ? turns(solve) : 0;
       return { solve, number, duration: solveTime(solve), turns: count, tps: solve.duration > 0 ? count * 1000 / solve.duration : null };
@@ -537,7 +560,7 @@ export default function App() {
   }, [sessionHistory, history, allSessions, historySort, solveLimit]);
   useEffect(() => setHistoryPage(0), [session, allSessions, historySort, solveLimit]);
   const page = Math.min(historyPage, Math.max(0, Math.ceil(historyRows.length / 100) - 1));
-  const historyTable = useMemo(() => <div className="table-responsive"><table className="table align-middle history-table" aria-label="Solve history">
+  const historyTable = useMemo(() => <div className="table-responsive" role="region" aria-label="Scrollable solve history" tabIndex={0}><table className="table align-middle history-table" aria-label="Solve history">
     <thead><tr>{historyColumns.map(column => <th key={column.key} scope="col" aria-sort={historySort.column === column.key ? historySort.direction : undefined}>
       <button className="history-sort" onClick={() => setHistorySort(current => ({
         column: column.key, direction: current.column === column.key && current.direction === 'ascending' ? 'descending' : 'ascending',
@@ -565,6 +588,8 @@ export default function App() {
   const allVisualsHidden = hiddenVisuals.timer && hiddenVisuals.cube && hiddenVisuals.progressBar;
   const someVisualsHidden = hiddenVisuals.timer || hiddenVisuals.cube || hiddenVisuals.progressBar;
   const currentMoveClass = timer?.isPartialTurn ? 'current partial' : 'current';
+  const scrambleMoves = timer ? displayedMoves.flatMap((move, i) => correctionMoves.length && !timer.completed[i + displayedOffset] ? [] :
+    [<span key={i} className={`move ${timer.completed[i + displayedOffset] ? 'done' : !correctionMoves.length && i + displayedOffset === timer.progress ? currentMoveClass : timer.isPartialMove(i + displayedOffset) ? 'partial' : ''}`} title={timer.isPartialMove(i + displayedOffset) ? 'Partially complete' : undefined}>{move}</span>]) : [];
   const connected = timer && timer.phase !== 'disconnected';
   useEffect(() => { if (connected) setupDialog.current?.close(); }, [connected]);
   const canConnect = !!cube && !busy && !connecting && !sharedCube.connecting && !connected && !!navigator.bluetooth && window.isSecureContext;
@@ -603,12 +628,7 @@ export default function App() {
         <h2 id="options-title" className="mb-0">Options</h2>
         <button className="btn-close" aria-label="Close options" onClick={() => optionsDialog.current?.close()} />
       </div>
-      <SessionPicker value={session} sessions={sessions} disabled={!historyReady || changingSession || timer?.phase === 'solving' || !!retry.current} change={setSession} create={createSession} manage={manageSession} />
-      <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="all-session-history-help" checked={allSessions} onChange={event => {
-        setAllSessions(event.target.checked);
-        try { localStorage.setItem('timer-all-session-history', String(event.target.checked)); } catch { setError('History preference could not be saved in this browser.'); }
-      }} /><span className="form-check-label">Show all sessions in history</span></label>
-        <InfoTip id="all-session-history-help">Show saved solves from every session. New solves use the selected session; records always use all saved sessions.</InfoTip></div>
+      <SessionPicker value={session} sessions={sessions} disabled={!historyReady || changingSession || timer?.phase === 'solving' || !!retry.current} change={selectSession} create={createSession} manage={manageSession} />
       <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="inspection-help" checked={inspection} disabled={timer?.phase === 'solving'} onChange={event => changeInspection(event.target.checked)} /><span className="form-check-label">15-second inspection</span></label>
         <InfoTip id="inspection-help">Count up after scrambling. Starting at 15 seconds adds +2; starting at 17 seconds or later is DNF. +2 penalties stack.</InfoTip></div>
       <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="over-turn-penalty-help" checked={overTurnPenalty} onChange={event => changeOverTurnPenalty(event.target.checked)} /><span className="form-check-label">Extra-turn +2 penalty</span></label>
@@ -641,8 +661,7 @@ export default function App() {
       {recovering && <p className="small text-secondary mb-2">Return the cube to solved</p>}
       {returning && !recovering && <p className="small text-secondary mb-2">First solve the current cube</p>}
       <div className={`scramble mb-3${solving ? ' scramble-solving' : ''}`} aria-label="Scramble">
-        <div className="scramble-content" aria-hidden={solving}>{timer && displayedMoves.length ? <span role="group" aria-label={returning ? 'Path to solved' : 'Original scramble'}>{displayedMoves.map((move, i) => correctionMoves.length && !timer.completed[i + displayedOffset] ? null :
-          <span key={i} className={`move ${timer.completed[i + displayedOffset] ? 'done' : !correctionMoves.length && i + displayedOffset === timer.progress ? currentMoveClass : timer.isPartialMove(i + displayedOffset) ? 'partial' : ''}`} title={timer.isPartialMove(i + displayedOffset) ? 'Partially complete' : undefined}>{move}</span>)}</span>
+        <div className="scramble-content" aria-hidden={solving}>{timer && displayedMoves.length ? <span role="group" aria-label={returning ? 'Path to solved' : 'Original scramble'}>{scrambleMoves.slice(0, -2)}<span className="scramble-tail">{scrambleMoves.slice(-2)}</span></span>
           : !connected ? <span className="text-secondary">Connect a cube to generate a scramble.</span> : null}
         {showCorrections && <span role="group" aria-label="Correction moves">{correctionMoves.map((move, i) =>
           <span key={i} className={`move correction ${i === 0 ? 'current' : ''}`}>{move}</span>)}</span>}
@@ -691,7 +710,7 @@ export default function App() {
     <div className="timer-summary mt-3">
     <section className="panel timer-records">
       <div className="table-responsive">
-        <table className="table table-sm" aria-label="All-time statistics"><thead><tr><th scope="col">Metric <InfoTip>Records use all saved solves across all sessions, regardless of the recent-solves limit. Retry attempts do not count toward records.</InfoTip></th><th scope="col">Current</th><th scope="col">Best</th></tr></thead>
+        <table className="table table-sm" aria-label="All-time statistics"><thead><tr><th scope="col">Metric <InfoTip>Records use all saved solves in the selected session, regardless of the recent-solves limit. Enable Show all sessions in site Options to combine sessions. Retry attempts do not count toward records.</InfoTip></th><th scope="col">Current</th><th scope="col">Best</th></tr></thead>
           <tbody>{statistics.map((stat, index) => <tr key={stat.name}><th scope="row">{stat.name}</th>
             {(['current', 'best'] as const).map(kind => <td key={kind}>{stat[kind] === null ? '--' :
               <button className="stat-link" aria-label={`View ${kind} ${stat.name}`} onClick={() => stat.name === 'Single'
@@ -711,7 +730,14 @@ export default function App() {
     </div></section>}
     </div>
     <section className="panel mt-3 timer-history" id="timer-history" aria-labelledby="timer-history-title">
-      <div className="d-flex justify-content-between flex-wrap gap-2 mb-3"><h2 id="timer-history-title" className="h5">{allSessions ? 'All sessions' : session} history</h2><div className="d-flex gap-2">
+      <div className="d-flex justify-content-between flex-wrap gap-2 mb-3"><div className="d-flex flex-wrap align-items-center gap-2 mw-100">
+        <h2 id="timer-history-title" className="h5 mb-0"><label htmlFor="history-session">Session history</label></h2>
+        <select id="history-session" className="form-select w-auto mw-100" value={session}
+          disabled={!historyReady || changingSession || solving || !!retry.current} onChange={event => selectSession(event.target.value)}>
+          {[...new Set(['Default', ...sessions, session])].map(name => <option key={name}>{name}</option>)}
+        </select>
+        {allSessions && <span className="badge text-bg-secondary">All sessions</span>}
+      </div><div className="d-flex gap-2">
         <button className="btn btn-outline-secondary" onClick={() => exportHistory('csv')}>Export CSV</button>
         <button hidden className="btn btn-outline-secondary" onClick={() => exportHistory('json')}>Export JSON</button>
         <label hidden className={`btn btn-outline-secondary mb-0 ${timer?.phase === 'solving' ? 'disabled' : ''}`}>Import JSON<input type="file" className="visually-hidden" accept=".json,application/json" disabled={timer?.phase === 'solving'} onChange={event => { void importBackup(event.target.files?.[0]); event.target.value = ''; }} /></label>
@@ -775,7 +801,8 @@ export default function App() {
   </div>;
 }
 export function MetricTrend({ current, previous }: { current: number | 'DNF' | null; previous: number | 'DNF' | null }) {
-  if (current === null || previous === null) return null;
+  if (current === null) return null;
+  if (previous === null) return <svg className="metric-trend metric-trend--equal" viewBox="0 0 16 16" role="img" aria-label="No previous average"><path d="M1 6h14v4H1Z" /></svg>;
   const now = current === 'DNF' ? Infinity : current, before = previous === 'DNF' ? Infinity : previous;
   const direction = now < before ? 'faster' : now > before ? 'slower' : 'equal';
   return <svg className={`metric-trend metric-trend--${direction}`} viewBox="0 0 16 16" role="img" aria-label={`${direction === 'equal' ? 'Equal to' : direction === 'faster' ? 'Faster than' : 'Slower than'} previous`}>

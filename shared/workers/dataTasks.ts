@@ -6,7 +6,7 @@ import type { Solve as TimerSolve } from '../../timer/src/Core/engine';
 import { latestSolves } from '../statistics/recent';
 
 export type DataProgress = { processed: number; total: number; analyzed: number; skipped: number; failed: number; remainingMs: number | null };
-export type DataTask = { type: 'parse'; csv: string; solveLimit?: number } | { type: 'local'; solveLimit?: number } | { type: 'import'; files: File[] } | { type: 'reanalyze' } |
+export type DataTask = { type: 'parse'; csv: string; solveLimit?: number; sessions?: string[] } | { type: 'local'; solveLimit?: number; sessions?: string[] } | { type: 'import'; files: File[] } | { type: 'reanalyze' } |
   { type: 'feedback'; solves: TimerSolve[] } | { type: 'mistakes'; ids: string[]; present: string[]; solve: TimerSolve };
 export type DataResult = { solves: Solve[] } | { added: number; duplicates: number } | DataProgress | { analysis?: Solve };
 const feedback = new Map<string, Solve>();
@@ -39,9 +39,9 @@ export async function runDataTask(task: DataTask, progress: (value: DataProgress
   }
   if (task.type === 'reanalyze') return (await import('../../timer/src/Analysis/analysis')).reanalyzeAllSolves(progress);
   if (task.type === 'import') return (await import('../../timer/src/Data/csvImport')).importSolveCSVs(task.files);
-  const solves = task.type === 'parse' ? parseCsv(task.csv, ',') : await (await import('../../timer/src/Analysis/analyzer-data')).readLocalAnalysis(task.solveLimit);
+  const solves = task.type === 'parse' ? parseCsv(task.csv, ',') : await (await import('../../timer/src/Analysis/analyzer-data')).readLocalAnalysis(task.solveLimit, task.sessions);
   solves.sort((a, b) => a.date.getTime() - b.date.getTime());
-  const recent = latestSolves(solves, task.solveLimit ?? 0, solve => solve.date.getTime()), selected = new Set(recent);
+  const recent = latestSolves(solves.filter(solve => !task.sessions?.length || task.sessions.includes(solve.session || 'Default')), task.solveLimit ?? 0, solve => solve.date.getTime()), selected = new Set(recent);
   if (task.type === 'parse') markMistakes(recent, CalculateWindowSize(recent.length));
   return { solves: solves.map(solve => selected.has(solve) ? solve : { ...solve, steps: solve.steps.map(step => ({ ...step, moves: '' })), recording: undefined, mistakes: undefined }) };
 }

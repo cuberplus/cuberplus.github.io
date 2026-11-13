@@ -6,9 +6,10 @@ import { CloudOptions } from '../../cloud/CloudOptions';
 import { ImportOptions } from './ImportOptions';
 import { MyCubes } from '../../../shared/Components/CubeConnection';
 import { SolveLimit } from '../../../shared/Components/SolveLimit';
+import { InfoTip } from '../../../shared/Components/InfoTip';
 
 export default function Options() {
-  const { theme, setTheme, precision, setPrecision, solveLimit, setSolveLimit, error } = useContext(SettingsContext);
+  const { theme, setTheme, precision, setPrecision, solveLimit, setSolveLimit, allSessions, setAllSessions, error } = useContext(SettingsContext);
   const themes = Object.keys(themeColors) as Theme[];
   const nextTheme = (offset: number) => setTheme(themes[(themes.indexOf(theme) + offset + themes.length) % themes.length]);
   return <div className="cuberplus-page options-page">
@@ -31,6 +32,8 @@ export default function Options() {
         <option value="2">Hundredths (0.00)</option><option value="3">Thousandths (0.000)</option>
       </select></label>
       <SolveLimit value={solveLimit} change={setSolveLimit} />
+      <div className="d-flex align-items-center gap-2"><label className="form-check mb-0" htmlFor="all-sessions"><input id="all-sessions" type="checkbox" className="form-check-input" checked={allSessions} aria-describedby="all-sessions-help" onChange={event => setAllSessions(event.target.checked)} />Show all sessions</label>
+        <InfoTip id="all-sessions-help">Include every session in Timer history, recent solves, records, and Analyzer. Otherwise, these follow the session selected in Timer. New solves still use that session. Analyzer session filters can override this selection.</InfoTip></div>
       <div><InstallControl /></div>
       </div>
       <MyCubes />

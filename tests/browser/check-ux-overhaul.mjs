@@ -100,9 +100,9 @@ try {
   });
   await expect(page.locator('[aria-labelledby="import-heading"]').getByRole('status')).toContainText('Imported 3 solves', { timeout: 60000 });
   await page.goto(`${base}/timer/`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Options', exact: true }).click();
-  await page.getByRole('checkbox', { name: 'Show all sessions in history', exact: true }).check();
-  await page.getByRole('button', { name: 'Close options', exact: true }).click();
+  await page.getByRole('link', { name: 'Options', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Show all sessions', exact: true }).check();
+  await page.getByRole('link', { name: 'Timer', exact: true }).click();
   const history = page.getByRole('table', { name: 'Solve history', exact: true });
   await expect(history.getByRole('columnheader')).toHaveText(['Solve', 'Time', 'Turns', 'TPS', 'Date']);
   await expect(history.getByRole('button', { name: 'View', exact: true })).toHaveCount(0);

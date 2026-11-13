@@ -126,9 +126,10 @@ describe('FilterPanel.passesFilters', () => {
         expect(FilterPanel.passesFilters(passingSolve({ session: 'Practice' }), filters)).toBe(true);
     });
 
-    test('keeps solves with no session even when sessions are filtered', () => {
+    test('normalizes solves with no session to Default when sessions are filtered', () => {
         const filters = permissiveFilters({ sessions: ['Practice'] });
-        expect(FilterPanel.passesFilters(passingSolve({ session: '' }), filters)).toBe(true);
+        expect(FilterPanel.passesFilters(passingSolve({ session: '' }), filters)).toBe(false);
+        expect(FilterPanel.passesFilters(passingSolve({ session: '' }), permissiveFilters({ sessions: ['Default'] }))).toBe(true);
     });
 
     test('rejects solves whose PLL case is deselected', () => {

@@ -85,6 +85,9 @@ beforeEach(async () => {
   localStorage.removeItem('cuberplus-database-favorites');
   localStorage.removeItem('cuberplus-unlearn-algorithms');
   localStorage.removeItem('timer-sessions');
+  localStorage.removeItem('timer-session-scramblers');
+  localStorage.removeItem('timer-all-session-history');
+  localStorage.removeItem('selected-session');
   localStorage.removeItem('recent-solve-limit');
   ['cuberplus-cloud-auto-100', 'cuberplus-cloud-auto-pb', 'cuberplus-cloud-progress', 'cuberplus-cloud-provider'].forEach(key => localStorage.removeItem(key));
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true });
@@ -240,13 +243,14 @@ test('session history is always visible with no collapse control', async () => {
   const history = container.querySelector('#timer-history')!;
   expect(history.tagName).toBe('SECTION');
   expect(history.querySelector('summary')).toBeNull();
-  expect(history.querySelector('h2')!.textContent).toBe('Default history');
+  expect(history.querySelector('h2')!.textContent).toBe('Session history');
   expect(history.querySelector('[aria-label="Solve history"]')).not.toBeNull();
   expect(history.textContent).not.toContain('Full solve history');
 });
 test('every history field opens its own solve after sorting, with Date but no Session or View column', async () => {
   await showHistory([historySolve(1, 2000, 10), historySolve(2, 1000, 20, 'Practice')]);
-  const all = Array.from(container.querySelectorAll<HTMLInputElement>('input')).find(input => input.closest('label')?.textContent?.includes('Show all sessions in history'))!;
+  await openSiteOptions();
+  const all = container.querySelector<HTMLInputElement>('#all-sessions')!;
   await act(async () => all.click());
   await click('Time');
   const rows = container.querySelectorAll('[aria-label="Solve history"] tbody tr');
@@ -282,7 +286,8 @@ test('both history filters keep exact timestamps and refresh dates without recal
   const createdAt = new Date(Date.now() - 30000).toISOString();
   await showHistory([{ ...historySolve(1, 2000, 10), createdAt }]);
   expect(container.querySelector('.history-table time')!.textContent).toBe('now');
-  const all = Array.from(container.querySelectorAll<HTMLInputElement>('input')).find(input => input.closest('label')?.textContent?.includes('Show all sessions in history'))!;
+  await openSiteOptions();
+  const all = container.querySelector<HTMLInputElement>('#all-sessions')!;
   await act(async () => all.click());
   const date = () => container.querySelector('time')!;
   expect(date().dateTime).toBe(createdAt);
@@ -337,7 +342,7 @@ test('a blocked save coalesces queued turns without losing completion or the ove
   expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ status: 'complete', duration: 600, penalty: 2000, penaltyReason: 'over-turn' });
   expect(save.mock.calls.at(-1)![0][0].moves).toHaveLength(6);
 });
-async function chooseSession(value: string) {
+async function chooseSession(value: string, scrambler = 'default') {
   const select = container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!;
   const existing = Array.from(select.options).some(option => option.value === value);
   await act(async () => {
@@ -349,10 +354,58 @@ async function chooseSession(value: string) {
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
       input.dispatchEvent(new Event('input', { bubbles: true }));
+      const generator = picker.querySelector<HTMLSelectElement>('label.w-100 select')!;
+      generator.value = scrambler; generator.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await act(async () => picker.querySelector('button')!.click());
   }
 }
+  test.each(['RU practice', '__proto__'])('session scramblers persist through rename to %s, drive generation, and are removed on deletion', async name => {
+    await chooseSession('Practice', '2-gen');
+    expect(JSON.parse(localStorage.getItem('timer-session-scramblers')!)).toEqual({ Practice: '2-gen' });
+    await click('Options');
+    await renameSession(name);
+    expect(JSON.parse(localStorage.getItem('timer-session-scramblers')!)).toEqual({ [name]: '2-gen' });
+    await click('Close options');
+    await click('Connect cube');
+    expect(generate).not.toHaveBeenCalled();
+    const scramble = Array.from(container.querySelectorAll('.scramble-content .move'), node => node.textContent!);
+    expect(scramble).toHaveLength(25);
+    expect(scramble.every(move => /^[RU](2|')?$/.test(move))).toBe(true);
+    await click('Options');
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
+    await click('Delete session');
+    expect(JSON.parse(localStorage.getItem('timer-session-scramblers')!)).toEqual({});
+    expect(generate).toHaveBeenCalledTimes(1);
+  });
+  test('history session dropdown switches sessions and does not reserve a valid session name', async () => {
+    await showHistory([historySolve(1, 2000, 10, '__all__'), historySolve(2, 1000, 10, 'Other')]);
+    const select = container.querySelector<HTMLSelectElement>('#history-session')!;
+    await act(async () => { select.value = '__all__'; select.dispatchEvent(new Event('change', { bubbles: true })); });
+    expect(container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!.value).toBe('__all__');
+    expect(historyNumbers()).toEqual([1]);
+    expect(Array.from(select.options).some(option => option.value === '')).toBe(false);
+    await openSiteOptions();
+    await act(async () => container.querySelector<HTMLInputElement>('#all-sessions')!.click());
+    expect(historyNumbers()).toEqual([2, 1]);
+    expect(localStorage.getItem('selected-session')).toBe('__all__');
+    await showHistory([historySolve(1, 2000, 10, '__all__'), historySolve(2, 1000, 10, 'Other')]);
+    expect(container.querySelector<HTMLSelectElement>('#history-session')!.value).toBe('__all__');
+    expect(historyNumbers()).toEqual([2, 1]);
+  });
+  test.each([5, 12])('the first calculated average after %i solves reserves a gray trend slot', async count => {
+    await showHistory(Array.from({ length: count }, (_, i) => historySolve(i, 1000 + i * 10, 10)));
+    const label = count === 5 ? 'Ao5' : 'Ao12';
+    const row = Array.from(container.querySelectorAll('.timer-records tr')).find(row => row.textContent?.includes(label))!;
+    expect(row.querySelector('[aria-label="No previous average"]')?.classList.contains('metric-trend--equal')).toBe(true);
+  });
+test.each(['constructor', '__proto__'])('legacy session %s uses the default generator', async name => {
+  await showHistory([historySolve(1, 2000, 10, name)]);
+  await chooseSession(name);
+  await click('Connect cube');
+  expect(generate).toHaveBeenCalledTimes(1);
+  expect(Array.from(container.querySelectorAll('.scramble-content .move'), node => node.textContent)).toEqual(['R', 'U2']);
+});
 test('the session dropdown stays in Options and empty created sessions survive remounting', async () => {
   await chooseSession('Practice');
   const selects = () => Array.from(container.querySelectorAll<HTMLSelectElement>('select[aria-label="Session"]'));
@@ -376,6 +429,22 @@ test('creating a session can be cancelled and whitespace names cannot be submitt
   expect(picker.querySelector('input')).toBeNull();
   expect(select.value).toBe('Default');
 });
+test('in-place practice suspends timer turns and resynchronizes the shared cube after closing', async () => {
+  await click('Connect cube');
+  Object.assign(cubeConnection.getSnapshot().connection!, { capabilities: { facelets: true } });
+  await act(async () => cubeConnection.setPracticing(true));
+  await act(async () => {
+    move('R', 100); move('U2', 200);
+  });
+  expect(save).not.toHaveBeenCalled();
+  expect(generate).toHaveBeenCalledTimes(1);
+  await act(async () => cubeConnection.setPracticing(false));
+  expect(generate).toHaveBeenCalledTimes(2);
+  await act(async () => resolveNext('F L2'));
+  await act(async () => { move('U2', 300); move("R'", 400); });
+  expect(Array.from(container.querySelectorAll('.scramble-content .move'), node => node.textContent)).toEqual(['F', 'L2']);
+  expect(save).not.toHaveBeenCalled();
+});
 
 async function renameSession(name: string) {
   await click('Rename session');
@@ -398,7 +467,7 @@ test('session management is only offered in Timer options and renames all solves
   expect(changeSession).toHaveBeenCalledWith(['2', '1'], 'Evening');
   expect(Array.from(container.querySelectorAll<HTMLSelectElement>('select[aria-label="Session"]')).map(select => select.value)).toEqual(['Evening']);
   expect(historyNumbers()).toEqual([2, 1]);
-  expect(container.querySelector('[aria-label="View best Single"]')!.textContent).toBe('0.50');
+  expect(container.querySelector('[aria-label="View best Single"]')!.textContent).toBe('1.00');
   expect(recovered).toEqual(solves.map(solve => solve.session === 'Practice' ? { ...solve, session: 'Evening' } : solve));
   expect(JSON.parse(localStorage.getItem('timer-sessions')!)).toEqual(['Other', 'Evening']);
   await showHistory(recovered);
@@ -456,8 +525,10 @@ test('deleting a session clears its replay, retains records from other sessions,
   await click('Delete session');
   expect(confirm.mock.calls[0][0]).toContain('1 solve?');
   expect(container.querySelector('[aria-label="Solve replay"]')).toBeNull();
-  expect(container.querySelector('[aria-label="View best Single"]')?.textContent).toBe('1.00');
+  expect(container.querySelector('[aria-label="View best Single"]')).toBeNull();
   expect(recovered.map(solve => solve.id)).toEqual(['2']);
+  await chooseSession('Other');
+  expect(container.querySelector('[aria-label="View best Single"]')?.textContent).toBe('1.00');
   await chooseSession('Empty');
   await click('Delete session');
   expect(confirm.mock.calls.at(-1)![0]).toContain('0 solves?');
@@ -661,7 +732,7 @@ test('Analyzer retry navigation preserves the mounted Timer session and handles 
   await act(async () => root.unmount());
   recovered = [historySolve(1, 1000, 4)];
   root = createRoot(container);
-  const show = async (address: string) => act(async () => root.render(createElement(PageLocation.Provider, { value: address }, createElement(App))));
+  const show = async (address: string) => act(async () => root.render(createElement(SettingsProvider, null, createElement(PageLocation.Provider, { value: address }, createElement(App)))));
   await show('/analyzer/');
   await chooseSession('Practice');
   await show('/timer/?retry=1');
@@ -690,7 +761,7 @@ test('new Timer replay links work on an already mounted connected Timer without 
   await act(async () => root.unmount());
   recovered = solves;
   root = createRoot(container);
-  const show = async (address: string) => act(async () => root.render(createElement(PageLocation.Provider, { value: address }, createElement(App))));
+  const show = async (address: string) => act(async () => root.render(createElement(SettingsProvider, null, createElement(PageLocation.Provider, { value: address }, createElement(App)))));
   await show('/timer/?solve=1');
   expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe('1');
   await click('Close');
@@ -719,7 +790,7 @@ async function timedApp(solves: Solve[] = []) {
   recovered = solves;
   jest.useFakeTimers({ doNotFake: ['performance'] });
   root = createRoot(container);
-  await act(async () => root.render(createElement(App)));
+  await act(async () => root.render(app()));
 }
 
 test('the first daily attempt shows an independently dismissible fire with current and best streaks, only once per day', async () => {
@@ -1090,7 +1161,7 @@ test('average PB notifications retain their original window after later solves a
   await click('Options');
   await chooseSession('Other');
   await act(async () => container.querySelector<HTMLDialogElement>('.options-dialog')!.close());
-  expect(container.querySelector('[aria-label="View current Ao5"]')?.textContent).toBe('8.87');
+  expect(container.querySelector('[aria-label="View current Ao5"]')).toBeNull();
   await click('View PB Ao5');
   expect(container.querySelector('.average-dialog h2')?.textContent).toBe('Ao5: 14.00s');
   const rows = container.querySelectorAll('[aria-label="Average solves"] tbody tr');
@@ -2156,7 +2227,7 @@ test('Timer limits to the latest 10,000 session solves without losing numbering,
   expect(container.querySelector('[aria-label="Solve replay"]')!.getAttribute('data-solve-id')).toBe('10005');
 });
 
-test('records and old record drill-downs ignore recent scope and session while move metadata stays page-sized', async () => {
+test('records follow the shared session, ignore the recent limit, and show all sessions only from site Options', async () => {
   localStorage.setItem('recent-solve-limit', '1000');
   const old = Array.from({ length: 1000 }, (_, i) => historySolve(i + 1, 1000, 4, 'Earlier'));
   const recent = Array.from({ length: 1000 }, (_, i) => historySolve(i + 1001, 20000, 4));
@@ -2164,6 +2235,14 @@ test('records and old record drill-downs ignore recent scope and session while m
   await showHistory([...old, ...recent].reverse());
   expect(countTurns.mock.calls.length).toBeLessThan(500);
   expect(historyNumbers().slice(0, 2)).toEqual([1000, 999]);
+  expect(statistics.mock.calls.at(-1)![0]).toHaveLength(1000);
+  expect(container.querySelector('[aria-label="View best Single"]')?.textContent).toBe('20.00');
+  await chooseSession('Earlier');
+  expect(container.querySelector('[aria-label="View best Single"]')?.textContent).toBe('1.00');
+  expect(container.querySelector('[aria-label="View current Single"]')?.textContent).toBe('1.00');
+  await openSiteOptions();
+  expect(container.querySelector('#options-title')!.closest('dialog')!.textContent).not.toContain('Show all sessions');
+  await act(async () => container.querySelector<HTMLInputElement>('#all-sessions')!.click());
   expect(statistics.mock.calls.at(-1)![0]).toHaveLength(2000);
   for (const name of ['Single', 'Ao5', 'Ao12', 'Ao100', 'Ao1000']) {
     expect(container.querySelector(`[aria-label="View best ${name}"]`)?.textContent).toBe('1.00');

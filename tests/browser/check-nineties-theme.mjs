@@ -70,9 +70,9 @@ try {
   const timer = await checkPage('/timer/', 'timer');
   await expect(timer.locator('.timer-onboarding')).toHaveCSS('background-color', 'rgb(232, 232, 232)');
   await expect(timer.locator('.timer-onboarding')).toHaveCSS('color', 'rgb(0, 0, 0)');
-  await timer.getByRole('button', { name: 'Options', exact: true }).click();
-  await timer.getByRole('checkbox', { name: 'Show all sessions in history', exact: true }).check();
-  await timer.getByRole('button', { name: 'Close options', exact: true }).click();
+  await timer.getByRole('link', { name: 'Options', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Show all sessions', exact: true }).check();
+  await page.getByRole('link', { name: 'Timer', exact: true }).click();
   const history = timer.getByRole('table', { name: 'Solve history' });
   await expect(history.getByRole('columnheader')).toHaveText(['Solve', 'Time', 'Turns', 'TPS', 'Date']);
   await expect(history.locator('tbody time')).toHaveCount(3);

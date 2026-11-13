@@ -58,18 +58,38 @@ test('custom trainings mix categories, renaming keeps identity, and a new same-n
 });
 test('mistake deep links open single-case mode and update an already mounted trainer', async () => {
   const view = render(<PageLocation.Provider value="/trainer/?case=OLL-27"><Trainer /></PageLocation.Provider>);
-  expect((await screen.findByRole('combobox', { name: 'Case', exact: true }) as HTMLSelectElement).value).toBe('OLL-27');
+  expect(await screen.findByRole('heading', { name: /OLL 27 drill/ })).toBeDefined();
+  expect(screen.queryByRole('button', { name: 'Practice OLL 27', exact: true })).toBeNull();
   view.rerender(<PageLocation.Provider value="/trainer/?case=PLL-T"><Trainer /></PageLocation.Provider>);
-  expect((await screen.findByRole('combobox', { name: 'Case', exact: true }) as HTMLSelectElement).value).toBe('PLL-T');
+  expect(await screen.findByRole('heading', { name: /PLL T drill/ })).toBeDefined();
   expect(screen.getByRole('option', { name: 'Use my own solution' })).toBeDefined();
+});
+test('single-case entry has no selection and collapsed groups; choosing a case immediately opens its drill', async () => {
+  const view = render(<Trainer />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Single-case drill' }));
+  expect(view.container.querySelector('.trainer-practice')?.getAttribute('data-case')).toBeNull();
+  expect(view.container.querySelectorAll('.trainer-picker details[open]')).toHaveLength(0);
+  expect(screen.queryByRole('button', { name: 'Start practice' })).toBeNull();
+  fireEvent.click(screen.getByText('PLL cases (0 selected)'));
+  const choice = screen.getByRole('button', { name: 'Practice PLL T', exact: true });
+  choice.focus();
+  expect(screen.queryByRole('heading', { name: /PLL T drill/ })).toBeNull();
+  fireEvent.click(choice);
+  expect(screen.getByRole('heading', { name: /PLL T drill/ })).toBe(document.activeElement);
+  expect(screen.getByRole('button', { name: 'Start practice' }).hasAttribute('disabled')).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Back to cases' }));
+  expect(screen.queryByRole('button', { name: 'Start practice' })).toBeNull();
 });
 test('returning to the same mistake link restores its case after manually selecting another', async () => {
   const trainer = (visible: boolean, address: string) => <PageVisible.Provider value={visible}><PageLocation.Provider value={address}><Trainer /></PageLocation.Provider></PageVisible.Provider>;
   const view = render(trainer(true, '/trainer/?case=OLL-27'));
-  fireEvent.change(await screen.findByRole('combobox', { name: 'Case', exact: true }), { target: { value: 'PLL-T' } });
+  await screen.findByRole('heading', { name: /OLL 27 drill/ });
+  fireEvent.click(screen.getByRole('button', { name: 'Back to cases' }));
+  fireEvent.click(screen.getByText('PLL cases (0 selected)'));
+  fireEvent.click(screen.getByRole('button', { name: 'Practice PLL T', exact: true }));
   view.rerender(trainer(false, '/timer/'));
   view.rerender(trainer(true, '/trainer/?case=OLL-27'));
-  expect((screen.getByRole('combobox', { name: 'Case', exact: true }) as HTMLSelectElement).value).toBe('OLL-27');
+  expect(screen.getByRole('heading', { name: /OLL 27 drill/ })).toBeDefined();
 });
 afterEach(cleanup);
 
@@ -94,10 +114,28 @@ test('Blitz history distinguishes totals, dates and bests per drill, and filters
   const summaries = Array.from(view.container.querySelectorAll('.trainer-run > summary'));
   expect(summaries.map(summary => summary.querySelector('.trainer-run-time')!.textContent)).toEqual(['8.00sBest', '10.00s', '12.00sBest']);
   expect(summaries[0].querySelector('time')!.dateTime).toBe(runs[0].date);
-  expect(summaries[0].textContent).toContain('2 cases');
+  expect(summaries[0].textContent).toContain('2 attempts');
   fireEvent.click(screen.getByRole('button', { name: 'PLL Blitz' }));
   expect(await screen.findByText('2 runs')).toBeDefined();
   expect(view.container.querySelectorAll('.trainer-run')).toHaveLength(2);
+});
+test('Blitz results retain separate retry rows, elapsed time, and attempt order when sorted', async () => {
+  jest.mocked(readBlitzRuns).mockReturnValue([{ ...runs[0], milliseconds: 9000, splits: [
+    { caseId: 'T', milliseconds: 1000, dnf: true, retry: true, recognitionMilliseconds: 600, executionMilliseconds: 400 },
+    ...runs[0].splits,
+  ] }]);
+  const view = render(<Trainer />);
+  await screen.findByText('1 run');
+  const run = view.container.querySelector<HTMLDetailsElement>('.trainer-run')!;
+  fireEvent.click(run.querySelector('summary')!);
+  const table = within(run).getByRole('table');
+  expect(table.querySelectorAll('tbody tr')).toHaveLength(3);
+  const retry = within(table).getByText('Retry - DNF (1.00s)').closest('tr')!;
+  expect(retry.firstElementChild!.textContent).toBe('1');
+  expect(retry.textContent).toContain('PLL T');
+  fireEvent.click(within(table).getByRole('button', { name: /^Order/ }));
+  expect(table.querySelector('tbody tr')!.textContent).toContain('Retry - DNF (1.00s)');
+  expect(run.querySelector('.trainer-run-time')!.textContent).toBe('9.00sBest');
 });
 
 test('expanding a run retains sortable splits and keeps setup and settings secondary', async () => {

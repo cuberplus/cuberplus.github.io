@@ -64,6 +64,32 @@ describe('FilterPanel.markAllLuckiness', () => {
 describe('FilterPanel.compressSolves', () => {
     const stepTimes = [2, 3, 4, 3, 4, 2, 3]; // cross, f2l1-4, oll, pll
     const fullTime = stepTimes.reduce((a, b) => a + b, 0); // 21
+    test('sitewide session defaults scope charts and records, preserve local overrides, and reset on a new scope', () => {
+        const solves = ['Practice', 'Other', ''].map((session, index) => ({ ...makeSolve(stepTimes), id: String(index), session }));
+        const props = { solves, sessionScope: 'Practice' }, panel = new FilterPanel(props);
+        let state = FilterPanel.getDerivedStateFromProps(props, panel.state);
+        expect(state.filteredSolves.map(solve => solve.session)).toEqual(['Practice']);
+        expect(state.recordSolves.map(solve => solve.session)).toEqual(['Practice']);
+        const overridden = { ...state, sessionOverride: true, filters: { ...state.filters, sessions: ['Other'] } };
+        state = FilterPanel.getDerivedStateFromProps({ ...props, solves: [...solves] }, overridden);
+        expect(state.filteredSolves.map(solve => solve.session)).toEqual(['Other']);
+        state = FilterPanel.getDerivedStateFromProps({ solves, sessionScope: 'Default' }, state);
+        expect(state.sessionOverride).toBe(false);
+        expect(state.filteredSolves.map(solve => solve.session)).toEqual(['']);
+        state = FilterPanel.getDerivedStateFromProps({ solves, sessionScope: '' }, state);
+        expect(state.filteredSolves).toHaveLength(3);
+        expect(state.recordSolves).toHaveLength(3);
+        state = FilterPanel.getDerivedStateFromProps({ solves, sessionScope: 'Empty session' }, state);
+        expect(state.filteredSolves).toEqual([]);
+        expect(state.recordSolves).toEqual([]);
+    });
+    test('a shared session takes its own recent window instead of disappearing behind newer sessions', () => {
+        const solves = ['Practice', 'Practice', 'Other'].map((session, index) => ({ ...makeSolve(stepTimes), id: String(index), session, date: new Date(Date.UTC(2026, 0, index + 1)) }));
+        const props = { solves, sessionScope: 'Practice', solveLimit: 1 }, panel = new FilterPanel(props);
+        const state = FilterPanel.getDerivedStateFromProps(props, panel.state);
+        expect(state.filteredSolves.map(solve => solve.id)).toEqual(['1']);
+        expect(state.recordSolves.map(solve => solve.id)).toEqual(['0', '1']);
+    });
 
     test('with all steps selected, time equals the full solve time', () => {
         const solves = [makeSolve(stepTimes)];

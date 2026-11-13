@@ -95,7 +95,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
     static contextType = PageVisible;
     filterRevision = 0;
     state: FilterPanelState = {
-        allSolves: [],
+        allSolves: [], recordSolves: [],
         filteredSolves: [],
         compressedSolves: [],
         lastAppliedSolves: [],
@@ -122,8 +122,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         if (!solve.dnf && (solve.time < filters.fastestTime || solve.time > filters.slowestTime)) return 'Solve time';
         // Acubemy exports may not report inspection time. Those solves should not be excluded by inspection filters.
         if (solve.inspectionTime != null && (solve.inspectionTime < filters.lowestInspection || solve.inspectionTime > filters.highestInspection)) return 'Inspection time';
-        // Only filter by session when the solve has a session set; avoids excluding rows where session wasn't parsed (e.g. CSV column alignment).
-        if (filters.sessions.length > 0 && (solve.session !== '' && solve.session != null) && filters.sessions.indexOf(solve.session) < 0) return 'Session';
+        if (filters.sessions.length > 0 && !filters.sessions.includes(solve.session || 'Default')) return 'Session';
 
         // Only filter by case when the export reported one. Free-tier exports leave
         // step_N_case blank, and filtering on "" would reject the whole export.
@@ -138,8 +137,9 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
 
         return '';
     }
-    static exclusionSummary(solves: Solve[], filters: Filters, limit = 0): string {
+    static exclusionSummary(solves: Solve[], filters: Filters, limit = 0, sessionFirst = false): string {
         const counts = new Map<string, number>();
+        if (sessionFirst && filters.sessions.length) { const total = solves.length; solves = solves.filter(solve => filters.sessions.includes(solve.session || 'Default')); if (solves.length < total) counts.set('Session', total - solves.length); }
         if (limit > 0 && solves.length > limit) counts.set('Outside recent window', solves.length - limit);
         for (const solve of latestSolves(solves, limit, solve => solve.date.getTime())) {
             const reason = this.filterExclusion(solve, filters);
@@ -206,18 +206,19 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
 
     static getDerivedStateFromProps(nextProps: FilterPanelProps, prevState: FilterPanelState) {
         const solveLimit = nextProps.solveLimit ?? DEFAULT_SOLVE_LIMIT;
+        const scopeChanged = nextProps.sessionScope !== prevState.lastAppliedSession;
         const inputsUnchanged =
             nextProps.solves === prevState.lastAppliedSolves &&
             prevState.filters === prevState.lastAppliedFilters &&
-            prevState.windowSize === prevState.lastAppliedWindowSize && solveLimit === prevState.lastAppliedSolveLimit;
+            prevState.windowSize === prevState.lastAppliedWindowSize && solveLimit === prevState.lastAppliedSolveLimit && !scopeChanged;
 
         // Everything carries over; only the incoming solves and whatever depends
         // on them is recomputed below.
         const newState: FilterPanelState = { ...prevState, allSolves: nextProps.solves };
         if (inputsUnchanged) return newState;
+        if (scopeChanged) newState.sessionOverride = false;
 
         const solvesChanged = nextProps.solves !== prevState.lastAppliedSolves;
-        const recent = latestSolves(nextProps.solves, solveLimit, solve => solve.date.getTime());
         if (solvesChanged) {
             if (nextProps.suggestedMethod !== undefined) {
                 const method = nextProps.suggestedMethod.value as MethodName;
@@ -225,7 +226,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                 newState.filters = { ...newState.filters, method, steps: Const.MethodSteps[method] };
                 newState.chosenSteps = FilterPanel.getStepOptionsForMethod(method);
             }
-            if (nextProps.suggestedSessions !== undefined) {
+            if (nextProps.suggestedSessions !== undefined && nextProps.sessionScope === undefined) {
                 newState.chosenSessions = nextProps.suggestedSessions;
                 newState.filters = { ...newState.filters, sessions: nextProps.suggestedSessions.map(x => x.value) };
             }
@@ -233,6 +234,12 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                 newState.windowSize = nextProps.suggestedWindowSize;
             }
         }
+        if (nextProps.sessionScope !== undefined && !newState.sessionOverride && (solvesChanged || scopeChanged)) {
+            newState.chosenSessions = nextProps.sessionScope ? [{ label: nextProps.sessionScope, value: nextProps.sessionScope }] : CalculateAllSessionOptions(nextProps.solves);
+            newState.filters = { ...newState.filters, sessions: newState.chosenSessions.map(option => option.value) };
+        }
+        newState.recordSolves = nextProps.solves.filter(solve => !newState.filters.sessions.length || newState.filters.sessions.includes(solve.session || 'Default'));
+        const recent = latestSolves(nextProps.sessionScope === undefined ? nextProps.solves : newState.recordSolves, solveLimit, solve => solve.date.getTime());
         if (newState.autoWindowSize) {
             const firstPass = newState.filters.solveCleanliness.length === Const.solveCleanliness.length
                 ? FilterPanel.markAllLuckiness(recent).filter(solve => FilterPanel.passesFilters(solve, newState.filters))
@@ -252,24 +259,22 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         newState.lastAppliedFilters = newState.filters;
         newState.lastAppliedWindowSize = newState.windowSize;
         newState.lastAppliedSolveLimit = solveLimit;
+        newState.lastAppliedSession = nextProps.sessionScope;
         return newState;
     }
-    componentDidMount() { this.props.onStepsChange?.(this.state.filters.steps); }
-    componentDidUpdate(_props: FilterPanelProps, previous: FilterPanelState) { if (previous.filters.steps !== this.state.filters.steps) this.props.onStepsChange?.(this.state.filters.steps); }
+    componentDidMount() { this.props.onStepsChange?.(this.state.filters.steps); this.props.onSessionsChange?.(this.state.filters.sessions); }
+    componentDidUpdate(_props: FilterPanelProps, previous: FilterPanelState) {
+        if (previous.filters.steps !== this.state.filters.steps) this.props.onStepsChange?.(this.state.filters.steps);
+        if (previous.filters.sessions !== this.state.filters.sessions) this.props.onSessionsChange?.(this.state.filters.sessions);
+    }
 
     /** Multi-selects all behave the same: raw options in state, their values in filters. */
     setMulti(filterKey: keyof Filters, stateKey: keyof FilterPanelState, selectedList: Option[]) {
-        this.setState(prev => {
-            const filters: Filters = { ...prev.filters, [filterKey]: selectedList.map(x => x.value) };
-            return { ...prev, filters, [stateKey]: selectedList };
-        });
+        this.setState(prev => ({ ...prev, filters: { ...prev.filters, [filterKey]: selectedList.map(x => x.value) }, [stateKey]: selectedList, sessionOverride: filterKey === 'sessions' || prev.sessionOverride }));
     }
 
     setFilter<K extends keyof Filters>(filterKey: K, value: Filters[K]) {
-        this.setState(prev => {
-            const filters: Filters = { ...prev.filters, [filterKey]: value };
-            return { ...prev, filters };
-        });
+        this.setState(prev => ({ ...prev, filters: { ...prev.filters, [filterKey]: value }, sessionOverride: filterKey === 'sessions' || prev.sessionOverride }));
     }
 
     setNumberFilter(filterKey: KeysOfType<Filters, number>, event: React.ChangeEvent<HTMLInputElement>) {
@@ -322,17 +327,10 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         return values.map(x => ({ label: x, value: x }));
     }
 
-    static getStepOptionsForMethod(method: MethodName) {
-        return FilterPanel.toOptions(Const.MethodSteps[method]);
-    }
+    static getStepOptionsForMethod(method: MethodName) { return FilterPanel.toOptions(Const.MethodSteps[method]); }
+    getMethodOptions(): Option<MethodName>[] { return FilterPanel.toOptions(Object.values(MethodName)); }
 
-    getMethodOptions(): Option<MethodName>[] {
-        return FilterPanel.toOptions(Object.values(MethodName));
-    }
-
-    getSessionOptions() {
-        return CalculateAllSessionOptions(this.props.solves);
-    }
+    getSessionOptions() { return CalculateAllSessionOptions(this.props.solves); }
 
     methodChanged(newValue: Option<MethodName> | null) {
         if (!newValue) return;
@@ -345,12 +343,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         this.props.onMethodChange?.(newMethod);
     }
 
-    applyStepsPreset(steps: StepName[]) {
-        this.setState({
-            filters: { ...this.state.filters, steps },
-            chosenSteps: FilterPanel.toOptions(steps),
-        });
-    }
+    applyStepsPreset(steps: StepName[]) { this.chosenStepsChanged(FilterPanel.toOptions(steps)); }
 
     setStartDate(newStartDate: Date) { this.setFilter('startDate', newStartDate); }
 
@@ -398,7 +391,8 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
     resetFilters() {
         this.filterRevision++;
         const solves = this.state.allSolves;
-        this.setState(defaultSelections(this.state.method.value as MethodName, CalculateAllSessionOptions(solves), CalculateBenchmarkTimes(solves)));
+        const sessions = this.props.sessionScope ? [{ label: this.props.sessionScope, value: this.props.sessionScope }] : CalculateAllSessionOptions(solves);
+        this.setState({ ...defaultSelections(this.state.method.value as MethodName, sessions, CalculateBenchmarkTimes(solves)), sessionOverride: false });
     }
 
     createFilterHtml(filter: JSX.Element, title: string, tooltip: string): JSX.Element {
@@ -462,7 +456,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                     {this.createFilterHtml(
                         <></>,
                         `Showing ${this.state.filteredSolves.length} / ${this.state.allSolves.length} solves`,
-                        this.state.showFilters ? FilterPanel.exclusionSummary(this.state.allSolves, this.state.filters, this.props.solveLimit ?? DEFAULT_SOLVE_LIMIT) : 'Open filters to see why solves are excluded.'
+                        this.state.showFilters ? FilterPanel.exclusionSummary(this.state.allSolves, this.state.filters, this.props.solveLimit ?? DEFAULT_SOLVE_LIMIT, this.props.sessionScope !== undefined) : 'Open filters to see why solves are excluded.'
                     )}
 
                     <details open className="filter-group"><summary>Basics</summary>
@@ -561,7 +555,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                         <Col>
                             <ChartPanel
                                 windowSize={this.state.windowSize}
-                                solves={this.state.compressedSolves} recordSolves={this.props.solves}
+                                solves={this.state.compressedSolves} recordSolves={this.state.recordSolves}
                                 pointsPerGraph={this.state.pointsPerGraph}
                                 methodName={this.state.filters.method}
                                 goodTime={this.state.goodTime}
@@ -595,7 +589,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
             f.solveCleanliness.length !== Const.solveCleanliness.length, f.solveLuckiness.length !== Const.solveLuckiness.length,
             f.fastestTime !== 0 || f.slowestTime !== 300, f.lowestInspection !== 0 || f.highestInspection !== 300,
         ].filter(Boolean).length;
-        const source = this.props.source ?? 'Saved solves', demo = source.startsWith('Demo:');
+        const source = this.props.source ?? 'Shown solves', demo = source.startsWith('Demo:');
         return (
             <div className="body">
                 <section className="dashboard">
@@ -613,7 +607,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                     {loading}
                     {this.state.allSolves.length > 0 && <>
                         <div className="analysis-summary">
-                            <div className="analysis-context"><span className={demo ? 'analysis-demo' : ''}>{demo ? 'Demo' : source}</span><strong>{this.state.filteredSolves.length.toLocaleString()} / {this.state.allSolves.length.toLocaleString()} solves</strong><InfoTip>{demo ? `${source}. Demo data is temporary. Your saved solves are unchanged.` : `${source}. The recent-solves limit is shared across pages and can be changed in Options. Filters affect charts, not all-time records.`}</InfoTip></div>
+                            <div className="analysis-context"><span className={demo ? 'analysis-demo' : ''}>{demo ? 'Demo' : source}</span><strong>{this.state.filteredSolves.length.toLocaleString()} / {this.state.allSolves.length.toLocaleString()} solves</strong><InfoTip>{demo ? `${source}. Demo data is temporary. Your saved solves are unchanged.` : `${source}. Session and recent-solves scope are shared across pages. Override the session in Filters, or show all sessions in Options. Session filters also scope all-time records; other filters affect charts only.`}</InfoTip></div>
                             <button className="btn btn-primary" aria-label={activeFilters ? `Open filters, ${activeFilters} active` : 'Open filters'} onClick={() => this.showFilters()}>Edit filters{activeFilters > 0 && ` (${activeFilters})`}</button>
                         </div>
                         {this.props.presets}

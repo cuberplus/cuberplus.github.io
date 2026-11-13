@@ -14,6 +14,7 @@ import { BlitzCaseImage } from './BlitzCaseImage';
 import { CasePractice } from './CasePractice';
 import { findTrainingCase } from './cases';
 import { SolutionProgress } from './SolutionProgress';
+import { relativeTime } from '../../timer/src/Data/relativeTime';
 import './trainer.css';
 
 const seconds = (milliseconds: number) => `${(milliseconds / 1000).toFixed(2)}s`;
@@ -59,6 +60,10 @@ export default function Trainer() {
     try { saveBlitzRun(run); setRuns(readBlitzRuns()); setUnsaved(false); setError(''); }
     catch { setUnsaved(true); setError('Your result is shown below, but could not be saved in this browser.'); }
   }
+  function finishDrill() {
+    if (drill.current?.phase !== 'complete') return;
+    const run = drill.current.result(); setResult(run); persist(run); drill.current = null;
+  }
   function receive(event: SmartCubeEvent) {
     if (!mounted.current || (event.type !== 'MOVE' && event.type !== 'DISCONNECT')) return;
     if (event.type === 'DISCONNECT') {
@@ -70,11 +75,7 @@ export default function Trainer() {
     if (event.type === 'MOVE' && active.current) {
       const current = drill.current;
       if (current) current.move(cfopFrame(current.cube, current.queue[current.index]?.colorFrame ?? '')(event.move), performance.now());
-      if (current?.phase === 'complete') {
-        const run = current.result(); setResult(run); persist(run);
-        // A completed drill must not save again when the cube sends another turn.
-        drill.current = null;
-      }
+      finishDrill();
     }
     render();
   }
@@ -88,8 +89,8 @@ export default function Trainer() {
   const previews = current?.phase === 'running' && settings.upcomingCases ? current.queue.slice(current.index, current.index + 4) : [];
   const entry = current?.queue[current.index];
   const visibleRuns = runs.filter(run => !kind || run.kind === kind);
-  const best = { OLL: Math.min(...runs.filter(run => run.kind === 'OLL').map(run => run.milliseconds)),
-    PLL: Math.min(...runs.filter(run => run.kind === 'PLL').map(run => run.milliseconds)) };
+  const best = { OLL: Math.min(...runs.filter(run => run.kind === 'OLL' && !run.dnf).map(run => run.milliseconds)),
+    PLL: Math.min(...runs.filter(run => run.kind === 'PLL' && !run.dnf).map(run => run.milliseconds)) };
   return <div className="cuberplus-page trainer-page">
     <header className="cuberplus-header"><Navigation current="trainer" /></header>
     <main className="container py-4 trainer-main">
@@ -127,7 +128,7 @@ export default function Trainer() {
           </label>)}
         </fieldset>
       </dialog>
-      {mode ? <CasePractice key={`${mode}:${practiceCase.revision}`} cube={cube} mode={mode} initialCase={practiceCase.key} settings={settings} back={() => setMode(null)} /> : !kind ? <><div className="trainer-drills">{(['OLL', 'PLL'] as const).map(group => <button key={group} className="card trainer-drill" onClick={() => choose(group)}>
+      {mode ? <CasePractice key={`${mode}:${practiceCase.revision}`} cube={cube} mode={mode} initialCase={practiceCase.key} settings={settings} back={() => { setMode(null); setPracticeCase(previous => ({ key: '', revision: previous.revision + 1 })); }} /> : !kind ? <><div className="trainer-drills">{(['OLL', 'PLL'] as const).map(group => <button key={group} className="card trainer-drill" onClick={() => choose(group)}>
         <CaseImage category={group} id={group === 'OLL' ? '27' : 'T'} />
         <h3>{group} Blitz</h3>
       </button>)}<button className="card trainer-drill" onClick={() => setMode('single')}><CaseImage category="F2L" id="1" /><h3>Single-case drill</h3></button>
@@ -140,6 +141,12 @@ export default function Trainer() {
         </div>
         {!navigator.bluetooth && <p>Use a browser with Web Bluetooth, such as Chrome or Edge.</p>}
         <section className="card p-3 text-center" aria-label={`${kind} Blitz drill`}>
+          {busy && <div className="trainer-drill-controls">
+            {current?.phase === 'running' && <><button type="button" className="btn btn-outline-secondary" onClick={() => { current.retry(performance.now()); render(); }}>Retry case</button>
+              <button type="button" className="btn btn-outline-secondary" onClick={() => { current.skip(performance.now()); finishDrill(); render(); }}>Skip case</button></>}
+            <button type="button" className="btn btn-danger" onClick={() => { current!.phase = 'cancelled'; setStatus('Blitz aborted. No result saved.'); render(); }}>Stop drill</button>
+            <InfoTip>Retry records this attempt as DNF and resets the same virtual case. Its elapsed time still counts toward the Blitz total. Skip records a DNF, advances to the next case, and marks the overall Blitz DNF. Neither needs a physical cube reset.</InfoTip>
+          </div>}
           {!!previews.length && <div className="trainer-case-queue" aria-label="Current and upcoming cases">
             {previews.map((entry, i) => <div key={`${entry.category}-${entry.id}`} data-auf={entry.auf} data-pre-auf={entry.preAuf} data-post-auf={entry.postAuf} data-color-frame={entry.colorFrame} className={i === 0 ? 'trainer-case-current' : ''}>
               <p>{i === 0 ? 'Current' : `Next ${i}`}</p><BlitzCaseImage cube={cube!} kind={kind} {...entry} hidePLL={kind === 'OLL'} />
@@ -158,13 +165,12 @@ export default function Trainer() {
             try { drill.current = new Blitz(cube!, kind, Math.random, settings); drill.current.start(performance.now()); }
             catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not start Blitz.'); return; }
             setResult(null); setUnsaved(false); setError(''); setStatus(''); render();
-          }}>{result ? 'Try again' : 'Start Blitz'}</button> :
-            <button className="btn btn-outline-danger align-self-center" onClick={() => { current!.phase = 'cancelled'; setStatus('Blitz aborted. No result saved.'); render(); }}>Give up</button>}
+          }}>{result ? 'Try again' : 'Start Blitz'}</button> : null}
         </section>
       </>}
       {status && <p role="status" className="mt-3">{status}</p>}
       {error && <p role="alert" className="mt-3">{error}</p>}
-      {result && <section className="card p-3 mt-4" aria-label="Blitz result"><h3>Blitz complete: {seconds(result.milliseconds)}</h3>
+      {result && <section className="card p-3 mt-4" aria-label="Blitz result"><h3>Blitz complete: {result.dnf ? 'DNF' : seconds(result.milliseconds)}</h3>
         {unsaved ? <button className="btn btn-primary" onClick={() => persist(result)}>Retry saving result</button> : <p>Result and case splits saved.</p>}
         <Splits run={result} cube={cube} />
       </section>}
@@ -172,9 +178,9 @@ export default function Trainer() {
         <div className="d-flex align-items-baseline justify-content-between gap-2 mb-3"><h3 className="h5 mb-0">Blitz history</h3><span className="text-secondary small">{visibleRuns.length} {visibleRuns.length === 1 ? 'run' : 'runs'}</span></div>
         {visibleRuns.map(run => <details className="card trainer-run" key={run.id}>
           <summary>
-            <span className="trainer-run-kind">{run.kind} Blitz<span className="small text-secondary">{run.splits.length} cases</span></span>
-            <strong className="trainer-run-time">{seconds(run.milliseconds)}{run.milliseconds === best[run.kind] && <span className="trainer-best">Best</span>}</strong>
-            <time dateTime={run.date}>{new Date(run.date).toLocaleString()}</time>
+            <span className="trainer-run-kind">{run.kind} Blitz<span className="small text-secondary">{run.splits.length} attempts</span></span>
+            <strong className="trainer-run-time">{run.dnf ? 'DNF' : seconds(run.milliseconds)}{!run.dnf && run.milliseconds === best[run.kind] && <span className="trainer-best">Best</span>}</strong>
+            <time dateTime={run.date} title={new Date(run.date).toLocaleString()}>{relativeTime(run.date)}</time>
           </summary>
           <div className="trainer-run-content"><Splits run={run} cube={cube} /></div>
         </details>)}
@@ -198,12 +204,12 @@ function BlitzClock({ blitz, result, changed }: { blitz: Blitz | null; result: B
   }, [blitz, phase, visible, changed]);
   return <div className="trainer-clock" role="timer" aria-label="Blitz time">
     {phase === 'countdown' ? Math.max(1, 3 - Math.floor((performance.now() - blitz!.countdownAt) / 1000)) :
-      seconds(result?.milliseconds ?? blitz?.elapsed(performance.now()) ?? 0)}
+      result?.dnf ? 'DNF' : seconds(result?.milliseconds ?? blitz?.elapsed(performance.now()) ?? 0)}
   </div>;
 }
 const Splits = memo(function Splits({ run, cube }: { run: BlitzRun; cube: Cube | null }) {
   const [sort, setSort] = useState<{ column: 'order' | 'caseId' | 'milliseconds' | 'recognitionMilliseconds' | 'executionMilliseconds'; ascending: boolean }>({ column: 'caseId', ascending: true });
-  const splits = run.splits.map((split, index) => ({ ...split, order: index + 1 })).sort((a, b) => {
+  const splits = run.splits.map((split, index) => ({ ...split, retry: split.retry ?? (!!split.dnf && run.splits[index + 1]?.caseId === split.caseId), order: index + 1 })).sort((a, b) => {
     const first = a[sort.column], second = b[sort.column];
     if (first === undefined || second === undefined) return first === second ? 0 : first === undefined ? 1 : -1;
     return (typeof first === 'string' ? first.localeCompare(String(second), undefined, { numeric: true }) : first - Number(second)) * (sort.ascending ? 1 : -1);
@@ -231,14 +237,14 @@ const Splits = memo(function Splits({ run, cube }: { run: BlitzRun; cube: Cube |
           {label}{sort.column === column ? sort.ascending ? ' \u2191' : ' \u2193' : ''}
         </button>
       </th>)}</tr></thead><tbody>
-      {splits.map(split => <tr key={split.caseId}><td>{split.order}</td><td><div className="d-flex align-items-center gap-2">
+      {splits.map(split => <tr key={split.order}><td>{split.order}</td><td><div className="d-flex align-items-center gap-2">
         {cube && <BlitzCaseImage cube={cube} kind={run.kind} id={split.caseId} {...split} hidePLL={run.kind === 'OLL'} />}
         <span><strong>{run.kind} {split.caseId}</strong>{(split.preAuf !== undefined || split.auf !== undefined || split.crossColor) && <details className="trainer-case-setup"><summary>Setup</summary>{split.preAuf !== undefined ? <>
           <small className="d-block text-secondary">Pre-AUF: {split.preAuf || 'None'}</small>
           <small className="d-block text-secondary">Post-AUF: {split.postAuf || 'None'}</small>
         </> : split.auf !== undefined && <small className="d-block text-secondary">AUF: {split.auf || 'None'}</small>}
           {split.crossColor && <small className="d-block text-secondary">{split.crossColor} cross / {split.frontColor} front</small>}</details>}</span>
-      </div></td><td>{recordedTime(split.recognitionMilliseconds)}</td><td>{recordedTime(split.executionMilliseconds)}</td><td>{seconds(split.milliseconds)}</td></tr>)}
+      </div></td><td>{recordedTime(split.recognitionMilliseconds)}</td><td>{recordedTime(split.executionMilliseconds)}</td><td>{split.dnf ? `${split.retry ? 'Retry' : 'Skipped'} - DNF (${seconds(split.milliseconds)})` : seconds(split.milliseconds)}</td></tr>)}
     </tbody></table></div>
   </>;
 });

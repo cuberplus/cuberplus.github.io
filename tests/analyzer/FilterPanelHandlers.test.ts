@@ -35,6 +35,16 @@ function runHandler(handler: (panel: FilterPanel) => void, seed: Partial<FilterP
 const opts = <T extends string>(...values: T[]): Option<T>[] => values.map(v => ({ label: v, value: v }));
 
 describe('FilterPanel multi-select handlers', () => {
+    test('only an explicit session filter overrides the sitewide scope; reset restores it', () => {
+        const panel = newPanel({ solves: [], sessionScope: 'Practice' });
+        panel.chosenSessionsChanged(opts('Other'));
+        expect(panel.state.sessionOverride).toBe(true);
+        panel.sourcesChanged(opts('timer'));
+        expect(panel.state.sessionOverride).toBe(true);
+        panel.resetFilters();
+        expect(panel.state.sessionOverride).toBe(false);
+        expect(panel.state.filters.sessions).toEqual(['Practice']);
+    });
     const cases: Array<[string, (p: FilterPanel, list: Option[]) => void, keyof Filters, keyof FilterPanelState, string[]]> = [
         ['cross colors', (p, l) => p.crossColorsChanged(l), 'crossColors', 'chosenColors', [CrossColor.White, CrossColor.Red]],
         ['sessions', (p, l) => p.chosenSessionsChanged(l), 'sessions', 'chosenSessions', ['morning', 'evening']],

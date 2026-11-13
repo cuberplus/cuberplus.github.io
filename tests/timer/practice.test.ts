@@ -11,6 +11,31 @@ import { loadCube, type Cube } from '../../timer/src/Core/puzzle';
 let cube: Cube;
 beforeAll(async () => { cube = await loadCube(); Object.defineProperty(globalThis, 'crypto', { value: webcrypto }); });
 beforeEach(() => localStorage.clear());
+test('retry resets the same virtual case and saves the failed attempt; skip advances without physical resets', () => {
+  const cases = ['OLL-27', 'PLL-T'].map(key => algorithms.find(entry => caseKey(entry) === key)!);
+  let draw = 0;
+  const practice = new Practice(cube, cases, 'custom', defaultBlitzSettings, 0, () => draw++ % 2 ? .8 : .3);
+  expect(practice.retry(100)).toBeNull();
+  practice.tick(3000);
+  const entry = practice.queue[0], next = practice.queue[1], initial = cube.facelets(practice.pattern);
+  const solution = practice.solution, frame = practice.colorFrame;
+  practice.move('R', 3400);
+  const retry = practice.retry(4000)!;
+  expect(retry).toMatchObject({ caseKey: caseKey(entry), dnf: true, recognitionMilliseconds: 400, executionMilliseconds: 600 });
+  expect(practice.queue[0]).toBe(entry);
+  expect(cube.facelets(practice.pattern)).toBe(initial);
+  expect(practice.solution).toBe(solution);
+  expect(practice.colorFrame).toBe(frame);
+  expect(practice.moves).toEqual([]);
+  expect(practice.firstMoveAt).toBeNull();
+  const skipped = practice.skip(4700)!;
+  expect(skipped).toMatchObject({ caseKey: caseKey(entry), dnf: true, recognitionMilliseconds: 700, executionMilliseconds: 0 });
+  expect(practice.queue[0]).toBe(next);
+  expect(practice.queue).toHaveLength(4);
+  saveAttempt(retry); saveAttempt(skipped);
+  expect(readAttempts()).toEqual([skipped, retry]);
+  expect(complete(practice, practice.solution, 4700)?.dnf).toBeUndefined();
+});
 function complete(practice: Practice, algorithm: string, start = practice.splitAt): PracticeAttempt | null {
   let now = start, attempt: PracticeAttempt | null = null;
   for (const move of algorithmMatcher(cube).outerMoves(algorithm).moves) {

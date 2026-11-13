@@ -9,8 +9,8 @@ export interface BlitzSettings { upcomingCases: boolean; caseNames: boolean; sol
 export const defaultBlitzSettings: BlitzSettings = { upcomingCases: true, caseNames: true, solutionAlgorithms: true, randomPreAuf: true, randomPostAuf: true, hidePLL: false, crossColor: 'Yellow', frontColor: 'Green' };
 interface PLLPermutation { edges: number[]; corners: number[] }
 export interface BlitzCase extends AlgorithmCase { auf: string; preAuf?: string; postAuf?: string; colorFrame: string; crossColor: CubeColor; frontColor: CubeColor; permutation?: PLLPermutation }
-export interface BlitzSplit { caseId: string; milliseconds: number; recognitionMilliseconds?: number; executionMilliseconds?: number; auf?: string; preAuf?: string; postAuf?: string; colorFrame?: string; crossColor?: CubeColor; frontColor?: CubeColor; permutation?: PLLPermutation }
-export interface BlitzRun { id: string; kind: BlitzKind; date: string; milliseconds: number; splits: BlitzSplit[]; settings?: BlitzSettings }
+export interface BlitzSplit { caseId: string; milliseconds: number; dnf?: boolean; retry?: boolean; recognitionMilliseconds?: number; executionMilliseconds?: number; auf?: string; preAuf?: string; postAuf?: string; colorFrame?: string; crossColor?: CubeColor; frontColor?: CubeColor; permutation?: PLLPermutation }
+export interface BlitzRun { id: string; kind: BlitzKind; date: string; milliseconds: number; dnf?: boolean; splits: BlitzSplit[]; settings?: BlitzSettings }
 export const BLITZ_STORAGE = 'cuberplus-trainer-blitz-v1';
 export const BLITZ_SETTINGS_STORAGE = 'cuberplus-trainer-settings-v1';
 export const aufMoves = ['', 'U', 'U2', "U'"];
@@ -88,6 +88,7 @@ export class Blitz {
   firstMoveAt: number | null = null;
   finishedAt = 0;
   splits: BlitzSplit[] = [];
+  dnf = false;
   pattern: KPattern;
   initialPattern: KPattern;
   moves: string[] = [];
@@ -127,26 +128,39 @@ export class Blitz {
     const done = this.kind === 'PLL' ? this.cube.isSolved(this.pattern) :
       f2l && [...this.cube.facelets(this.pattern).slice(0, 9)].every(face => face === 'U');
     if (!done) return false;
-    const { id: caseId, auf, preAuf, postAuf, colorFrame, crossColor, frontColor, permutation } = this.queue[this.index];
-    const milliseconds = Math.max(0, now - this.splitAt), recognitionMilliseconds = Math.min(milliseconds, Math.max(0, this.firstMoveAt - this.splitAt));
-    this.splits.push({ caseId, auf, preAuf, postAuf, colorFrame, crossColor, frontColor, permutation, milliseconds, recognitionMilliseconds, executionMilliseconds: milliseconds - recognitionMilliseconds });
-    this.splitAt = now;
-    if (++this.index === this.queue.length) { this.phase = 'complete'; this.finishedAt = now; }
-    else this.loadCase();
+    this.finishCase(now);
     return true;
+  }
+  skip(now: number) {
+    if (this.phase !== 'running') return;
+    this.dnf = true; this.finishCase(now, true);
+  }
+  retry(now: number) {
+    if (this.phase !== 'running') return;
+    this.finishCase(now, true, true);
+  }
+  private finishCase(now: number, dnf = false, retry = false) {
+    const { id: caseId, auf, preAuf, postAuf, colorFrame, crossColor, frontColor, permutation } = this.queue[this.index];
+    const milliseconds = Math.max(0, now - this.splitAt), recognitionMilliseconds = Math.min(milliseconds, Math.max(0, (this.firstMoveAt ?? now) - this.splitAt));
+    this.splits.push({ caseId, auf, preAuf, postAuf, colorFrame, crossColor, frontColor, permutation, milliseconds, recognitionMilliseconds, executionMilliseconds: milliseconds - recognitionMilliseconds, ...(dnf && { dnf: true }), ...(retry && { retry: true }) });
+    this.splitAt = now;
+    if (retry) { this.pattern = this.initialPattern; this.moves = []; this.firstMoveAt = null; }
+    else if (++this.index === this.queue.length) { this.phase = 'complete'; this.finishedAt = now; }
+    else this.loadCase();
   }
   elapsed(now: number) { return this.phase === 'complete' ? this.finishedAt - this.startedAt : this.phase === 'running' ? now - this.startedAt : 0; }
   result(): BlitzRun {
     if (this.phase !== 'complete') throw new Error('Finish every case before saving a Blitz result.');
-    return { id: crypto.randomUUID(), kind: this.kind, date: new Date().toISOString(), milliseconds: this.elapsed(this.finishedAt), splits: [...this.splits], settings: { ...this.settings } };
+    return { id: crypto.randomUUID(), kind: this.kind, date: new Date().toISOString(), milliseconds: this.splits.reduce((sum, split) => sum + split.milliseconds, 0), ...(this.dnf && { dnf: true }), splits: [...this.splits], settings: { ...this.settings } };
   }
 }
 export function readBlitzRuns(): BlitzRun[] {
   const saved = JSON.parse(localStorage.getItem(BLITZ_STORAGE) ?? '[]') as BlitzRun[];
   if (!Array.isArray(saved) || saved.some(run => !run || typeof run.id !== 'string' || !['OLL', 'PLL'].includes(run.kind) ||
-    !Number.isFinite(Date.parse(run.date)) || !Number.isFinite(run.milliseconds) || run.milliseconds < 0 ||
+    !Number.isFinite(Date.parse(run.date)) || !Number.isFinite(run.milliseconds) || run.milliseconds < 0 || (run.dnf !== undefined && typeof run.dnf !== 'boolean') ||
     !Array.isArray(run.splits) || run.splits.some(split => !split || typeof split.caseId !== 'string' ||
-      !Number.isFinite(split.milliseconds) || split.milliseconds < 0 || (split.auf !== undefined && !aufMoves.includes(split.auf)) ||
+      !Number.isFinite(split.milliseconds) || split.milliseconds < 0 || (split.dnf !== undefined && typeof split.dnf !== 'boolean') || (split.auf !== undefined && !aufMoves.includes(split.auf)) ||
+      (split.retry !== undefined && (typeof split.retry !== 'boolean' || split.retry && !split.dnf)) ||
       (split.preAuf !== undefined && !aufMoves.includes(split.preAuf)) || (split.postAuf !== undefined && !aufMoves.includes(split.postAuf)) ||
       ((split.preAuf === undefined) !== (split.postAuf === undefined)) ||
       !validSplitTiming(split) ||

@@ -10,11 +10,11 @@ export async function readTimerData(): Promise<string> {
   return solves.some(solve => solve.status !== 'active') ? cubeastCSV(solves, await loadCube()) : '';
 }
 
-export async function readLocalAnalysis(solveLimit = 0) {
+export async function readLocalAnalysis(solveLimit = 0, sessions?: string[]) {
   const solves = (await readSolves()).filter(solve => solve.status !== 'active');
   if (!solves.length) return [];
   const cube = await loadCube();
-  const recent = latestSolves(solves, solveLimit, solve => Date.parse(solve.createdAt)), selected = new Set(recent);
+  const recent = latestSolves(solves.filter(solve => !sessions?.length || sessions.includes(solve.session || 'Default')), solveLimit, solve => Date.parse(solve.createdAt)), selected = new Set(recent);
   const records = recent.map(solve => solveAnalysis(solve, cube));
   markMistakes(records, CalculateWindowSize(records.length));
   await persistAnalysis(recent, records);

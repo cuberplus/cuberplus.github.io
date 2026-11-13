@@ -17,11 +17,12 @@ export class CubeConnection {
   readonly adapter = new BluetoothCube();
   private listeners = new Set<() => void>();
   private events = new Set<(event: SmartCubeEvent) => void>();
-  private snapshot = { connection: null as SmartCubeConnection | null, connecting: false, status: '', error: '', battery: null as number | null, cubes: readCubes(), selected: readSelected() };
+  private snapshot = { connection: null as SmartCubeConnection | null, connecting: false, practicing: false, status: '', error: '', battery: null as number | null, cubes: readCubes(), selected: readSelected() };
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.snapshot;
   private update(patch: Partial<typeof this.snapshot>) { this.snapshot = { ...this.snapshot, ...patch }; this.listeners.forEach(listener => listener()); }
   onEvent(listener: (event: SmartCubeEvent) => void) { this.events.add(listener); return () => { this.events.delete(listener); }; }
+  setPracticing(practicing: boolean) { this.update({ practicing }); }
   private emit = (event: SmartCubeEvent) => {
     if (event.type === 'DISCONNECT') {
       const wasConnected = !!this.snapshot.connection;

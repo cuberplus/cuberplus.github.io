@@ -11,6 +11,7 @@ export interface CustomTraining { id: string; name: string; cases: string[] }
 export interface PracticeAttempt {
   id: string; date: string; trainingId: string; caseKey: string; algorithm: string | null;
   recognitionMilliseconds: number; executionMilliseconds: number;
+  dnf?: boolean;
 }
 export function readTrainings(): CustomTraining[] {
   const saved = JSON.parse(localStorage.getItem(TRAININGS_STORAGE) ?? '[]') as CustomTraining[];
@@ -21,7 +22,7 @@ export function readTrainings(): CustomTraining[] {
 export function readAttempts(): PracticeAttempt[] {
   const saved = JSON.parse(localStorage.getItem(PRACTICE_STORAGE) ?? '[]') as PracticeAttempt[];
   if (!Array.isArray(saved) || saved.some(item => !item || typeof item.id !== 'string' || typeof item.caseKey !== 'string' ||
-    typeof item.trainingId !== 'string' || !Number.isFinite(Date.parse(item.date)) ||
+    typeof item.trainingId !== 'string' || !Number.isFinite(Date.parse(item.date)) || (item.dnf !== undefined && typeof item.dnf !== 'boolean') ||
     ![item.recognitionMilliseconds, item.executionMilliseconds].every(time => Number.isFinite(time) && time >= 0))) throw new Error('Saved practice timings could not be read.');
   return saved;
 }
@@ -91,10 +92,22 @@ export class Practice {
       entry.category === 'F2L' ? cross && pairs :
         cross && [...this.preservedPairs, entry.pair ?? 4].every(pair => this.pairSolved(pattern, pair));
     if (!done) return null;
+    return this.finishAttempt(now);
+  }
+  skip(now: number): PracticeAttempt | null {
+    return this.phase === 'running' ? this.finishAttempt(now, true) : null;
+  }
+  retry(now: number): PracticeAttempt | null {
+    return this.phase === 'running' ? this.finishAttempt(now, true, true) : null;
+  }
+  private finishAttempt(now: number, dnf = false, retry = false): PracticeAttempt {
+    const entry = this.queue[0], firstMoveAt = this.firstMoveAt ?? now;
     const attempt = { id: crypto.randomUUID(), date: new Date().toISOString(), trainingId: this.trainingId, caseKey: caseKey(entry),
-      algorithm: this.algorithm, recognitionMilliseconds: Math.max(0, this.firstMoveAt - this.splitAt),
-      executionMilliseconds: Math.max(0, now - this.firstMoveAt) };
-    this.splitAt = now; this.queue.shift(); this.fillQueue(); this.loadCase();
+      algorithm: this.algorithm, recognitionMilliseconds: Math.max(0, firstMoveAt - this.splitAt),
+      executionMilliseconds: Math.max(0, now - firstMoveAt), ...(dnf && { dnf: true }) };
+    this.splitAt = now;
+    if (retry) { this.pattern = this.initialPattern; this.moves = []; this.firstMoveAt = null; }
+    else { this.queue.shift(); this.fillQueue(); this.loadCase(); }
     return attempt;
   }
 }

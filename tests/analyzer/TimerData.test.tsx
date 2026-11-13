@@ -55,6 +55,27 @@ test('Analyzer receives the shared solve limit and updates without reloading its
     expect(localData).toHaveBeenCalledTimes(1);
     localStorage.removeItem('recent-solve-limit');
 });
+test('Analyzer receives session changes and the all-session option without reloading data', async () => {
+    localStorage.setItem('selected-session', 'Practice');
+    localStorage.removeItem('timer-all-session-history');
+    function ChangeSession() {
+        const { setSession, setAllSessions } = React.useContext(SettingsContext);
+        return <><button onClick={() => setSession('Other')}>Other session</button><button onClick={() => setAllSessions(true)}>All sessions</button></>;
+    }
+    const ref = React.createRef<FileInput>();
+    render(<SettingsProvider><FileInput ref={ref} /><ChangeSession /></SettingsProvider>);
+    await ready(ref);
+    const solves = mockFilterProps.solves;
+    expect(mockFilterProps.sessionScope).toBe('Practice');
+    fireEvent.click(screen.getByRole('button', { name: 'Other session' }));
+    expect(mockFilterProps.sessionScope).toBe('Other');
+    fireEvent.click(screen.getByRole('button', { name: 'All sessions' }));
+    expect(mockFilterProps.sessionScope).toBe('');
+    expect(mockFilterProps.solves).toBe(solves);
+    expect(localData).toHaveBeenCalledTimes(1);
+    localStorage.removeItem('selected-session');
+    localStorage.removeItem('timer-all-session-history');
+});
 test('increasing a capped dataset scope reloads details with the new limit', async () => {
     localStorage.setItem('recent-solve-limit', '1000');
     const solves = Array.from({ length: 1005 }, (_, i) => ({ ...own()[0], id: String(i), date: new Date(Date.UTC(2026, 0, 1, 0, 0, i)) }));
@@ -66,9 +87,12 @@ test('increasing a capped dataset scope reloads details with the new limit', asy
     const ref = React.createRef<FileInput>();
     render(<SettingsProvider><FileInput ref={ref} /><ChangeScope /></SettingsProvider>);
     await ready(ref, 1005);
-    expect(localData).toHaveBeenLastCalledWith(1000);
+    expect(localData).toHaveBeenLastCalledWith(1000, []);
+    act(() => mockFilterProps.onSessionsChange?.(['Other']));
+    await waitFor(() => expect(localData).toHaveBeenLastCalledWith(1000, ['Other']));
+    await ready(ref, 1005);
     fireEvent.click(screen.getByRole('button', { name: 'Analyze all solves' }));
-    await waitFor(() => expect(localData).toHaveBeenLastCalledWith(0));
+    await waitFor(() => expect(localData).toHaveBeenLastCalledWith(0, ['Other']));
     await ready(ref, 1005);
     expect(mockFilterProps.solveLimit).toBe(0);
     expect(mockFilterProps.suggestedMethod).toBeUndefined();
@@ -100,7 +124,7 @@ test('logs load duration once after charts are ready for each dataset, not for f
         await ready(ref);
         expect(info).not.toHaveBeenCalled();
         act(() => mockFilterProps.onReady?.());
-        expect(info).toHaveBeenLastCalledWith(expect.stringMatching(/^\[Analyzer\] Loaded in [\d.]+ ms \(Saved solves, 2 solves\)$/));
+        expect(info).toHaveBeenLastCalledWith(expect.stringMatching(/^\[Analyzer\] Loaded in [\d.]+ ms \(Shown solves, 2 solves\)$/));
         act(() => mockFilterProps.onReady?.());
         expect(info).toHaveBeenCalledTimes(1);
         fireEvent.change(screen.getByLabelText('CSV files'), { target: { files: [file('new.csv')] } });
@@ -121,7 +145,7 @@ test('opening Analyzer automatically loads local data with provenance, sessions,
     expect(ref.current!.state.solves.every(solve => solve.source === 'timer')).toBe(true);
     expect(ref.current!.state.solves[0].dnf).toBe(true);
     expect(ref.current!.state.solves[1]).toMatchObject({ time: 14, session: 'Practice, "Summer"' });
-    expect(mockFilterProps.source).toBe('Saved solves');
+    expect(mockFilterProps.source).toBe('Shown solves');
     expect(GetDemoData).not.toHaveBeenCalled();
 });
 
@@ -192,7 +216,7 @@ test('new solves and returning to the retained page preserve snapshots and warn 
     view.rerender(<PageVisible.Provider value={true}><FileInput ref={ref} /></PageVisible.Provider>);
     await waitFor(() => expect(readSolveIds).toHaveBeenCalledTimes(2));
     expect(localData).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Load saved solves' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reload all solves' }));
     await ready(ref, 1);
     expect(ref.current!.state.solves[0].source).toBe('acubemy');
     expect(screen.queryByRole('alert')).toBeNull();

@@ -44,7 +44,25 @@
   .trainer-run-content { padding-inline: .75rem; }
 }
 .trainer-settings label { margin-bottom: 0; }
-.trainer-case-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: .5rem; padding-block: 1rem; }
+.trainer-case-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; padding-block: 1rem; max-block-size: 30rem; overflow: auto; }
+.trainer-case-choice { position: relative; cursor: pointer; }
+.trainer-case-choice input { position: absolute; clip-path: inset(50%); inline-size: 1px; block-size: 1px; overflow: hidden; }
+.trainer-case-card { display: grid; justify-items: center; gap: .5rem; border: 2px solid var(--cp-border); border-radius: .75rem; padding: .75rem; background: var(--cp-panel); }
+.trainer-case-card .database-case-image { inline-size: min(100%, 110px); block-size: auto; }
+.trainer-case-check { display: none; position: absolute; inline-size: 3rem; block-size: 3rem; inset: .5rem .5rem auto auto; }
+.trainer-case-check circle { fill: #198754; stroke: white; stroke-width: 2; }
+.trainer-case-check path { fill: none; stroke: white; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.trainer-case-choice input:checked + .trainer-case-card { border-color: #198754; }
+.trainer-case-choice input:checked + .trainer-case-card .trainer-case-check { display: block; }
+.trainer-case-choice input:focus-visible + .trainer-case-card { outline: 3px solid var(--cp-accent); outline-offset: 3px; }
+.trainer-case-choice.trainer-case-card { color: inherit; font: inherit; }
+.trainer-case-choice.trainer-case-card:focus-visible { outline: 3px solid var(--cp-accent); outline-offset: 3px; }
+.trainer-drill-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: .75rem; margin-block-end: 1rem; }
+.trainer-practice table :is(th, td) { white-space: nowrap; }
+.mistake-practice-dialog { inline-size: min(900px, calc(100% - 2rem)); max-block-size: calc(100% - 2rem); overflow: auto; color: var(--cp-text); }
+.mistake-practice-dialog::backdrop { background: #000a; overflow: hidden; overscroll-behavior: contain; }
+.mistake-practice-dialog:modal { overscroll-behavior: contain; }
+@media (max-width: 480px) { .trainer-case-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .trainer-solution { font-family: ui-monospace, monospace; overflow-wrap: anywhere; margin-block: 1rem; }
 @media (max-width: 480px) {
   .trainer-case-queue { gap: .5rem; }

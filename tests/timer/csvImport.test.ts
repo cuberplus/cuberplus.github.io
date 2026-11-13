@@ -25,6 +25,14 @@ beforeEach(() => {
   Object.defineProperty(globalThis, 'structuredClone', { configurable: true, value: <T>(value: T): T => deserialize(serialize(value)) as T });
 });
 
+test('local analysis prepares the selected session recent solves even when other sessions are newer', async () => {
+  await saveSolves(['Practice', 'Practice', 'Other'].map((session, i) => ({ ...native, id: String(i), session, createdAt: new Date(Date.UTC(2026, 0, i + 1)).toISOString() })));
+  const analysis = await readLocalAnalysis(1, ['Practice']);
+  expect(analysis).toHaveLength(3);
+  expect(analysis.find(solve => solve.id === '1')!.steps.some(step => !!step.moves)).toBe(true);
+  expect((await readSolves()).filter(solve => solve.analysis).map(solve => solve.id)).toEqual(['1']);
+});
+
 test('multiple sources merge into native storage with provenance, skip duplicates, and refresh Analyzer', async () => {
   await saveSolves([native]);
   const refresh = jest.fn();

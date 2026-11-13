@@ -109,7 +109,7 @@ try {
     await page.waitForTimeout(1200);
     await page.screenshot({ path: process.env.TRAINER_SCREENSHOT });
   }
-  await page.getByRole('button', { name: 'Give up', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop drill', exact: true }).click();
   expect(await page.evaluate(() => localStorage.getItem('cuberplus-trainer-blitz-v1'))).toBeNull();
   await page.getByRole('button', { name: 'Back to drills', exact: true }).click();
   await page.getByRole('button', { name: /PLL Blitz/ }).click();
@@ -193,7 +193,7 @@ try {
   await finishCase('OLL');
   await expect(page.getByText('Case 2 of 57', { exact: true })).toBeVisible();
   await expect.poll(countGrayStickers).toBe(12);
-  await page.getByRole('button', { name: 'Give up', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop drill', exact: true }).click();
   await page.getByRole('button', { name: 'Options', exact: true }).click();
   await page.getByLabel('Cross color', { exact: true }).selectOption('Yellow');
   await page.getByLabel('Front color', { exact: true }).selectOption('Green');
@@ -203,7 +203,7 @@ try {
   await page.getByRole('button', { name: 'Start Blitz', exact: true }).click();
   await expect(page.getByText('Case 1 of 57', { exact: true })).toBeVisible({ timeout: 10000 });
   await expect(page.locator('.trainer-case-queue')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Give up', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop drill', exact: true }).click();
   await page.getByRole('link', { name: 'Options', exact: true }).click();
   const myCubes = page.getByRole('region', { name: 'My cubes', exact: true });
   await myCubes.locator('.saved-cube > summary').filter({ hasText: 'GAN 356 i Carry' }).click();
@@ -287,10 +287,11 @@ try {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${base}/trainer/?case=F2L-1`);
-  await expect(page.getByRole('combobox', { name: 'Case', exact: true })).toHaveValue('F2L-1');
+  await expect(page.getByRole('heading', { name: /F2L 1 drill/ })).toBeVisible();
   await expect(page.locator('h1')).not.toBeFocused();
   await page.getByRole('button', { name: 'Bluetooth cube setup', exact: true }).click();
   await page.getByRole('button', { name: 'Connect cube', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop drill', exact: true }).click();
   await page.getByRole('button', { name: 'Options', exact: true }).click();
   for (const name of ['Upcoming cases', 'Case names shown', 'Solution algorithm shown']) await page.getByRole('checkbox', { name, exact: true }).check();
   for (const name of ['Random pre-AUF', 'Random post-AUF']) {
@@ -344,14 +345,15 @@ try {
   await expect(page.locator('.trainer-case-queue')).toHaveCount(0);
   await expect(page.locator('.trainer-solution')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'F2L 1', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Stop practice', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop drill', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to cases', exact: true }).click();
   await page.getByRole('button', { name: 'Back to drills', exact: true }).click();
   await page.getByRole('button', { name: /Make your own drill/ }).click();
   await page.getByRole('button', { name: 'Create training', exact: true }).click();
   await page.getByRole('textbox', { name: 'Training name', exact: true }).fill('Browser mixed drill');
   for (const category of ['F2L', 'OLL', 'PLL']) {
     await page.locator('summary').filter({ hasText: new RegExp(`^${category} cases`) }).click();
-    await page.getByRole('checkbox', { name: category === 'PLL' ? 'PLL Aa' : `${category} 1`, exact: true }).check();
+    await page.getByRole('checkbox', { name: category === 'PLL' ? 'PLL Aa' : `${category} 1`, exact: true }).locator('..').click();
   }
   await page.getByRole('button', { name: 'Save training', exact: true }).click();
   await page.getByRole('button', { name: 'Options', exact: true }).click();
@@ -362,7 +364,7 @@ try {
   await expect(page.locator('.trainer-practice[data-case]')).toBeVisible({ timeout: 10000 });
   await finishCase('', true);
   await expect(page.getByRole('table', { name: 'Completed practice attempts', exact: true }).locator('tbody tr')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Stop practice', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop drill', exact: true }).click();
   await page.getByRole('button', { name: 'Edit training', exact: true }).click();
   await page.getByRole('textbox', { name: 'Training name', exact: true }).fill('Renamed mixed drill');
   await page.getByRole('button', { name: 'Save training', exact: true }).click();

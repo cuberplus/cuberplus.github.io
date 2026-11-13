@@ -3,7 +3,8 @@ import { connectProvider, disconnectProvider, isConfigured, isConnected, prepare
 
 export const settingKeys = [
   'theme', 'timer-time-precision', 'timer-inspection', 'timer-over-turn-penalty',
-  'timer-show-every-long-pb', 'timer-hide-distracting-visuals', 'timer-sessions',
+  'timer-show-every-long-pb', 'timer-hide-distracting-visuals', 'timer-sessions', 'timer-session-scramblers',
+  'selected-session', 'timer-all-session-history',
   'timer-non-favorite-mistakes', 'timer-non-favorite-categories',
   'cuberplus-database-favorites', 'cuberplus-unlearn-algorithms', 'cuberplus-custom-algorithms',
   'cuberplus-cloud-auto-100', 'cuberplus-cloud-auto-pb',

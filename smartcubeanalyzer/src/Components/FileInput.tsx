@@ -45,6 +45,8 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
     private mounted = false;
     private preparedSolves?: Solve[];
     private solveLimit = DEFAULT_SOLVE_LIMIT;
+    private sessions: string[] = [];
+    private changeSessions = (sessions: string[]) => { if (JSON.stringify(sessions) === JSON.stringify(this.sessions)) return; this.sessions = sessions; if (this.mounted && this.solveLimit && (this.state.isParsing || this.state.solves.length > this.solveLimit)) this.reload?.(); };
     private reload?: () => void;
     private changeLimit = (limit: number) => { const previous = this.solveLimit; if (limit === previous) return; this.solveLimit = limit; if (this.mounted && previous && (!limit || limit > previous) && (this.state.isParsing || this.state.solves.length > previous)) this.reload?.(); };
     private loadStarted = performance.getEntriesByName?.('analyzer-load-start').at(-1)?.startTime ?? performance.now();
@@ -55,7 +57,7 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
         this.pendingLog = false;
         const duration = performance.now() - this.loadStarted;
         performance.measure?.('Analyzer load', { start: this.loadStarted, duration });
-        console.info(`[Analyzer] Loaded in ${duration.toFixed(1)} ms (${this.state.source ?? 'Saved solves'}, ${this.state.solves.length} solves)`);
+        console.info(`[Analyzer] Loaded in ${duration.toFixed(1)} ms (${this.state.source ?? 'Shown solves'}, ${this.state.solves.length} solves)`);
     };
 
     constructor(props: FileInputProps) {
@@ -78,12 +80,12 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
     componentWillUnmount() { this.mounted = false; this.requestId++; this.tasks.forEach(cancel => cancel()); window.removeEventListener('timer-solve-deleted', this.removeSolve); window.removeEventListener('timer-solves-changed', this.refresh); }
     private async read(task: DataTask): Promise<Solve[]> {
         if (!this.mounted) throw new Error('Data loading cancelled.');
-        const { promise, cancel } = dataTask(task.type === 'parse' || task.type === 'local' ? { ...task, solveLimit: this.solveLimit } : task); this.tasks.add(cancel);
+        const { promise, cancel } = dataTask(task.type === 'parse' || task.type === 'local' ? { ...task, solveLimit: this.solveLimit, sessions: this.sessions } : task); this.tasks.add(cancel);
         try { const result = await promise; if (!('solves' in result)) throw new Error('Invalid analysis data.'); return result.solves; }
         finally { this.tasks.delete(cancel); }
     }
 
-    private async loadData(read: (requestId: number) => Promise<Solve[]>, source: string | (() => string) = 'Saved solves', prepared = true, report = true) {
+    private async loadData(read: (requestId: number) => Promise<Solve[]>, source: string | (() => string) = 'Shown solves', prepared = true, report = true) {
         this.reload = () => { void this.loadData(read, source, prepared, false); };
         const requestId = ++this.requestId;
         if (!this.initialLoad) this.loadStarted = performance.now();
@@ -143,7 +145,7 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
             demo = true;
             const csv = await GetDemoData(undefined, '/analyzer/');
             return requestId === this.requestId ? this.read({ type: 'parse', csv }) : [];
-        }, () => demo ? 'Demo: Dev Solves' : 'Saved solves');
+        }, () => demo ? 'Demo: Dev Solves' : 'Shown solves');
     }
 
     render() {
@@ -171,11 +173,11 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
                             <details><summary>CSV help</summary><HelpPanel /></details>
                         </div>
                     </DataDialog>
-                    {(!!this.state.unloadedCount || this.state.savedAnalysisChanged) && <Alert variant="warning">{this.state.savedAnalysisChanged ? 'Saved solve analysis has changed.' : `${this.state.unloadedCount} saved solves are not loaded.`} Your current data has been kept. <Button variant="outline-primary" disabled={this.state.isParsing} onClick={() => this.showTimerData()}>Load saved solves</Button></Alert>}
+                    {(!!this.state.unloadedCount || this.state.savedAnalysisChanged) && <Alert variant="warning">{this.state.savedAnalysisChanged ? 'Saved solve analysis has changed.' : `${this.state.unloadedCount} saved solves are not loaded.`} Your current data has been kept. <Button variant="outline-primary" disabled={this.state.isParsing} onClick={() => this.showTimerData()}>Reload all solves</Button></Alert>}
                     {this.state.loadError && <Alert variant="warning">{this.state.loadError}</Alert>}
-                    <SettingsContext.Consumer>{({ solveLimit }) => <><ScopeSync limit={solveLimit} change={this.changeLimit} /><FilterPanel
+                    <SettingsContext.Consumer>{({ solveLimit, session, allSessions }) => <><ScopeSync limit={solveLimit} change={this.changeLimit} /><FilterPanel
                         ref={this.filterPanelRef}
-                        solves={this.state.solves} solveLimit={solveLimit}
+                        solves={this.state.solves} solveLimit={solveLimit} sessionScope={allSessions ? '' : session} onSessionsChange={this.changeSessions}
                         preparedSolves={this.preparedSolves}
                         suggestedMethod={this.state.suggestedMethod}
                         suggestedSessions={this.state.suggestedSessions}

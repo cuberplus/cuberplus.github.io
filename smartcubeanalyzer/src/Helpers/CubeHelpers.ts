@@ -36,7 +36,7 @@ export function CalculateWindowSize(solveCount: number): number {
 }
 
 export function CalculateAllSessionOptions(solves: Solve[]): Option[] {
-    return [...new Set(solves.map(solve => solve.session))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    return [...new Set(solves.map(solve => solve.session || 'Default'))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
         .map(session => ({ label: session, value: session }));
 }
 

@@ -26,6 +26,9 @@ details[open] > .visuals-summary::after { transform: rotate(225deg); }
 .timer-panel > .scramble { position: relative; min-height: 2.5rem; padding-right: 3rem; }
 .scramble-refresh { position: absolute; top: 0; right: 0; width: 2.5rem; height: 2.5rem; display: inline-flex; align-items: center; justify-content: center; }
 .scramble-solving .scramble-content { visibility: hidden; }
+.scramble-content { text-wrap: balance; }
+.scramble-content .move, .scramble-tail { white-space: nowrap; }
+.scramble-tail { display: inline-block; }
 .scramble-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 0.75rem; font-family: var(--bs-font-sans-serif); font-size: 0.875rem; line-height: 1.4; }
 .scramble-placeholder .btn { flex-shrink: 0; }
 .timer-value { font-size: clamp(4rem, 10vw, 7rem); line-height: 1.15; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.04em; }
@@ -67,6 +70,8 @@ details[open] > .visuals-summary::after { transform: rotate(225deg); }
 .history-sort, .stat-link { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
 .stat-link { text-decoration: none; }
 .history-table tbody td { padding: 0; }
+.history-table :is(th, td) { white-space: nowrap; }
+.timer-history { min-inline-size: 0; }
 .history-cell { display: block; width: 100%; min-height: 2.75rem; padding: .65rem .5rem; border: 0; background: transparent; color: inherit; font: inherit; text-align: start; text-decoration: none; cursor: pointer; }
 .history-time { font-weight: 600; white-space: nowrap; }
 .history-table tbody tr:is(:hover, :focus-within) { background: var(--cp-subtle); }
