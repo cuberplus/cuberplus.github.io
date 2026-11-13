@@ -65,3 +65,9 @@ test('comfortable orientation keeps cross down and minimizes D/L/B turns across 
   expect(algorithm.split(' ').every(move => 'URF'.includes(move[0]))).toBe(true);
   expect(matcher.signature(algorithm)).toBe(matcher.signature(entry.algorithm));
 });
+test('comfortable orientation favors R over F and avoids B even if another frame has more R moves', () => {
+  expect(comfortableAlgorithm("F U F' U2 F U' F'", cube)).toBe("R U R' U2 R U' R'");
+  const algorithm = comfortableAlgorithm("R R U R' B U' B'", cube);
+  expect(algorithm).not.toMatch(/B/);
+  expect(matcher.signature(algorithm)).toBe(matcher.signature("R R U R' B U' B'"));
+});

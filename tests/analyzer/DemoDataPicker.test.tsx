@@ -1,17 +1,10 @@
 /**
  * @jest-environment jsdom
  *
- * The Data menu keeps source actions and all bundled demos together.
- *
- * The menu markup is worth pinning. Bootstrap's .dropdown-item is `nowrap`, so
- * an earlier version that rendered a description <div> inside each item grew the
- * menu past the viewport and left the page itself scrolling, showing only a
- * couple of entries. Each item must stay a single short label.
+ * The Data dialog keeps saved solves, CSVs, demos, and CSV help together.
  */
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import { deserialize, serialize } from 'node:v8';
 import React from 'react';
 import { FileInput } from '../../smartcubeanalyzer/src/Components/FileInput';
@@ -27,6 +20,8 @@ jest.mock('../../timer/src/Analysis/analyzer-data', () => ({
 }));
 
 beforeEach(() => {
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function(this: HTMLDialogElement) { this.open = true; } });
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function(this: HTMLDialogElement) { this.open = false; } });
     requested.length = 0;
     Object.defineProperty(globalThis, 'structuredClone', { configurable: true, value: <T,>(value: T): T => deserialize(serialize(value)) as T });
     if (!('ResizeObserver' in globalThis)) {
@@ -84,19 +79,30 @@ test('a session deletion removes all matching Timer solves in a single update', 
 });
 
 describe('the demo data picker', () => {
-    test('source and import actions stay inside the Data menu', async () => {
+    test('source, CSV help and import actions stay inside the named Data dialog', async () => {
         render(React.createElement(FileInput));
         const button = await screen.findByRole('button', { name: 'Data', exact: true });
-        expect(button.getAttribute('aria-expanded')).toBe('false');
+        await waitFor(() => expect(button.hasAttribute('disabled')).toBe(false));
+        expect(screen.queryByRole('dialog')).toBeNull();
         expect(screen.queryByRole('button', { name: 'My saved solves' })).toBeNull();
         fireEvent.click(button);
+        const dialog = screen.getByRole<HTMLDialogElement>('dialog', { name: 'Load analysis data' });
         expect(screen.getByRole('button', { name: 'My saved solves' })).not.toBeNull();
-        expect(screen.getByRole('button', { name: 'Choose CSV File' })).not.toBeNull();
+        expect(screen.getByLabelText('CSV files').getAttribute('type')).toBe('file');
         expect(screen.getByRole('link', { name: 'Import solves' }).getAttribute('href')).toBe('/options/#import-heading');
+        expect(screen.getByText('Demo data').closest('details')?.open).toBe(false);
+        const help = screen.getByText('CSV help');
+        expect(help.closest('details')?.open).toBe(false);
+        fireEvent.click(help);
+        expect(help.closest('details')?.open).toBe(true);
+        expect(screen.getByRole('link', { name: /^Export solves as CSV/ }).getAttribute('href')).toBe('https://app.cubeast.com/log/solves');
+        fireEvent.click(screen.getByRole('button', { name: 'Close data' }));
+        expect(dialog.open).toBe(false);
     });
 
     test('clicking the button loads the original demo data', async () => {
         await openMenu();
+        fireEvent.click(screen.getByText('Demo data'));
         fireEvent.click(screen.getByText('Dev Solves', { exact: true }));
         expect(requested).toHaveLength(1);
         expect(requested[0].endsWith(DEFAULT_DEMO_FILE)).toBe(true);
@@ -104,7 +110,7 @@ describe('the demo data picker', () => {
 
     test('the menu lists every dataset, in registry order', async () => {
         await openMenu();
-        const items = Array.from(document.querySelectorAll('.demo-data-menu .demo-dataset'));
+        const items = Array.from(document.querySelectorAll('.analyzer-data-dialog .demo-dataset'));
         expect(items.map(i => i.firstChild?.textContent)).toEqual(DEMO_DATASETS.map(d => d.name));
     });
 
@@ -116,7 +122,7 @@ describe('the demo data picker', () => {
 
     test('each entry shows its description under the name', async () => {
         await openMenu();
-        const items = Array.from(document.querySelectorAll('.demo-data-menu .demo-dataset'));
+        const items = Array.from(document.querySelectorAll('.analyzer-data-dialog .demo-dataset'));
         expect(items).toHaveLength(DEMO_DATASETS.length);
         expect(items.map(i => i.querySelector('span.d-block')?.textContent))
             .toEqual(DEMO_DATASETS.map(d => d.description));
@@ -124,34 +130,15 @@ describe('the demo data picker', () => {
 
     test('descriptions are inline elements, keeping the item markup valid inside a link', async () => {
         await openMenu();
-        for (const item of Array.from(document.querySelectorAll('.demo-data-menu .demo-dataset'))) {
+        for (const item of Array.from(document.querySelectorAll('.analyzer-data-dialog .demo-dataset'))) {
             expect(item.querySelector('div')).toBeNull();
             expect(item.querySelector('span.d-block')?.tagName).toBe('SPAN');
         }
     });
 
-    test('the menu escapes the page clipping instead of being cut off', async () => {
-        // html and body both set `overflow-x: hidden`, which clips an absolutely
-        // positioned menu. Popper's fixed strategy positions against the viewport
-        // instead, and the stylesheet caps the height so a long list scrolls.
-        await openMenu();
-        await waitFor(() => {
-            const menu = document.querySelector('.demo-data-menu') as HTMLElement | null;
-            expect(menu?.style.position).toBe('fixed');
-        });
-
-        const css = readFileSync(join(process.cwd(), "smartcubeanalyzer", "src", "CSS", "Style.css"), 'utf8');
-        const rule = css.slice(css.indexOf('.demo-data-menu {'));
-        expect(rule).toMatch(/max-height:\s*\d+vh/);
-        expect(rule).toMatch(/overflow-y:\s*auto/);
-        // Entries wrap via Bootstrap's .text-wrap utility rather than a custom rule.
-        for (const item of Array.from(document.querySelectorAll('.demo-data-menu .demo-dataset'))) {
-            expect(item.classList.contains('text-wrap')).toBe(true);
-        }
-    });
-
     test('picking an entry fetches that dataset', async () => {
         await openMenu();
+        fireEvent.click(screen.getByText('Demo data'));
         fireEvent.click(screen.getByText('Roux Small'));
         expect(requested).toHaveLength(1);
         expect(requested[0].endsWith('demo/roux-small.csv')).toBe(true);

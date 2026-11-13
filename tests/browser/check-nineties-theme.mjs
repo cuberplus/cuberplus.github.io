@@ -74,7 +74,7 @@ try {
   await timer.getByRole('checkbox', { name: 'Show all sessions in history', exact: true }).check();
   await timer.getByRole('button', { name: 'Close options', exact: true }).click();
   const history = timer.getByRole('table', { name: 'Solve history' });
-  await expect(history.getByRole('columnheader')).toHaveText(['Solve', 'Time', 'Turns', 'TPS', 'Date', 'Session']);
+  await expect(history.getByRole('columnheader')).toHaveText(['Solve', 'Time', 'Turns', 'TPS', 'Date']);
   await expect(history.locator('tbody time')).toHaveCount(3);
   await expect(history.locator('tbody time').first()).toContainText(/ago|now/);
   await history.locator('tbody time').first().click();

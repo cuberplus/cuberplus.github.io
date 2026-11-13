@@ -58,6 +58,6 @@ describe('preset step filters', () => {
 
     test('has five short preset labels, which is what fitting one row depends on', () => {
         const labels = (fileInput.match(/\{ label: '[^']+'/g) ?? []).map(m => m.slice("{ label: '".length, -1));
-        expect(labels).toEqual(['Cross+1', 'F2L', 'OLL', 'PLL', 'Full']);
+        expect(labels).toEqual(['Full', 'Cross+1', 'F2L', 'OLL', 'PLL']);
     });
 });

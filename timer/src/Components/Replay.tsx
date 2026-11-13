@@ -118,7 +118,7 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
     {deleteError && <p className="alert alert-danger" role="alert">{deleteError}</p>}
     {saveError && <p className="alert alert-danger" role="alert">{saveError}</p>}
     <div className="replay-scramble">
-      <details><summary>Scramble</summary><p className="scramble mb-0">{movesOf(solve.scramble).join(' ')}</p></details>
+      <div><h3 className="h6 mb-1">Scramble</h3><p className="scramble mb-0">{movesOf(solve.scramble).join(' ')}</p></div>
       {hasReplay && (retry
         ? <button className="btn btn-outline-primary" disabled={deleting || retryDisabled} onClick={() => { dismiss(); retry(solve); }}>Retry</button>
         : <a className={`btn btn-outline-primary${deleting ? ' disabled' : ''}`} aria-disabled={deleting || undefined} tabIndex={deleting ? -1 : undefined} href={`/timer/?retry=${encodeURIComponent(solve.id)}`} onClick={event => { if (deleting) event.preventDefault(); else dismiss(); }}>Retry</a>)}
@@ -159,7 +159,7 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
     {solve.status === 'incomplete' && <p className="text-warning mt-2" aria-label="Penalty reason">DNF reason: {getDnfReason(solve)}</p>}
     {!!solve.penalty && <p className="text-warning mt-2" aria-label="Penalty reason">+{solve.penalty / 1000} {solve.penalty === 2000 ? 'reason' : 'reasons'}: {getPenaltyReasons(solve).join(', ')}</p>}
     {solve.reason && solve.reason !== 'Solve aborted by user.' && <p className="text-secondary small mt-2">{solve.reason}</p>}
-    <section className="replay-section"><h3>Insights</h3><SolveMistakes cube={cube} solve={solve} history={history} /></section>
+    <details className="replay-disclosure replay-section"><summary>Insights</summary><SolveMistakes cube={cube} solve={solve} history={history} /></details>
     {change && <div className="replay-disclosure-row"><details className="replay-disclosure"><summary>Analysis settings</summary>
     <div className="d-flex gap-2 align-items-center flex-wrap mt-3">
       <button className="btn btn-outline-primary" disabled={deleting} onClick={() => reanalyze(solve.crossOverride)}>Re-run analysis</button>

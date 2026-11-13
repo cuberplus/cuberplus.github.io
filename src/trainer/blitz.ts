@@ -1,19 +1,19 @@
 import { KPattern } from 'cubing/kpuzzle';
 import { algorithms, casePattern, type AlgorithmCase } from '../database/algorithms';
-import { type Cube, isMove } from '../../timer/src/Core/puzzle';
+import { type Cube, inverse, isMove } from '../../timer/src/Core/puzzle';
 
 export type BlitzKind = 'OLL' | 'PLL';
 export const cubeColors = ['White', 'Red', 'Green', 'Yellow', 'Orange', 'Blue'] as const;
 export type CubeColor = typeof cubeColors[number];
-export interface BlitzSettings { upcomingCases: boolean; caseNames: boolean; hidePLL: boolean; crossColor: CubeColor | 'Random'; frontColor: CubeColor | 'Random' }
-export const defaultBlitzSettings: BlitzSettings = { upcomingCases: true, caseNames: true, hidePLL: false, crossColor: 'Yellow', frontColor: 'Green' };
+export interface BlitzSettings { upcomingCases: boolean; caseNames: boolean; solutionAlgorithms?: boolean; randomPreAuf?: boolean; randomPostAuf?: boolean; hidePLL: boolean; crossColor: CubeColor | 'Random'; frontColor: CubeColor | 'Random' }
+export const defaultBlitzSettings: BlitzSettings = { upcomingCases: true, caseNames: true, solutionAlgorithms: true, randomPreAuf: true, randomPostAuf: true, hidePLL: false, crossColor: 'Yellow', frontColor: 'Green' };
 interface PLLPermutation { edges: number[]; corners: number[] }
 export interface BlitzCase extends AlgorithmCase { auf: string; preAuf?: string; postAuf?: string; colorFrame: string; crossColor: CubeColor; frontColor: CubeColor; permutation?: PLLPermutation }
 export interface BlitzSplit { caseId: string; milliseconds: number; recognitionMilliseconds?: number; executionMilliseconds?: number; auf?: string; preAuf?: string; postAuf?: string; colorFrame?: string; crossColor?: CubeColor; frontColor?: CubeColor; permutation?: PLLPermutation }
 export interface BlitzRun { id: string; kind: BlitzKind; date: string; milliseconds: number; splits: BlitzSplit[]; settings?: BlitzSettings }
 export const BLITZ_STORAGE = 'cuberplus-trainer-blitz-v1';
 export const BLITZ_SETTINGS_STORAGE = 'cuberplus-trainer-settings-v1';
-const aufMoves = ['', 'U', 'U2', "U'"];
+export const aufMoves = ['', 'U', 'U2', "U'"];
 const centerFaces = 'ULFRBD';
 const opposite = (a: CubeColor, b: CubeColor) => Math.abs(cubeColors.indexOf(a) - cubeColors.indexOf(b)) === 3;
 export const adjacentColors = (cross: CubeColor, front: CubeColor) => cross !== front && !opposite(cross, front);
@@ -58,6 +58,9 @@ export function readBlitzSettings(): BlitzSettings {
     const settings: BlitzSettings = {
       upcomingCases: typeof saved.upcomingCases === 'boolean' ? saved.upcomingCases : true,
       caseNames: typeof saved.caseNames === 'boolean' ? saved.caseNames : true,
+      solutionAlgorithms: typeof saved.solutionAlgorithms === 'boolean' ? saved.solutionAlgorithms : true,
+      randomPreAuf: typeof saved.randomPreAuf === 'boolean' ? saved.randomPreAuf : true,
+      randomPostAuf: typeof saved.randomPostAuf === 'boolean' ? saved.randomPostAuf : true,
       hidePLL: typeof saved.hidePLL === 'boolean' ? saved.hidePLL : false,
       crossColor: saved.crossColor && [...cubeColors, 'Random'].includes(saved.crossColor) ? saved.crossColor : 'Yellow',
       frontColor: saved.frontColor && [...cubeColors, 'Random'].includes(saved.frontColor) ? saved.frontColor : 'Green',
@@ -86,6 +89,7 @@ export class Blitz {
   finishedAt = 0;
   splits: BlitzSplit[] = [];
   pattern: KPattern;
+  initialPattern: KPattern;
   moves: string[] = [];
   constructor(readonly cube: Cube, readonly kind: BlitzKind, random = Math.random, settings = defaultBlitzSettings) {
     this.settings = { ...settings };
@@ -94,11 +98,11 @@ export class Blitz {
       (settings.frontColor === 'Random' || settings.frontColor === frame.frontColor));
     if (!orientations.length) throw new Error('Cross and front colors must be adjacent.');
     this.queue = shuffle(algorithms.filter(entry => entry.category === kind && entry.id !== 'Solved').map(entry => {
-      const auf = aufMoves[Math.floor(random() * 4)], orientation = orientations[Math.floor(random() * orientations.length)];
-      return { ...entry, auf, ...orientation, ...(kind === 'OLL' ? { permutation: randomPLL(random) } :
-        { preAuf: auf, postAuf: aufMoves[Math.floor(random() * 4)] }) };
+      const auf = settings.randomPreAuf !== false ? aufMoves[Math.floor(random() * 4)] : '', orientation = orientations[Math.floor(random() * orientations.length)];
+      return { ...entry, auf: kind === 'OLL' && auf ? inverse(auf) : auf, preAuf: auf, postAuf: settings.randomPostAuf !== false ? aufMoves[Math.floor(random() * 4)] : '',
+        ...orientation, ...(kind === 'OLL' ? { permutation: randomPLL(random) } : {}) };
     }), random);
-    this.pattern = cube.solved();
+    this.initialPattern = this.pattern = cube.solved();
   }
   start(now: number) { this.phase = 'countdown'; this.countdownAt = now; }
   tick(now: number) {
@@ -108,7 +112,7 @@ export class Blitz {
   }
   private loadCase() {
     const entry = this.queue[this.index];
-    this.pattern = blitzPattern(this.cube, entry);
+    this.initialPattern = this.pattern = blitzPattern(this.cube, entry);
     this.moves = [];
     this.firstMoveAt = null;
   }

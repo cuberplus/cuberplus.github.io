@@ -73,13 +73,13 @@ const RECORD_COLS = [
 ];
 
 const ALGO_STAT_COLS = [
-    { key: 'total', name: 'Total' },
-    { key: 'failed', name: 'Failed' },
-    { key: 'failureRate', name: 'Failure %' },
-    { key: 'avgMoves', name: 'Avg Moves' },
-    { key: 'expectedMoves', name: 'Expected' },
-    { key: 'avgWasted', name: 'Avg Wasted' },
-    { key: 'avgTime', name: 'Avg Time (s)' },
+    { key: 'failureRate', name: 'Failure %', width: 100 },
+    { key: 'avgTime', name: 'Avg Time (s)', width: 112 },
+    { key: 'failed', name: 'Failed', width: 80 },
+    { key: 'total', name: 'Total', width: 72 },
+    { key: 'avgMoves', name: 'Avg Moves', width: 104 },
+    { key: 'expectedMoves', name: 'Expected', width: 100 },
+    { key: 'avgWasted', name: 'Avg Wasted', width: 112 },
 ];
 
 /** Keep column identity stable to preserve the grid's layout and virtualisation. */
@@ -88,7 +88,8 @@ export function algoCols(step: StepName, openCase: (key: string) => void = () =>
         {
             key: 'case',
             name: 'Case',
-            minWidth: 130,
+            minWidth: 112,
+            width: 112,
             renderCell: ({ row }: RenderCellProps<AlgoPracticeRow>) => {
                 const url = databaseCaseUrl(step, row.case);
                 return url === null ? row.case :
@@ -146,7 +147,7 @@ export function SortableGrid<R>({ rows, columns, className, onCellClick }: Sorta
     return <div style={chartDataGridWrapStyle} className={className}>
         <DataGrid style={chartDataGridStyle} rows={sorted} columns={columns} rowHeight={columns[0]?.key === 'case' ? 64 : 35}
             sortColumns={sortColumns} onSortColumnsChange={setSortColumns}
-            defaultColumnOptions={{ sortable: true, minWidth: MIN_COL_WIDTH }} onCellClick={onCellClick}
+            defaultColumnOptions={{ sortable: true, minWidth: columns[0]?.key === 'case' ? 64 : MIN_COL_WIDTH }} onCellClick={onCellClick}
             onCellKeyDown={(args, event) => { if (onCellClick && args.mode === 'SELECT' && !(event.target instanceof Element && event.target.closest('button,a,input,select,textarea')) && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); event.preventGridDefault(); onCellClick({ ...args, selectCell: () => {} }); } }} />
     </div>;
 }
@@ -385,7 +386,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
 
         return (
             <div>
-                <nav aria-label="Analysis views" className="analysis-views">{[...Object.keys(SECTIONS), 'All charts'].map(section => <button key={section} className={`btn btn-${(this.state.section ?? 'Overview') === section ? 'primary' : 'outline-primary'}`} aria-pressed={(this.state.section ?? 'Overview') === section} onClick={() => this.setState({ section })}>{section}</button>)}</nav>
+                <nav aria-label="Analysis views" className="analysis-views">{[...Object.keys(SECTIONS), 'All charts'].map(section => <button key={section} className={`btn btn-${(this.state.section ?? 'Overview') === section ? 'primary' : 'outline-primary'}`} aria-pressed={(this.state.section ?? 'Overview') === section} onClick={() => this.setState({ section })}>{section === 'All charts' ? 'All' : section}</button>)}</nav>
                 {this.state.section === 'Cases' && !category && <div className="alert alert-info">Choose the F2L, OLL or PLL preset for individual case statistics.</div>}
                 <Row className="g-3">{charts.filter(chart => this.state.section === 'All charts' || SECTIONS[this.state.section ?? 'Overview'].includes(String(chart.key)))}</Row>
                 {this.state.average && <AverageModal {...this.state.average} close={() => this.setState({ average: undefined })} view={solve => this.openSolveSource(solve)} />}

@@ -32,7 +32,7 @@ export function ChartCard({ children, title, tooltip, label = title, scrollable 
     const id = useId();
     return <Col className={expanded ? 'col-12' : 'col-12 col-md-6'}>
         <Card as="section" aria-label={label} className={`p-2 p-md-3 shadow-sm${expanded ? ' chart-card-expanded' : ''}`}>
-            <div className="d-flex align-items-start gap-2 mb-3">
+            <div className="chart-heading d-flex align-items-start gap-2 mb-3">
                 <CardText as="h2" className="fs-6 lh-base fw-bold flex-grow-1 mb-0">{title}{tooltip && <InfoTip>{tooltip}</InfoTip>}</CardText>
                 {explorer}
                 <button type="button" className="btn btn-sm btn-outline-secondary d-none d-md-block flex-shrink-0" aria-expanded={expanded} aria-controls={id} onClick={() => setExpanded(!expanded)}>{expanded ? 'Collapse' : 'Expand'}</button>

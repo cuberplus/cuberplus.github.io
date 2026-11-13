@@ -18,28 +18,32 @@ await page.route(/\/timer\/src\/Bluetooth\/bluetooth\.ts(?:\?.*)?$/, route => ro
     async refresh() { window.trainerEvent?.({ type: 'FACELETS', facelets: 'UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB' }); }
   }`,
 }));
-async function finishCase(kind) {
-  const label = await page.locator('.trainer-case-current strong').textContent();
-  const auf = await page.locator('.trainer-case-current').getAttribute('data-auf');
-  const preAuf = await page.locator('.trainer-case-current').getAttribute('data-pre-auf');
-  const postAuf = await page.locator('.trainer-case-current').getAttribute('data-post-auf');
-  const colorFrame = await page.locator('.trainer-case-current').getAttribute('data-color-frame');
-  await page.evaluate(async ({ kind, label, auf, preAuf, postAuf, colorFrame }) => {
+async function finishCase(kind, practice = false) {
+  const current = page.locator(practice ? '.trainer-practice' : '.trainer-case-current');
+  const label = practice ? (await current.getAttribute('data-case')).replace('-', ' ') : await current.locator('strong').textContent();
+  const auf = await current.getAttribute('data-auf');
+  const preAuf = await current.getAttribute('data-pre-auf');
+  const postAuf = await current.getAttribute('data-post-auf');
+  const colorFrame = await current.getAttribute('data-color-frame');
+  await page.evaluate(async ({ kind, label, auf, preAuf, postAuf, colorFrame, practice }) => {
     const [{ algorithms }, { loadCube }, { cfopFrame }, { blitzPattern }] = await Promise.all([
       import('/src/database/algorithms.ts'), import('/timer/src/Core/puzzle.ts'), import('/timer/src/Analysis/cfop.ts'), import('/src/trainer/blitz.ts'),
     ]);
     const cube = await loadCube(), entry = algorithms.find(entry => `${entry.category} ${entry.id}` === label);
-    let pattern = blitzPattern(cube, { ...entry, auf, preAuf: preAuf ?? undefined, postAuf: postAuf ?? undefined });
+    const { casePattern } = await import('/src/database/algorithms.ts'), { inverse } = await import('/timer/src/Core/puzzle.ts');
+    let pattern = practice ? entry.setup ? cube.solved().applyAlg(postAuf ? inverse(postAuf) : '').applyAlg(entry.setup).applyAlg(preAuf ? inverse(preAuf) : '') :
+      casePattern(cube, `${preAuf ?? ''} ${entry.algorithm} ${postAuf ?? ''}`) : blitzPattern(cube, { ...entry, auf, preAuf: preAuf ?? undefined, postAuf: postAuf ?? undefined });
+    kind = practice ? entry.category : kind;
     const moves = await cube.solution(cube.facelets(pattern));
     for (const move of moves) {
       const face = [...'URFDLB'].find(face => cfopFrame(cube, colorFrame)(face) === move[0]);
       window.trainerEvent({ type: 'MOVE', move: face + move.slice(1) });
       pattern = pattern.applyMove(move);
-      if (kind === 'OLL' && [...cube.facelets(pattern).slice(0, 9)].every(face => face === 'U') &&
+      if ((kind === 'F2L' || kind === 'OLL' && [...cube.facelets(pattern).slice(0, 9)].every(face => face === 'U')) &&
         ['EDGES', 'CORNERS'].every(orbit => pattern.patternData[orbit].pieces.every((piece, i) =>
           i < 4 || piece === i && pattern.patternData[orbit].orientation[i] === 0))) break;
     }
-  }, { kind, label, auf, preAuf, postAuf, colorFrame });
+  }, { kind, label, auf, preAuf, postAuf, colorFrame, practice });
 }
 try {
   await page.goto(`${base}/trainer/`);
@@ -47,7 +51,7 @@ try {
   await expect(page.getByRole('button', { name: /PLL Blitz/ })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Options', exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: /OLL Blitz/ }).click();
-  const options = page.locator('.site-page--trainer').getByRole('dialog');
+  const options = page.locator('.site-page--trainer .trainer-settings');
   await expect(page.getByLabel('Upcoming cases', { exact: true })).toBeHidden();
   await page.getByRole('button', { name: 'Options', exact: true }).click();
   await expect(options).toHaveAccessibleName('OLL Blitz options');
@@ -57,20 +61,24 @@ try {
   await expect(options).toBeHidden();
   await page.getByRole('button', { name: 'Bluetooth cube setup', exact: true }).click();
   await page.getByRole('button', { name: 'Connect cube', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Bluetooth cube setup', exact: true })).toContainText('GAN 356 i Carry');
   await expect(page.getByRole('button', { name: 'Start Blitz', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Start Blitz', exact: true }).click();
   await expect(page.getByRole('timer')).toHaveText('3');
   await page.getByRole('button', { name: 'Options', exact: true }).click();
-  for (const label of ['Upcoming cases', 'Case names shown', 'Cross color', 'Front color', 'Hide PLL stickers']) {
+  for (const label of ['Cross color', 'Front color']) {
     await expect(options.getByLabel(label, { exact: true })).toBeDisabled();
+  }
+  for (const label of ['Upcoming cases', 'Case names shown', 'Solution algorithm shown', 'Hide PLL stickers']) {
+    await expect(options.getByLabel(label, { exact: true })).toBeEnabled();
   }
   await page.keyboard.press('Escape');
   await expect(options).toBeHidden();
-  await expect(page.locator('.trainer-case-queue svg')).toHaveCount(3, { timeout: 10000 });
+  await expect(page.locator('.trainer-case-queue svg')).toHaveCount(4, { timeout: 10000 });
   expect(await page.locator('.trainer-case-queue svg').evaluateAll(images => images.map(image => {
     const fills = new Set([...image.querySelectorAll('rect')].map(sticker => sticker.getAttribute('fill')));
     return fills.size === 2 && fills.has('#697384');
-  }))).toEqual([true, true, true]);
+  }))).toEqual([true, true, true, true]);
   await expect(page.getByRole('img', { name: 'Live 3x3 cube state' })).toBeVisible();
   const firstPlayer = await page.locator('twisty-player').elementHandle();
   await page.evaluate(async () => {
@@ -120,7 +128,7 @@ try {
   const results = await page.evaluate(() => JSON.parse(localStorage.getItem('cuberplus-trainer-blitz-v1')));
   expect(results).toHaveLength(1);
   expect(results[0].splits).toHaveLength(21);
-  expect(results[0].settings).toEqual({ upcomingCases: true, caseNames: true, hidePLL: false, crossColor: 'Yellow', frontColor: 'Green' });
+  expect(results[0].settings).toEqual({ upcomingCases: true, caseNames: true, solutionAlgorithms: true, randomPreAuf: true, randomPostAuf: true, hidePLL: false, crossColor: 'Yellow', frontColor: 'Green' });
   expect(results[0].splits.every(split => ['', 'U', 'U2', "U'"].includes(split.auf))).toBe(true);
   expect(results[0].splits.every(split => ['', 'U', 'U2', "U'"].includes(split.preAuf) && ['', 'U', 'U2', "U'"].includes(split.postAuf))).toBe(true);
   expect(new Set(results[0].splits.map(split => split.caseId)).size).toBe(21);
@@ -200,6 +208,7 @@ try {
   const myCubes = page.getByRole('region', { name: 'My cubes', exact: true });
   await myCubes.locator('.saved-cube > summary').filter({ hasText: 'GAN 356 i Carry' }).click();
   await expect(myCubes.getByLabel('Name for GAN 356 i Carry', { exact: true })).toBeVisible();
+  await myCubes.getByLabel('Name for GAN 356 i Carry', { exact: true }).fill('Desk cube');
   await myCubes.getByText('Add a cube', { exact: true }).click();
   await myCubes.getByLabel('New cube name', { exact: true }).fill('Travel cube');
   await myCubes.getByLabel('MAC (if required)', { exact: true }).fill('11:22:33:44:55:66');
@@ -209,6 +218,7 @@ try {
   await myCubes.getByRole('button', { name: 'Forget Travel cube', exact: true }).click();
   await expect(myCubes.getByLabel('Name for Travel cube', { exact: true })).toHaveCount(0);
   await page.getByRole('link', { name: 'Trainer', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Bluetooth cube setup', exact: true })).toContainText('Desk cube');
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Blitz history', exact: true })).toBeVisible();
   await page.getByRole('button', { name: /OLL Blitz/ }).click();
@@ -275,6 +285,122 @@ try {
   expect(await legacyHistory.locator('tbody tr td:nth-child(3)').allTextContents()).toEqual(['Not recorded', 'Not recorded', 'Not recorded']);
   expect(await legacyHistory.locator('tbody tr td:nth-child(4)').allTextContents()).toEqual(['Not recorded', 'Not recorded', 'Not recorded']);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${base}/trainer/?case=F2L-1`);
+  await expect(page.getByRole('combobox', { name: 'Case', exact: true })).toHaveValue('F2L-1');
+  await expect(page.locator('h1')).not.toBeFocused();
+  await page.getByRole('button', { name: 'Bluetooth cube setup', exact: true }).click();
+  await page.getByRole('button', { name: 'Connect cube', exact: true }).click();
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  for (const name of ['Upcoming cases', 'Case names shown', 'Solution algorithm shown']) await page.getByRole('checkbox', { name, exact: true }).check();
+  for (const name of ['Random pre-AUF', 'Random post-AUF']) {
+    await expect(page.getByRole('checkbox', { name, exact: true })).toBeChecked();
+    await page.getByRole('checkbox', { name, exact: true }).uncheck();
+  }
+  await page.getByRole('button', { name: 'Close options', exact: true }).click();
+  await page.getByRole('button', { name: 'Start practice', exact: true }).click();
+  await expect(page.locator('.trainer-practice[data-case="F2L-1"]')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('.trainer-practice')).toHaveAttribute('data-pre-auf', '');
+  await expect(page.locator('.trainer-practice')).toHaveAttribute('data-post-auf', '');
+  await expect(page.locator('.trainer-case-queue img')).toHaveCount(3);
+  const solution = page.getByRole('group', { name: 'Suggested solution', exact: true });
+  await page.evaluate(async () => {
+    const [{ algorithmMatcher }, { loadCube }, { cfopFrame }] = await Promise.all([
+      import('/timer/src/Analysis/algorithmMatching.ts'), import('/timer/src/Core/puzzle.ts'), import('/timer/src/Analysis/cfop.ts'),
+    ]);
+    const cube = await loadCube(), algorithm = [...document.querySelectorAll('.trainer-solution .move')].map(node => node.textContent).join(' ');
+    const frame = document.querySelector('.trainer-practice').dataset.colorFrame;
+    const first = algorithmMatcher(cube).outerMoves(algorithm).moves[0];
+    const face = [...'URFDLB'].find(face => cfopFrame(cube, frame)(face) === first[0]);
+    window.progressMove = face + first.slice(1);
+    window.trainerEvent({ type: 'MOVE', move: window.progressMove });
+  });
+  await expect(solution.locator('.move.done').first()).toBeVisible();
+  expect(await solution.locator('.move.done').first().evaluate(node => getComputedStyle(node).color)).not.toBe(
+    await solution.locator('.move:not(.done)').first().evaluate(node => getComputedStyle(node).color));
+  await page.evaluate(async () => {
+    const { inverse } = await import('/timer/src/Core/puzzle.ts');
+    window.trainerEvent({ type: 'MOVE', move: inverse(window.progressMove) });
+  });
+  await expect(solution).toHaveAttribute('data-completed', '0');
+  await page.evaluate(async () => {
+    const { Cube } = await import('/timer/src/Core/puzzle.ts');
+    const facelets = Cube.prototype.facelets;
+    window.idleCubeCalculations = 0;
+    Cube.prototype.facelets = function (...args) { window.idleCubeCalculations++; return facelets.apply(this, args); };
+    window.restoreCubeProbe = () => { Cube.prototype.facelets = facelets; };
+  });
+  const practiceTime = await page.getByRole('timer').textContent();
+  await expect(page.getByRole('timer')).not.toHaveText(practiceTime);
+  expect(await page.evaluate(() => window.idleCubeCalculations)).toBe(0);
+  await page.evaluate(() => window.restoreCubeProbe());
+  for (let count = 1; count <= 2; count++) {
+    await finishCase('F2L', true);
+    await expect(page.getByRole('table', { name: 'Completed practice attempts', exact: true }).locator('tbody tr')).toHaveCount(count);
+  }
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  for (const name of ['Upcoming cases', 'Case names shown', 'Solution algorithm shown']) await page.getByRole('checkbox', { name, exact: true }).uncheck();
+  await page.getByRole('button', { name: 'Close options', exact: true }).click();
+  await expect(page.locator('.trainer-case-queue')).toHaveCount(0);
+  await expect(page.locator('.trainer-solution')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'F2L 1', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Stop practice', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to drills', exact: true }).click();
+  await page.getByRole('button', { name: /Make your own drill/ }).click();
+  await page.getByRole('button', { name: 'Create training', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Training name', exact: true }).fill('Browser mixed drill');
+  for (const category of ['F2L', 'OLL', 'PLL']) {
+    await page.locator('summary').filter({ hasText: new RegExp(`^${category} cases`) }).click();
+    await page.getByRole('checkbox', { name: category === 'PLL' ? 'PLL Aa' : `${category} 1`, exact: true }).check();
+  }
+  await page.getByRole('button', { name: 'Save training', exact: true }).click();
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  for (const name of ['Upcoming cases', 'Case names shown', 'Solution algorithm shown']) await page.getByRole('checkbox', { name, exact: true }).check();
+  for (const name of ['Random pre-AUF', 'Random post-AUF']) await page.getByRole('checkbox', { name, exact: true }).check();
+  await page.getByRole('button', { name: 'Close options', exact: true }).click();
+  await page.getByRole('button', { name: 'Start practice', exact: true }).click();
+  await expect(page.locator('.trainer-practice[data-case]')).toBeVisible({ timeout: 10000 });
+  await finishCase('', true);
+  await expect(page.getByRole('table', { name: 'Completed practice attempts', exact: true }).locator('tbody tr')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Stop practice', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit training', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Training name', exact: true }).fill('Renamed mixed drill');
+  await page.getByRole('button', { name: 'Save training', exact: true }).click();
+  await page.goto(`${base}/trainer/`);
+  await page.getByRole('button', { name: /Make your own drill/ }).click();
+  await expect(page.getByRole('combobox', { name: 'Saved training', exact: true }).locator('option')).toHaveText(['Choose a training', 'Renamed mixed drill']);
+  await page.getByRole('combobox', { name: 'Saved training', exact: true }).selectOption({ label: 'Renamed mixed drill' });
+  await expect(page.getByRole('table', { name: 'Completed practice attempts', exact: true }).locator('tbody tr')).toHaveCount(1);
+  const practiceData = await page.evaluate(() => JSON.parse(localStorage.getItem('cuberplus-trainer-practice-v1')));
+  expect(practiceData).toHaveLength(3);
+  expect(practiceData.every(attempt => attempt.recognitionMilliseconds >= 0 && attempt.executionMilliseconds >= 0)).toBe(true);
+
+  await page.goto(`${base}/options/`);
+  const helpButton = page.getByRole('button', { name: "Find my cube's MAC address", exact: true });
+  await helpButton.click();
+  await expect(page.locator('.mac-help-dialog:modal')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Close MAC address help', exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(helpButton).toBeFocused();
+  await page.goto(`${base}/timer/help/mac-address.html`);
+  await expect(page).toHaveURL(/\/options\/\?help=mac-address$/);
+  await expect(page.locator('.mac-help-dialog:modal')).toBeVisible();
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    const bounds = await page.locator('.mac-help-dialog:modal').boundingBox();
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await page.keyboard.press('Escape');
+  await page.goto(`${base}/trainer/`);
+  await page.getByRole('button', { name: 'Bluetooth cube setup', exact: true }).click();
+  await page.getByRole('button', { name: "Find my cube's MAC address", exact: true }).click();
+  await expect(page.locator('.mac-help-dialog:modal')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: /^Bluetooth cube setup/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: "Find my cube's MAC address", exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
   expect(errors).toEqual([]);
-  console.log('PASS OLL/PLL workflows, Options, legal OLL randomization, gray stickers, timing breakdowns, result sorting, legacy results and mobile layout');
+  console.log('PASS OLL/PLL, repeated single cases, mixed saved drills, visibility controls, durable timings, native MAC help, and mobile layouts');
 } finally { await context.close(); await browser.close(); }

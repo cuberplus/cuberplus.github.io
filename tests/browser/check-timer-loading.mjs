@@ -62,7 +62,8 @@ try {
   await expect(allSessions).not.toBeChecked(); await allSessions.check();
   await page.getByRole('button', { name: 'Close options', exact: true }).click();
   await expect(table.locator('tbody tr')).toHaveCount(3);
-  await expect(table.getByRole('columnheader', { name: 'Session', exact: true })).toBeVisible();
+  await expect(table.getByRole('columnheader', { name: 'Date', exact: true })).toBeVisible();
+  await expect(table.getByRole('columnheader', { name: 'Session', exact: true })).toHaveCount(0);
   await session.selectOption('Other - Cubeast');
   await expect(table.locator('tbody tr')).toHaveCount(3);
   await expect(page.getByRole('button', { name: 'View current Single', exact: true })).toHaveText('10.00');

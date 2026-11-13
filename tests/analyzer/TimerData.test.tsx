@@ -30,9 +30,13 @@ async function ready(ref: React.RefObject<FileInput>, count = 2) {
 }
 function openDataMenu() {
     const data = screen.getByRole('button', { name: 'Data', exact: true });
-    if (data.getAttribute('aria-expanded') !== 'true') fireEvent.click(data);
+    if (!document.querySelector<HTMLDialogElement>('.analyzer-data-dialog')?.open) fireEvent.click(data);
 }
-beforeEach(() => { jest.clearAllMocks(); localData.mockReset().mockResolvedValue(own()); jest.mocked(readSolveIds).mockResolvedValue(['old', 'new']); jest.mocked(GetDemoData).mockResolvedValue(csv); });
+beforeEach(() => {
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function(this: HTMLDialogElement) { this.open = true; } });
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function(this: HTMLDialogElement) { this.open = false; } });
+    jest.clearAllMocks(); localData.mockReset().mockResolvedValue(own()); jest.mocked(readSolveIds).mockResolvedValue(['old', 'new']); jest.mocked(GetDemoData).mockResolvedValue(csv);
+});
 
 test('Analyzer receives the shared solve limit and updates without reloading its dataset', async () => {
     localStorage.removeItem('recent-solve-limit');
@@ -77,6 +81,7 @@ test('presets keep a visible selected state derived from the actual step filters
     const ref = React.createRef<FileInput>();
     render(<FileInput ref={ref} />);
     await ready(ref);
+    expect(Array.from(document.querySelectorAll('.preset-filters button')).map(button => button.textContent)).toEqual(['Full', 'Cross+1', 'F2L', 'OLL', 'PLL']);
     act(() => mockFilterProps.onStepsChange?.([StepName.OLL]));
     const oll = screen.getByRole('button', { name: 'OLL', exact: true });
     expect(oll.getAttribute('aria-pressed')).toBe('true');
@@ -139,14 +144,12 @@ test('CSV selection loads all files automatically, cancelling preserves stats, a
     await ready(ref);
     const input = screen.getByLabelText<HTMLInputElement>('CSV files');
     const first = file('first.csv'), second = file('second.csv', csv.replace('new,', 'another,'));
-    const open = jest.spyOn(input, 'click').mockImplementation(() => {});
     openDataMenu();
-    fireEvent.click(screen.getByRole('button', { name: 'Choose CSV File' }));
-    expect(open).toHaveBeenCalledTimes(1); open.mockRestore();
+    expect(input.closest('dialog')?.open).toBe(true);
     fireEvent.change(input, { target: { files: [first, second] } });
     await ready(ref, 4);
     openDataMenu();
-    expect(screen.getByRole('button', { name: 'Choose CSV File' }).textContent).toContain('first.csv, second.csv');
+    expect(screen.getByRole('dialog', { name: 'Load analysis data' }).textContent).toContain('first.csv, second.csv');
     expect(ref.current!.state.solves.every(solve => solve.source === 'cubeast')).toBe(true);
     fireEvent.change(input, { target: { files: [] } });
     expect(ref.current!.state.solves).toHaveLength(4);

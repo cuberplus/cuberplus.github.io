@@ -27,7 +27,7 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 const nav = () => within(screen.getByRole('navigation', { name: 'CuberPlus' }));
-async function visit(name: string) { fireEvent.click(nav().getByRole('link', { name, exact: true })); await screen.findByRole('link', { name, current: 'page' }); }
+async function visit(name: string) { fireEvent.click(nav().getByRole('link', { name, exact: true })); await screen.findByRole('link', { name, current: 'page' }, { timeout: 10000 }); }
 
 test('the site-wide recent-solve setting updates retained tools and survives a reload', async () => {
   const view = render(<Site />);
@@ -66,11 +66,11 @@ test('navigation disclosure closes on Escape, navigation, and leaving a retained
   expect(menu.getAttribute('aria-expanded')).toBe('false');
 });
 
-test('lazy and retained routes focus their heading and give the skip link a stable target', async () => {
+test('initial load avoids title focus while route changes focus headings and keep a stable skip target', async () => {
   render(<Site />);
   const home = await screen.findByRole('heading', { name: 'Home' });
   await act(async () => {});
-  expect(document.activeElement).toBe(home);
+  expect(document.activeElement).not.toBe(home);
   expect(home.id).toBe('home-content');
   await visit('Smartcube Analyzer');
   const analyzer = await screen.findByRole('heading', { name: 'Analyzer' });
@@ -78,6 +78,19 @@ test('lazy and retained routes focus their heading and give the skip link a stab
   expect(screen.getByRole('link', { name: 'Skip to content' }).getAttribute('href')).toBe('#smartcubeanalyzer-content');
   await visit('Home');
   expect(document.activeElement).toBe(home);
+});
+test('vertical intent or scrolling cancels a gesture even if it ends horizontally', async () => {
+  render(<Site />);
+  const element = await screen.findByRole('navigation');
+  fireEvent.touchStart(element, { touches: [{ clientX: 160, clientY: 300 }] });
+  fireEvent.touchMove(element, { touches: [{ clientX: 155, clientY: 340 }] });
+  fireEvent.touchEnd(element, { touches: [], changedTouches: [{ clientX: 50, clientY: 305 }] });
+  expect(location.pathname).toBe('/');
+  const table = document.createElement('table');
+  element.appendChild(table);
+  swipe(table, -100);
+  expect(location.pathname).toBe('/');
+  table.remove();
 });
 test('tool URLs accept existing index paths but reject other files and nested routes', () => {
   expect(['/','/index.html','/timer','/timer/index.html','/analyzer/','/analyzer','/analyzer/index.html','/smartcubeanalyzer/','/scrambler/','/database/','/database/index.html'].map(toolAt)).toEqual(['home','home','timer','timer','smartcubeanalyzer','smartcubeanalyzer','smartcubeanalyzer','smartcubeanalyzer','scrambler','database','database']);

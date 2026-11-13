@@ -28,13 +28,14 @@ export default function Site() {
 }
 function Router() {
   useInstall();
-  const swipe = useRef<{ x: number; y: number; time: number; target: Element } | null>(null);
+  const swipe = useRef<{ x: number; y: number; time: number; target: Element; scrollX: number; scrollY: number } | null>(null);
   const swiped = useRef<{ target: Element; time: number } | null>(null);
   const [address, setAddress] = useState(() => {
     if (toolAt(location.pathname) === 'smartcubeanalyzer') performance.mark?.('analyzer-load-start', { startTime: 0 });
     return currentAddress();
   });
   const route = toolAt(address.split('?')[0]);
+  const previousRoute = useRef(route);
   const [visited, setVisited] = useState(() => route ? [route] : []);
   const change = () => {
     const address = currentAddress(), next = toolAt(location.pathname);
@@ -43,13 +44,16 @@ function Router() {
   };
   useEffect(() => { addEventListener('popstate', change); return () => removeEventListener('popstate', change); }, []);
   useLayoutEffect(() => {
+    const shouldFocus = previousRoute.current !== route;
+    previousRoute.current = route;
     document.title = route === 'home' ? 'CuberPlus | Tools for better solves' : `CuberPlus - ${links.find(([id]) => id === route)?.[2] ?? 'Page not found'}`;
     if (!route) return;
     const focusHeading = () => {
       const main = document.querySelector<HTMLElement>(`.site-page--${route} main`);
       if (!main) return false;
       const heading = main.querySelector<HTMLElement>('h1') ?? main;
-      heading.id = `${route}-content`; heading.tabIndex = -1; heading.focus({ preventScroll: true });
+      heading.id = `${route}-content`; heading.tabIndex = -1;
+      if (shouldFocus) heading.focus({ preventScroll: true });
       return true;
     };
     if (focusHeading()) return;
@@ -79,20 +83,28 @@ function Router() {
   function startSwipe(event: TouchEvent) {
     swipe.current = null;
     swiped.current = null;
-    if (event.touches.length !== 1 || !(event.target instanceof Element) || document.querySelector('dialog[open], .offcanvas.show, .modal.show')) return;
+    if (event.defaultPrevented || event.touches.length !== 1 || !(event.target instanceof Element) ||
+      (window.visualViewport?.scale ?? 1) > 1 || window.getSelection()?.toString() || document.querySelector('dialog[open], .offcanvas.show, .modal.show')) return;
     for (let element: Element | null = event.target; element; element = element.parentElement) {
-      if (element.matches('button, input, select, textarea, summary, [contenteditable]:not([contenteditable="false"]), canvas, twisty-player, [role="grid"], [role="slider"], [data-no-swipe]') ||
+      if (element.matches('button, input, select, textarea, summary, table, [role="button"], [role="tab"], [contenteditable]:not([contenteditable="false"]), canvas, twisty-player, [role="grid"], [role="slider"], [data-no-swipe]') ||
         (element.scrollWidth > element.clientWidth && /auto|scroll/.test(getComputedStyle(element).overflowX))) return;
     }
     const touch = event.touches[0];
     if (touch.clientX > 24 && touch.clientX < innerWidth - 24) swipe.current = {
-      x: touch.clientX, y: touch.clientY, time: Date.now(), target: event.target.closest('a') ?? event.target,
+      x: touch.clientX, y: touch.clientY, time: Date.now(), target: event.target.closest('a') ?? event.target, scrollX, scrollY,
     };
+  }
+  function moveSwipe(event: TouchEvent) {
+    const start = swipe.current, touch = event.touches[0];
+    if (!start) return;
+    if (event.touches.length !== 1 || !touch || Math.abs(touch.clientY - start.y) > 20 ||
+      scrollX !== start.scrollX || scrollY !== start.scrollY) swipe.current = null;
   }
   function endSwipe(event: TouchEvent) {
     const start = swipe.current, touch = event.changedTouches[0];
     swipe.current = null;
-    if (!start || !touch || event.touches.length || !route || Date.now() - start.time > 700) return;
+    if (!start || !touch || event.touches.length || !route || Date.now() - start.time > 700 ||
+      scrollX !== start.scrollX || scrollY !== start.scrollY) return;
     const dx = touch.clientX - start.x, dy = touch.clientY - start.y;
     const next = links[links.findIndex(([id]) => id === route) + (dx < 0 ? 1 : -1)];
     if (Math.abs(dx) >= 70 && Math.abs(dx) > Math.abs(dy) * 2 && next) {
@@ -102,7 +114,7 @@ function Router() {
     }
   }
   return <PageLocation.Provider value={address}>
-    <div onClick={navigate} onTouchStart={startSwipe} onTouchEnd={endSwipe} onTouchCancel={() => { swipe.current = null; }}>
+    <div onClick={navigate} onTouchStart={startSwipe} onTouchMove={moveSwipe} onTouchEnd={endSwipe} onTouchCancel={() => { swipe.current = null; }}>
       {route && <a className="route-skip" href={`#${route}-content`}>Skip to content</a>}
       <CloudNotice />
       {!route && <main><h1>Page not found</h1><a href="/">CuberPlus home</a></main>}

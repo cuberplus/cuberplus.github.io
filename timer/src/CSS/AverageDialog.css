@@ -6,6 +6,7 @@ body:has(.average-dialog[open]) { overflow: hidden; }
 .average-dialog .average-trimmed-worst { color: var(--cp-danger); }
 .average-dialog .history-sort { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
 .average-clickable tbody :is(th, td) { padding: 0; }
+.average-clickable tbody tr { cursor: pointer; }
 .average-cell { display: block; width: 100%; min-height: 2.75rem; padding: .65rem .5rem; border: 0; background: transparent; color: inherit; font: inherit; text-align: start; text-decoration: none; cursor: pointer; }
 .average-clickable tbody tr:is(:hover, :focus-within) { background: var(--cp-subtle); }
 .average-cell:focus-visible { outline: 2px solid var(--cp-accent); outline-offset: -3px; }

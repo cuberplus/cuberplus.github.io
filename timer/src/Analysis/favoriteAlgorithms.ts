@@ -126,7 +126,8 @@ export function unlearnAlgorithms(solve: Solve, cube: Cube, unlearn: Set<string>
 export function comfortableAlgorithm(algorithm: string, cube: Cube): string {
   const variants = ['', 'y', 'y2', "y'"].map(yaw =>
     simplifyMoves(algorithm.split(/\s+/).filter(Boolean).map(cfopFrame(cube, yaw))));
-  const cost = (moves: string[]) => moves.filter(move => 'DLB'.includes(move[0])).length;
+  const cost = (moves: string[]) => moves.reduce((sum, move) => sum + (move[0].toUpperCase() === 'B' ? moves.length + 1 :
+    'UR'.includes(move[0].toUpperCase()) ? 0 : 1), 0);
   return variants.sort((a, b) => cost(a) - cost(b) || a.length - b.length || a.join(' ').localeCompare(b.join(' ')))[0].join(' ');
 }
 

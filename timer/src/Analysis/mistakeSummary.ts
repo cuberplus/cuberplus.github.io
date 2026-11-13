@@ -1,10 +1,23 @@
 import { rankedMistakes, type Mistake } from '../../../smartcubeanalyzer/src/Analysis/MistakeAnalysis';
 import { StepName, type Solve } from '../../../smartcubeanalyzer/src/Models/Types';
+import { findTrainingCase } from '../../../src/trainer/cases';
 
 const kindStep: Partial<Record<Mistake['kind'], StepName>> = {
   crossMoves: StepName.Cross, f2lMoves: StepName.F2L, f2lPause: StepName.F2L,
   ollMoves: StepName.OLL, ollRecognition: StepName.OLL, pllMoves: StepName.PLL, pllRecognition: StepName.PLL,
 };
+export function mistakeTrainingKey(solve: Solve, mistake: Mistake, observed: { step: string; caseKey: string }[] = []): string | null {
+  const costs = Object.entries(mistake.stepCosts ?? {}).sort((a, b) => b[1] - a[1]);
+  const step = costs[0]?.[0] ?? mistake.step ?? kindStep[mistake.kind];
+  if (!step || step === StepName.Cross || mistake.kind === 'slowSolve') return null;
+  const candidates = solve.steps.filter(item => step === StepName.F2L ? item.name.startsWith('F2L') : item.name === step);
+  for (const selected of candidates.sort((a, b) => b.recognitionTime - a.recognitionTime)) {
+    const category = selected.name.startsWith('F2L') ? 'F2L' : selected.name;
+    const key = observed.find(use => use.step === selected.name)?.caseKey ?? `${category}-${selected.case}`;
+    if (findTrainingCase(key)) return key;
+  }
+  return null;
+}
 export function potentialGain(solve: Solve, algorithms: { step: StepName; seconds: number }[] = []): number {
   const costs = new Map<string, number>();
   const add = (step: string, seconds: number) => costs.set(step, Math.max(costs.get(step) ?? 0, seconds));

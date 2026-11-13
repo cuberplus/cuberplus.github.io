@@ -58,6 +58,8 @@ const EXPECTED_SHOWN = 10000;
 let rawCsv: string;
 
 beforeAll(() => {
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function(this: HTMLDialogElement) { this.open = true; } });
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function(this: HTMLDialogElement) { this.open = false; } });
     rawCsv = readFileSync(DEMO_CSV, 'utf8');
     if (!('ResizeObserver' in globalThis)) {
         Object.assign(globalThis, { ResizeObserver: class { observe() { } unobserve() { } disconnect() { } } });
@@ -124,7 +126,7 @@ describe('loading the bundled dev stats through the UI', () => {
             render(React.createElement(FileInput));
 
             await waitFor(() => expect(mockChartProps.length).toBeGreaterThan(0), { timeout: 240_000 });
-            fireEvent.click(screen.getByRole('button', { name: 'All charts', exact: true }));
+            fireEvent.click(screen.getByRole('button', { name: 'All', exact: true }));
 
             fireEvent.click(screen.getByLabelText('Open filters'));
             const label = await screen.findByText(`Showing ${EXPECTED_SHOWN} / ${EXPECTED_SOLVES} solves`);

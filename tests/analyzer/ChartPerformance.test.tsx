@@ -256,7 +256,7 @@ describe('full site load time', () => {
             expect(plotted.length).toBeGreaterThan(0);
             expect(screen.getByRole('region', { name: 'Mistakes' })).toBeTruthy();
             console.log(`Rendered ${cards.length} chart cards in ${totalMs.toFixed(0)} ms.`);
-            fireEvent.click(screen.getByRole('button', { name: 'All charts', exact: true }));
+            fireEvent.click(screen.getByRole('button', { name: 'All', exact: true }));
             expect(container.querySelectorAll('.card').length).toBeGreaterThanOrEqual(20);
 
             cleanup();

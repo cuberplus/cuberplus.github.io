@@ -40,6 +40,26 @@ function point(index: number, datasetIndex = 0): ActiveElement {
 }
 
 describe('Analyzer inline drill-down', () => {
+    test.each([undefined, 'Selected solves'])('average rows activate once from every cell and row padding (%s)', title => {
+        const solves = makeSolves(2), view = jest.fn();
+        render(<AverageModal solves={solves} numbers={[1, 2]} percentage={0} title={title} close={() => undefined} view={view} />);
+        expect(screen.getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['Solve', 'Time', 'Turns', 'TPS']);
+        const row = screen.getAllByRole('row')[2];
+        for (const button of within(row).getAllByRole('button')) {
+            view.mockClear();
+            fireEvent.click(button);
+            expect(view).toHaveBeenCalledTimes(1);
+            expect(view).toHaveBeenCalledWith(solves[1]);
+        }
+        for (const target of [row, ...Array.from(row.children)]) {
+            view.mockClear();
+            fireEvent.click(target);
+            expect(view).toHaveBeenCalledTimes(1);
+            expect(view).toHaveBeenCalledWith(solves[1]);
+            expect(document.activeElement).toBe(within(row).getAllByRole('button')[0]);
+        }
+    });
+
     test.each([
         ['runningAverage', [91, 93, 95, 97, 99]],
         ['runningTurns', [89, 91, 93, 97, 99]],

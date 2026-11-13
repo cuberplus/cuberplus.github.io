@@ -68,6 +68,9 @@ html[data-bs-theme="dark"] .btn-close { filter: invert(1) grayscale(100%) bright
 .page-options-dialog::backdrop { background: #000a; }
 dialog:modal { overscroll-behavior: contain; }
 dialog::backdrop { overflow: hidden; overscroll-behavior: contain; }
+.mac-help-dialog { inline-size: min(42rem, calc(100% - 2rem)); }
+.mac-help-dialog code { overflow-wrap: anywhere; }
+.mac-help-dialog li { margin-block-end: .75rem; }
 .page-options-dialog > .page-heading h2 { font-size: 1.25rem; margin: 0; }
 .page-options-dialog .btn-close { flex-shrink: 0; }
 .page-options-dialog:not([open]) { display: none; }

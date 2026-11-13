@@ -184,7 +184,7 @@ test('OLL sampling covers all 288 legal permutations evenly without changing ori
   for (let a = 0; a < 4; a++) for (let b = 0; b < 3; b++) for (let c = 0; c < 2; c++) samples.push([a / 4, b / 3, c / 2]);
   const counts = new Map<string, number>();
   for (const edges of samples) for (const corners of samples) {
-    const sequence = [0, 0, ...edges, ...corners];
+    const sequence = [0, 0, 0, ...edges, ...corners];
     let index = 0;
     const entry = new Blitz(cube, 'OLL', () => sequence[index++ % sequence.length]).queue.find(entry => entry.id === '27')!;
     const pattern = blitzPattern(cube, entry);
@@ -194,6 +194,15 @@ test('OLL sampling covers all 288 legal permutations evenly without changing ori
   }
   expect(counts.size).toBe(288);
   expect(new Set(counts.values())).toEqual(new Set([2]));
+});
+test.each(['OLL', 'PLL'] as const)('%s pre/post AUF options operate independently', kind => {
+  for (const randomPreAuf of [false, true]) for (const randomPostAuf of [false, true]) {
+    const blitz = new Blitz(cube, kind, () => .3, { ...defaultBlitzSettings, randomPreAuf, randomPostAuf });
+    for (const entry of blitz.queue) {
+      expect(entry.preAuf).toBe(randomPreAuf ? 'U' : '');
+      expect(entry.postAuf).toBe(randomPostAuf ? 'U' : '');
+    }
+  }
 });
 test('gray-sticker preference defaults off, persists, and accepts older settings', () => {
   expect(readBlitzSettings().hidePLL).toBe(false);

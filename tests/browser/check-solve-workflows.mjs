@@ -147,7 +147,7 @@ try {
     }
     await page.setViewportSize({ width: 1440, height: 900 });
     await replay.getByRole('button', { name: 'Close replay' }).click();
-    await expect(page.getByRole('table', { name: 'Solve history' }).getByRole('columnheader')).toHaveText(['Solve', 'Time', 'Turns', 'TPS']);
+    await expect(page.getByRole('table', { name: 'Solve history' }).getByRole('columnheader')).toHaveText(['Solve', 'Time', 'Turns', 'TPS', 'Date']);
   }
   await page.goto(`${base}/analyzer/`);
   await expect(page.getByRole('button', { name: 'Data', exact: true })).toBeEnabled({ timeout: 60000 });

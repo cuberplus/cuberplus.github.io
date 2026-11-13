@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import Trainer from '../../src/trainer/Trainer';
 import { readBlitzRuns } from '../../src/trainer/blitz';
 import type { BlitzRun } from '../../src/trainer/blitz';
+import { PageLocation, PageVisible } from '@cuberplus/navigation';
 
 jest.mock('../../src/trainer/blitz', () => ({
   readBlitzRuns: jest.fn(),
@@ -13,6 +14,7 @@ jest.mock('../../timer/src/Analysis/cfop', () => ({}));
 jest.mock('../../timer/src/Components/CubeView', () => ({ CubeView: () => null }));
 jest.mock('../../src/database/CaseImage', () => ({ __esModule: true, default: () => null }));
 jest.mock('../../src/trainer/BlitzCaseImage', () => ({ BlitzCaseImage: () => null }));
+jest.mock('../../src/trainer/SolutionProgress', () => ({ SolutionProgress: () => null }));
 jest.mock('../../shared/cube/connection', () => ({
   useCubeConnection: () => ({ connection: null, cubes: [], selected: '', battery: null, connecting: false, error: '' }), cubeConnection: { onEvent: () => () => {} },
 }));
@@ -25,9 +27,49 @@ const runs: BlitzRun[] = [
   { id: 'oll-old', kind: 'OLL', date: '2026-01-01T12:00:00Z', milliseconds: 12000, splits: [{ caseId: '1', milliseconds: 12000 }] },
 ];
 beforeEach(() => {
+  localStorage.clear();
+  Object.defineProperty(globalThis.crypto, 'randomUUID', { configurable: true, value: () => `training-${Math.random()}` });
   jest.mocked(readBlitzRuns).mockReturnValue(runs);
   Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: () => {} });
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function(this: HTMLDialogElement) { this.open = true; } });
+});
+test('custom trainings mix categories, renaming keeps identity, and a new same-name training stays separate', async () => {
+  render(<Trainer />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Make your own drill' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Create training' }));
+  fireEvent.change(screen.getByLabelText('Training name'), { target: { value: 'Mixed practice' } });
+  for (const category of ['F2L', 'OLL', 'PLL']) {
+    fireEvent.click(screen.getByText(`${category} cases (0 selected)`));
+    fireEvent.click(screen.getByRole('checkbox', { name: `${category} ${category === 'PLL' ? 'T' : '1'}`, exact: true }));
+  }
+  fireEvent.click(screen.getByRole('button', { name: 'Save training' }));
+  const key = 'cuberplus-trainer-custom-v1', [first] = JSON.parse(localStorage.getItem(key)!);
+  expect(first.cases).toEqual(['F2L-1', 'OLL-1', 'PLL-T']);
+  fireEvent.click(screen.getByRole('button', { name: 'Edit training' }));
+  fireEvent.change(screen.getByLabelText('Training name'), { target: { value: 'Renamed' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save training' }));
+  expect(JSON.parse(localStorage.getItem(key)!)).toEqual([{ ...first, name: 'Renamed' }]);
+  fireEvent.click(screen.getByRole('button', { name: 'Create training' }));
+  fireEvent.change(screen.getByLabelText('Training name'), { target: { value: 'Renamed' } });
+  fireEvent.click(screen.getByText('PLL cases (0 selected)'));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'PLL T', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save training' }));
+  expect(JSON.parse(localStorage.getItem(key)!)).toHaveLength(2);
+});
+test('mistake deep links open single-case mode and update an already mounted trainer', async () => {
+  const view = render(<PageLocation.Provider value="/trainer/?case=OLL-27"><Trainer /></PageLocation.Provider>);
+  expect((await screen.findByRole('combobox', { name: 'Case', exact: true }) as HTMLSelectElement).value).toBe('OLL-27');
+  view.rerender(<PageLocation.Provider value="/trainer/?case=PLL-T"><Trainer /></PageLocation.Provider>);
+  expect((await screen.findByRole('combobox', { name: 'Case', exact: true }) as HTMLSelectElement).value).toBe('PLL-T');
+  expect(screen.getByRole('option', { name: 'Use my own solution' })).toBeDefined();
+});
+test('returning to the same mistake link restores its case after manually selecting another', async () => {
+  const trainer = (visible: boolean, address: string) => <PageVisible.Provider value={visible}><PageLocation.Provider value={address}><Trainer /></PageLocation.Provider></PageVisible.Provider>;
+  const view = render(trainer(true, '/trainer/?case=OLL-27'));
+  fireEvent.change(await screen.findByRole('combobox', { name: 'Case', exact: true }), { target: { value: 'PLL-T' } });
+  view.rerender(trainer(false, '/timer/'));
+  view.rerender(trainer(true, '/trainer/?case=OLL-27'));
+  expect((screen.getByRole('combobox', { name: 'Case', exact: true }) as HTMLSelectElement).value).toBe('OLL-27');
 });
 afterEach(cleanup);
 

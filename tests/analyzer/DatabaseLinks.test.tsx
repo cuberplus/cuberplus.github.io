@@ -27,6 +27,12 @@ function renderCase(step: StepName, caseName: string): HTMLElement {
     const { container } = render(<>{column.renderCell?.(props)}</>);
     return container;
 }
+test('algorithm statistics prioritize failures and time in compact columns', () => {
+    const columns = algoCols(StepName.PLL);
+    expect(columns.map(column => column.key)).toEqual(['case', 'failureRate', 'avgTime', 'failed', 'total', 'avgMoves', 'expectedMoves', 'avgWasted']);
+    expect(columns[0].width).toBeLessThan(140);
+    expect(columns.every(column => typeof column.width === 'number' && column.width <= 112)).toBe(true);
+});
 
 describe('databaseCaseUrl', () => {
     test('every OLL case links to its numbered database entry', () => {
@@ -137,7 +143,7 @@ describe('clickable cell styling', () => {
         const rule = ruleFor('.algo-case-link {');
         expect(rule).toContain('block-size: 100%');
         expect(rule).toContain('width: 100%');
-        expect(rule).toContain('padding: 4px 12px');
+        expect(rule).toContain('padding: 4px 0');
         expect(rule).not.toContain('margin-inline: -8px');
     });
 

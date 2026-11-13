@@ -1,15 +1,16 @@
 import React from "react";
-import Navigation, { PageVisible, SettingsContext } from '@cuberplus/navigation';
+import Navigation, { PageVisible, SettingsContext, usePageDialog } from '@cuberplus/navigation';
 import { FileInputProps, FileInputState, MethodName, Solve, StepName } from "../Models/Types";
 import { dataTask } from '../../../shared/workers/dataClient';
 import type { DataTask } from '../../../shared/workers/dataTasks';
 import { FilterPanel } from "./FilterPanel";
 import { GetDemoData, DEMO_DATASETS } from "../Data/SampleData"
-import { Alert, Button, FormControl, Container, Dropdown } from "react-bootstrap";
+import { Alert, Button, FormControl, Container } from "react-bootstrap";
 import { HelpPanel } from "./HelpPanel";
 import { CalculateMostUsedMethod, CalculateWindowSize, CalculateAllSessionOptions } from "../Helpers/CubeHelpers";
 import ReactGA from 'react-ga4';
 import { DEFAULT_SOLVE_LIMIT } from '../../../shared/Components/SolveLimit';
+import { InfoTip } from '../../../shared/Components/InfoTip';
 
 function ScopeSync({ limit, change }: { limit: number; change: (limit: number) => void }) {
     React.useLayoutEffect(() => change(limit), [limit, change]);
@@ -17,17 +18,25 @@ function ScopeSync({ limit, change }: { limit: number; change: (limit: number) =
 }
 
 const CFOP_PRESETS: { label: string; steps: StepName[] }[] = [
+    { label: 'Full', steps: [StepName.Cross, StepName.F2L_1, StepName.F2L_2, StepName.F2L_3, StepName.F2L_4, StepName.OLL, StepName.PLL] },
     { label: 'Cross+1', steps: [StepName.Cross, StepName.F2L_1] },
     { label: 'F2L', steps: [StepName.F2L_1, StepName.F2L_2, StepName.F2L_3, StepName.F2L_4] },
     { label: 'OLL', steps: [StepName.OLL] },
     { label: 'PLL', steps: [StepName.PLL] },
-    { label: 'Full', steps: [StepName.Cross, StepName.F2L_1, StepName.F2L_2, StepName.F2L_3, StepName.F2L_4, StepName.OLL, StepName.PLL] },
 ];
+
+function DataDialog({ dialog, children }: { dialog: React.RefObject<HTMLDialogElement>; children: React.ReactNode }) {
+    usePageDialog(dialog, false);
+    return <dialog ref={dialog} className="panel options-dialog analyzer-data-dialog" aria-labelledby="analyzer-data-title">
+        <div className="page-heading"><h2 id="analyzer-data-title">Load analysis data</h2><button className="btn-close" aria-label="Close data" ref={button => { if (button) button.autofocus = true; }} onClick={() => dialog.current?.close()} /></div>{children}
+    </dialog>;
+}
 
 export class FileInput extends React.Component<FileInputProps, FileInputState> {
     static contextType = PageVisible;
-    state: FileInputState = { solves: [], showHelpModal: false, isParsing: false, currentMethod: MethodName.CFOP };
+    state: FileInputState = { solves: [], isParsing: false, currentMethod: MethodName.CFOP };
 
+    private dataDialogRef = React.createRef<HTMLDialogElement>();
     private filterPanelRef = React.createRef<FilterPanel>();
     private requestId = 0;
     private wasVisible = true;
@@ -80,6 +89,7 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
         if (!this.initialLoad) this.loadStarted = performance.now();
         this.initialLoad = false; this.pendingLog = false;
         this.tasks.forEach(cancel => cancel()); this.tasks.clear();
+        this.dataDialogRef.current?.close();
         this.setState({ isParsing: true, loadError: undefined });
         try {
             const solves = (await read(requestId)).sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -144,24 +154,23 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
                     <Navigation current="smartcubeanalyzer" />
                 </header>
 
-                <HelpPanel showHelpPanel={this.state.showHelpModal} onCloseHandler={() => this.setState({ showHelpModal: false })} />
-
                 <main><Container>
                     <div className="page-heading">
-                        <div className="analyzer-title"><h1 className="route-heading">Analyzer</h1><Button variant="link" className="analyzer-help" aria-label="Analyzer help" onClick={() => this.setState({ showHelpModal: true })}>&#9432;</Button></div>
-                        <Dropdown>
-                            <Dropdown.Toggle id="analyzer-data" variant="outline-secondary" disabled={this.state.isParsing}>{this.state.isParsing ? 'Loading...' : 'Data'}</Dropdown.Toggle>
-                            <Dropdown.Menu align="end" className="demo-data-menu" popperConfig={{ strategy: 'fixed' }}>
-                                <Dropdown.Item as="button" onClick={() => this.showTimerData()}>My saved solves</Dropdown.Item>
-                                <Dropdown.Item as="button" aria-label="Choose CSV File" onClick={() => document.getElementById('uploaded_data')?.click()}>Preview CSV{this.state.csvFileNames && <span className="d-block small text-truncate">{this.state.csvFileNames}</span>}</Dropdown.Item>
-                                <Dropdown.Item href="/options/#import-heading">Import solves</Dropdown.Item>
-                                <Dropdown.Divider />
-                                <Dropdown.Header>Demo data</Dropdown.Header>
-                                {DEMO_DATASETS.map(dataset => <Dropdown.Item as="button" key={dataset.id} className="demo-dataset text-wrap" onClick={() => this.showTestData(dataset.file)}>{dataset.name}<span className="d-block small text-muted">{dataset.description}</span></Dropdown.Item>)}
-                            </Dropdown.Menu>
-                        </Dropdown>
+                        <h1 className="route-heading">Analyzer</h1>
+                        <Button id="analyzer-data" variant="outline-secondary" disabled={this.state.isParsing} onClick={() => this.dataDialogRef.current?.showModal()}>{this.state.isParsing ? 'Loading...' : 'Data'}</Button>
                     </div>
-                    <FormControl type="file" id="uploaded_data" aria-label="CSV files" className="d-none" disabled={this.state.isParsing} accept=".csv" multiple onChange={event => this.showFileData(Array.from((event.currentTarget as HTMLInputElement).files ?? []))} />
+                    <DataDialog dialog={this.dataDialogRef}>
+                        <div className="d-grid gap-3">
+                            <Button variant="outline-primary" onClick={() => this.showTimerData()}>My saved solves</Button>
+                            <label>Preview CSV<InfoTip>Analyze CSVs temporarily without changing saved solves. To keep them, use Import solves in Options.</InfoTip>
+                                <FormControl type="file" id="uploaded_data" aria-label="CSV files" disabled={this.state.isParsing} accept=".csv" multiple onChange={event => this.showFileData(Array.from((event.currentTarget as HTMLInputElement).files ?? []))} />
+                                {this.state.csvFileNames && <span className="small text-break">{this.state.csvFileNames}</span>}
+                            </label>
+                            <a className="btn btn-outline-primary" href="/options/#import-heading" onClick={() => this.dataDialogRef.current?.close()}>Import solves</a>
+                            <details><summary>Demo data</summary><div className="d-grid gap-2 mt-2">{DEMO_DATASETS.map(dataset => <Button variant="outline-secondary" key={dataset.id} className="demo-dataset text-start text-wrap" onClick={() => this.showTestData(dataset.file)}>{dataset.name}<span className="d-block small text-muted">{dataset.description}</span></Button>)}</div></details>
+                            <details><summary>CSV help</summary><HelpPanel /></details>
+                        </div>
+                    </DataDialog>
                     {(!!this.state.unloadedCount || this.state.savedAnalysisChanged) && <Alert variant="warning">{this.state.savedAnalysisChanged ? 'Saved solve analysis has changed.' : `${this.state.unloadedCount} saved solves are not loaded.`} Your current data has been kept. <Button variant="outline-primary" disabled={this.state.isParsing} onClick={() => this.showTimerData()}>Load saved solves</Button></Alert>}
                     {this.state.loadError && <Alert variant="warning">{this.state.loadError}</Alert>}
                     <SettingsContext.Consumer>{({ solveLimit }) => <><ScopeSync limit={solveLimit} change={this.changeLimit} /><FilterPanel

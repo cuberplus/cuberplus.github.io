@@ -2,9 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { usePageDialog } from '@cuberplus/navigation';
 import { cubeConnection, useCubeConnection } from '../cube/connection';
 import { InfoTip } from './InfoTip';
+import { MacAddressHelp } from './MacAddressHelp';
 
 export function CubeButton({ connected, open }: { connected: boolean; open: () => void }) {
-  return <button type="button" className={`btn btn-outline-secondary cube-setup-button${connected ? ' is-connected' : ''}`} aria-label="Bluetooth cube setup" onClick={open}><span aria-hidden="true">&#9679;</span> Cube</button>;
+  const { cubes, selected, connection } = useCubeConnection();
+  const saved = connection ? cubes.find(cube => connection.deviceMAC ? cube.mac.toLowerCase() === connection.deviceMAC.toLowerCase() : cube.deviceName === connection.deviceName) : cubes.find(cube => cube.id === selected);
+  const name = saved?.name || connection?.deviceName || 'Cube';
+  return <button type="button" className={`btn btn-outline-secondary cube-setup-button${connected ? ' is-connected' : ''}`} aria-label="Bluetooth cube setup" onClick={open}><span aria-hidden="true">&#9679;</span> {name}</button>;
 }
 export function CubeConnectionMenu() {
   const dialog = useRef<HTMLDialogElement>(null), { connection } = useCubeConnection();
@@ -14,6 +18,7 @@ export function CubeConnectionMenu() {
     <dialog ref={dialog} className="page-options-dialog" aria-labelledby="trainer-cube-title">
       <div className="page-heading"><h2 id="trainer-cube-title">Bluetooth cube setup <InfoTip>Choose a saved cube or connect another device. Manage saved cubes and Bluetooth addresses in the site Options. Bluetooth requires HTTPS and a supported browser, such as Chrome or Edge.</InfoTip></h2><button ref={button => { if (button) button.autofocus = true; }} type="button" className="btn-close" aria-label="Close cube setup" onClick={() => dialog.current?.close()} /></div>
       <CubeConnectionControls />
+      <MacAddressHelp />
       {(!navigator.bluetooth || !window.isSecureContext) && <p className="mt-3 mb-0">Bluetooth needs a supported browser and HTTPS or localhost.</p>}
     </dialog></>;
 }
@@ -45,6 +50,7 @@ export function MyCubes() {
       <span className="backup-status" role="status">{connection ? `Connected to ${connection.deviceName}` : connecting ? 'Connecting...' : !navigator.bluetooth || !window.isSecureContext ? 'Bluetooth unavailable in this browser' : 'No cube connected'}</span>
       <CubeConnectionControls />
     </div>
+    <MacAddressHelp openFromAddress />
     {!!cubes.length && <h4 className="h6 mt-4">Saved cubes</h4>}
     {cubes.map(cube => <details key={cube.id} className="saved-cube">
       <summary>{cube.name}</summary>

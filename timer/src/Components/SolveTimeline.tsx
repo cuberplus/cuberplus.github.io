@@ -7,7 +7,7 @@ import { formatTime } from '../Data/storage';
 // Analyzer's Cross/OLL/PLL hues, with the same dark purple for every F2L pair.
 const colors = ['rgb(100, 200, 255)', 'rgb(156, 115, 220)', 'rgb(156, 115, 220)', 'rgb(156, 115, 220)', 'rgb(156, 115, 220)', 'rgb(255, 230, 150)', 'rgb(80, 220, 220)'];
 type Annotation = { name: string; key: string; i: number; timing: ReturnType<typeof cfopTiming> | null; done: boolean };
-export function SolveTimeline({ cube, solve, elapsed, precision, open, seek, seekMove, position, cursor, compact = false }: { cube: Cube; solve: Solve; elapsed: number; precision: 2 | 3; open?: () => void; seek?: (time: number) => void; seekMove?: (position: number) => void; position?: number; cursor?: number; compact?: boolean }) {
+export function SolveTimeline({ cube, solve, history, elapsed, precision, open, seek, seekMove, position, cursor, compact = false }: { cube: Cube; solve: Solve; history?: Solve[]; elapsed: number; precision: 2 | 3; open?: () => void; seek?: (time: number) => void; seekMove?: (position: number) => void; position?: number; cursor?: number; compact?: boolean }) {
   const trail = useRef<HTMLDivElement>(null), [width, setWidth] = useState(1000);
   useEffect(() => {
     if (!trail.current || typeof ResizeObserver === 'undefined') return;
@@ -16,6 +16,20 @@ export function SolveTimeline({ cube, solve, elapsed, precision, open, seek, see
   }, []);
   const analysis = useMemo(() => solve.imported ? { ends: [] } : analyzeCFOP(solve, cube), [cube, solve, solve.startFacelets, solve.moves, solve.moves.length, solve.status, solve.crossOverride]), time = Math.round(Math.max(solve.duration, elapsed));
   const cfop = !solve.imported || solve.imported.method.startsWith('CFOP');
+  const averages = useMemo(() => {
+    if (!compact || solve.status === 'active' || !cfop) return [];
+    const recent = (history ?? []).filter(item => item.id !== solve.id && item.createdAt <= solve.createdAt && item.status === 'complete' &&
+      item.session !== 'Retries' && (!item.imported || item.imported.method.startsWith('CFOP'))).slice(0, 1000);
+    const timings = recent.map(item => {
+      const ends = item.imported ? [] : analyzeCFOP(item, cube).ends;
+      return CFOP_STEPS.map((name, i) => item.imported ? item.imported.steps.find(step => step.name === name)?.time :
+        i < ends.length ? cfopTiming(item, ends, i).time / 1000 : undefined);
+    });
+    return CFOP_STEPS.map((_, i) => {
+      const values = timings.flatMap(row => row[i] !== undefined && Number.isFinite(row[i]) ? [row[i]!] : []);
+      return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined;
+    });
+  }, [cube, history, solve.id, solve.createdAt, solve.status, compact, cfop]);
   const steps = (cfop ? CFOP_STEPS : solve.imported!.steps.map(step => step.name)).map((name, i) => {
     const step = solve.imported?.steps.find(step => step.name === name);
     const start = solve.imported ? solve.imported.steps.slice(0, solve.imported.steps.findIndex(step => step.name === name)).reduce((sum, step) => sum + step.time * 1000, 0) : 0;
@@ -71,6 +85,12 @@ export function SolveTimeline({ cube, solve, elapsed, precision, open, seek, see
     </div>
     {cfop && annotations([1, 2, 3, 4].map(annotation), true)}
     <div className="trail-axis d-flex justify-content-between small text-secondary"><span>0s</span><span>{formatTime(scale, precision)}s</span></div>
-    {compact && <div className="trail-compact">{steps.map(({ name, i, timing }) => <span key={i}>{name.replace('F2L Pair ', 'F2L ')}<strong>{timing ? formatTime(timing.time, precision) : '--'}</strong></span>)}</div>}
+    {compact && <div className="trail-compact">{steps.map(({ name, i, timing }) => {
+      const average = averages[i], difference = timing && average !== undefined ? Number((timing.time / 1000).toFixed(precision)) - Number(average.toFixed(precision)) : null;
+      const comparison = difference === null ? '' : difference < 0 ? 'faster' : difference > 0 ? 'slower' : 'equal';
+      return <span key={i} className={comparison ? `split-${comparison}` : undefined} data-comparison={comparison || undefined}
+        aria-label={`${name}: ${timing ? formatTime(timing.time, precision) + 's' : 'not reached'}${comparison ? `, ${comparison} compared with recent 1000 average of ${average!.toFixed(precision)}s` : ''}`}>
+        {name.replace('F2L Pair ', 'F2L ')}<strong>{timing ? formatTime(timing.time, precision) : '--'}</strong></span>;
+    })}</div>}
   </div>;
 }

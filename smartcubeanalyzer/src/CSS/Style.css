@@ -30,17 +30,18 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--cp-font); }
 .header { z-index: 997; }
 .dashboard .info-card { padding-bottom: 10px; }
 .dashboard .info-card h6 { font-size: 28px; color: var(--cp-text); font-weight: 700; margin: 0; padding: 0; }
-.demo-data-menu { max-height: 60vh; max-width: min(22rem, 90vw); overflow-y: auto; }
-.analyzer-title { display: flex; align-items: center; gap: .5rem; }
-.analyzer-title h1 { margin: 0; }
-.analyzer-help { color: var(--cp-muted); padding: 0; text-decoration: none; }
+.analyzer-data-dialog { width: min(40rem, calc(100vw - 2rem)); }
+.analyzer-data-dialog summary { cursor: pointer; padding-block: .5rem; }
+.chart-heading { padding-inline: .5rem; }
+.chart-heading h2 > span { margin-inline-start: .125rem !important; }
 .analysis-views, .analysis-summary, .analysis-context { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .analysis-summary { justify-content: space-between; gap: .75rem; margin-block: .75rem; font-size: .875rem; }
 .analysis-context { flex: 1; min-width: 0; color: var(--cp-muted); }
 .analysis-context strong { color: var(--cp-text); font-weight: 500; }
 .analysis-summary > button { flex-shrink: 0; }
 .analysis-demo { border: 1px solid #7d693b; border-radius: .3rem; padding: .1rem .35rem; background: #d7ad4315; color: #e8c67a; font-size: .75rem; }
-.analysis-views { gap: .375rem; margin-block: 0 1rem; }
+.analysis-views { flex-wrap: balance; gap: .25rem; margin-block: 0 1rem; }
+.analysis-views > button { padding-inline: .625rem; }
 .analysis-views button[aria-pressed="true"], .preset-filters button[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--cp-text); font-weight: 650; }
 .filter-card { min-width: 0; margin-block: 1rem; padding: .75rem; border: 1px solid var(--cp-border); border-radius: .5rem; }
 .filter-card legend { float: none; width: auto; margin: 0; font-size: 1rem; font-weight: 600; }
@@ -51,7 +52,7 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--cp-font); }
   .filter-card input, .filter-card select { font-size: 1rem; min-height: 44px; max-width: 100%; }
   .analysis-summary { font-size: .75rem; }
   .analysis-summary > button { min-height: 44px; padding-inline: .75rem; font-size: .8125rem; }
-  .analysis-views > button { min-height: 40px; padding: .4375rem .75rem; font-size: .8125rem; }
+  .analysis-views > button { min-height: 40px; padding: .4375rem .375rem; font-size: .8125rem; }
 }
 .dropdown-menu { box-shadow: 0 5px 30px #0004; }
 .dropdown-menu .dropdown-footer a { color: var(--cp-text); }
@@ -64,8 +65,8 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--cp-font); }
 .dashboard .filter .dropdown-header h6 { color: var(--cp-muted); }
 
 /* Preserve full-cell targets in the algorithm and fastest-solves grids. */
-.algo-case-link { display: flex; align-items: center; block-size: 100%; width: 100%; min-width: 0; gap: 8px; padding: 4px 12px; color: inherit; text-decoration: none; }
-.algo-case-link .database-case-image { width: 48px; height: 48px; flex-shrink: 0; }
+.algo-case-link { display: flex; align-items: center; block-size: 100%; width: 100%; min-width: 0; gap: 4px; padding: 4px 0; color: inherit; text-decoration: none; }
+.algo-case-link .database-case-image { width: 40px; height: 40px; flex-shrink: 0; }
 .clickable-grid .rdg-row .rdg-cell { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
 .algo-case-link:hover, .algo-case-link:focus-visible, .clickable-grid .rdg-row .rdg-cell:hover { color: var(--cp-accent); text-decoration: underline; }
 .rdg, .rdg-cell, .rdg-header-row, .rdg-row { background: var(--cp-panel); color: var(--cp-text); border-color: var(--cp-border); }
@@ -107,7 +108,7 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--cp-font); }
 .react-datepicker__day--selected, .react-datepicker__day--in-range, .react-datepicker__day--keyboard-selected { background: var(--cp-primary); color: #fff; }
 .react-datepicker__day--disabled, .react-datepicker__day--outside-month { color: var(--cp-muted); }
 
-.preset-filters { display: flex; flex-wrap: wrap; gap: .5rem; padding-bottom: .75rem; border-bottom: 1px solid var(--cp-border); }
+.preset-filters { display: flex; flex-wrap: wrap; gap: .5rem; padding-block: .75rem; border-block: 1px solid var(--cp-border); }
 @media (max-width: 575.98px) {
   .preset-filters { flex-wrap: nowrap; }
   .preset-filters > .btn { flex: 1 1 0; min-height: 44px; padding-inline: 4px; font-size: 13px; }

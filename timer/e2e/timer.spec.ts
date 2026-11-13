@@ -41,6 +41,7 @@ async function averageSeed(): Promise<Solve> {
 }
 
 test('daily streak fire and PB notifications animate, stack without overlap and dismiss independently', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('theme', 'dark'));
   const seed = await averageSeed();
   const solves = Array.from({ length: 11 }, (_, i) => ({
     ...seed, id: `pb-seed-${i}`, duration: 41000 - i * 1000, createdAt: new Date(Date.UTC(2020, 0, 1, 0, 0, i)).toISOString(),
@@ -103,19 +104,19 @@ test('daily streak fire and PB notifications animate, stack without overlap and 
   const average = page.locator('.average-dialog');
   await expect(average).toBeVisible();
   await expect(average.getByRole('heading')).toHaveText(/^Ao12:/);
-  await expect(average.getByRole('columnheader')).toHaveText(['Solve', 'Time', 'View']);
+  await expect(average.getByRole('columnheader')).toHaveText(['Solve', 'Time', 'Turns', 'TPS']);
   await expect(average.locator('tbody tr')).toHaveCount(12);
-  const best = average.locator('s.average-trimmed-best'), worst = average.locator('s.average-trimmed-worst');
+  const best = average.locator('span.average-trimmed-best'), worst = average.locator('span.average-trimmed-worst');
   await expect(best).toHaveCount(1);
   await expect(worst).toHaveCount(1);
   await expect(best).toHaveText(/^\(\d+\.\d{2}s\)$/);
   await expect(worst).toHaveText(/^\(\d+\.\d{2}s\)$/);
   await expect(best).toHaveCSS('color', 'rgb(101, 211, 176)');
   await expect(worst).toHaveCSS('color', 'rgb(255, 123, 134)');
-  await expect(best).toHaveCSS('text-decoration-line', 'line-through');
-  await expect(worst).toHaveCSS('text-decoration-line', 'line-through');
-  await expect(average.locator('tbody tr').last().locator('s')).toHaveClass('average-trimmed-best');
-  await average.getByRole('button', { name: 'View average solve 12', exact: true }).click();
+  await expect(best).not.toHaveCSS('text-decoration-line', 'line-through');
+  await expect(worst).not.toHaveCSS('text-decoration-line', 'line-through');
+  await expect(average.locator('tbody tr').last().locator('.average-trimmed-best')).toBeVisible();
+  await average.getByRole('button', { name: 'Solve 12, open replay', exact: true }).click();
   await expect(replay).toBeVisible();
   await expect(replay.getByLabel('Solve ID', { exact: true })).toContainText(latest.id);
   await page.keyboard.press('Escape');
@@ -219,10 +220,10 @@ test('current and best Ao1000 details show all contributing solves and fifty exc
     await expect(average.locator('tbody tr')).toHaveCount(1000);
     await expect(average.locator('.average-trimmed-best')).toHaveCount(50);
     await expect(average.locator('.average-trimmed-worst')).toHaveCount(50);
-    await expect(average.locator('tbody tr:not(:has(s))')).toHaveCount(900);
+    await expect(average.locator('tbody tr:not(:has([class^="average-trimmed-"]))')).toHaveCount(900);
     await expect(average.locator('tbody tr').first().getByRole('rowheader')).toHaveText(kind === 'current' ? '3' : '1');
     await expect(average.locator('tbody tr').last().getByRole('rowheader')).toHaveText(kind === 'current' ? '1002' : '1000');
-    await average.getByRole('button', { name: `View average solve ${kind === 'current' ? 1002 : 1000}`, exact: true }).click();
+    await average.getByRole('button', { name: `Solve ${kind === 'current' ? 1002 : 1000}, open replay`, exact: true }).click();
     const replay = page.getByRole('dialog', { name: 'Solve replay', exact: true });
     await expect(replay.getByLabel('Solve ID', { exact: true })).toContainText(kind === 'current' ? 'average-seed-1001' : 'average-seed-999');
     await replay.getByRole('button', { name: 'Close replay', exact: true }).click();

@@ -209,7 +209,6 @@ export type FileInputProps = Record<string, never>;
 export interface FileInputState {
     csvFileNames?: string,
     solves: Solve[],
-    showHelpModal: boolean,
     suggestedMethod?: Option<MethodName>,
     suggestedSessions?: Option[],
     suggestedWindowSize?: number,
@@ -289,9 +288,6 @@ export interface AlgoPracticeRow {
     avgTime: string;
 }
 
-export interface HelpPanelProps { showHelpPanel: boolean, onCloseHandler: () => void }
-
-export type HelpPanelState = Record<string, never>;
 
 export interface FastestSolve {
     time: string,

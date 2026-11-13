@@ -110,7 +110,7 @@ async function renderCharts(solves: Solve[], method: MethodName) {
         use4SegmentTiming: true,
     } as React.ComponentProps<typeof ChartPanel>));
     await waitFor(() => expect(screen.queryByText(chartTitle(ALWAYS_PRESENT))).not.toBeNull(), { timeout: 60_000 });
-    fireEvent.click(screen.getByRole('button', { name: 'All charts', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'All', exact: true }));
 }
 
 beforeAll(() => {

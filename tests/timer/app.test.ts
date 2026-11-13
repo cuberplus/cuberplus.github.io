@@ -244,7 +244,7 @@ test('session history is always visible with no collapse control', async () => {
   expect(history.querySelector('[aria-label="Solve history"]')).not.toBeNull();
   expect(history.textContent).not.toContain('Full solve history');
 });
-test('every history field opens its own solve after sorting, including sessions, without a View column', async () => {
+test('every history field opens its own solve after sorting, with Date but no Session or View column', async () => {
   await showHistory([historySolve(1, 2000, 10), historySolve(2, 1000, 20, 'Practice')]);
   const all = Array.from(container.querySelectorAll<HTMLInputElement>('input')).find(input => input.closest('label')?.textContent?.includes('Show all sessions in history'))!;
   await act(async () => all.click());
@@ -252,8 +252,8 @@ test('every history field opens its own solve after sorting, including sessions,
   const rows = container.querySelectorAll('[aria-label="Solve history"] tbody tr');
   expect(rows).toHaveLength(2);
   expect(container.querySelector('[aria-label="Solve history"] thead')!.textContent).not.toContain('View');
-  expect(Array.from(container.querySelectorAll('[aria-label="Solve history"] th'), header => header.textContent)).toEqual(['Solve', 'Time', 'Turns', 'TPS', 'Date', 'Session']);
-  expect(rows[0].querySelectorAll('td button')).toHaveLength(6);
+  expect(Array.from(container.querySelectorAll('[aria-label="Solve history"] th'), header => header.textContent)).toEqual(['Solve', 'Time', 'Turns', 'TPS', 'Date']);
+  expect(rows[0].querySelectorAll('td button')).toHaveLength(5);
   for (const [index, row] of Array.from(rows).entries()) {
     for (const button of row.querySelectorAll<HTMLButtonElement>('td button')) {
       expect(button.className).toContain('history-cell');
@@ -276,12 +276,12 @@ test('history dates tolerate future timestamps and missing dates', () => {
   expect(relativeTime('invalid', Date.now())).toBe('--');
   expect(relativeTime(new Date(Date.now() + 3600000).toISOString())).toBe('now');
 });
-test('all-session dates keep the exact timestamp and refresh without recalculating records', async () => {
+test('both history filters keep exact timestamps and refresh dates without recalculating records', async () => {
   jest.useFakeTimers({ doNotFake: ['performance'] });
   jest.setSystemTime(new Date('2026-11-12T12:00:00Z'));
   const createdAt = new Date(Date.now() - 30000).toISOString();
   await showHistory([{ ...historySolve(1, 2000, 10), createdAt }]);
-  expect(container.querySelector('.history-table time')).toBeNull();
+  expect(container.querySelector('.history-table time')!.textContent).toBe('now');
   const all = Array.from(container.querySelectorAll<HTMLInputElement>('input')).find(input => input.closest('label')?.textContent?.includes('Show all sessions in history'))!;
   await act(async () => all.click());
   const date = () => container.querySelector('time')!;
@@ -293,7 +293,7 @@ test('all-session dates keep the exact timestamp and refresh without recalculati
   expect(date().textContent).toBe('1 minute ago');
   expect(statistics).not.toHaveBeenCalled();
   await act(async () => all.click());
-  expect(container.querySelector('.history-table time')).toBeNull();
+  expect(container.querySelector('.history-table time')!.textContent).toBe('1 minute ago');
   localStorage.removeItem('timer-all-session-history');
 });
 test('active turns persist fresh snapshots and export the live attempt without recalculating history statistics', async () => {
@@ -318,7 +318,7 @@ test('active turns persist fresh snapshots and export the live attempt without r
   expect(backup.mock.calls.at(-1)![0]).toHaveLength(2);
   expect(backup.mock.calls.at(-1)![0].find(solve => solve.status === 'active')?.moves).toHaveLength(4);
   await act(async () => { move('U2', 700); move("R'", 900); });
-  expect(statistics).toHaveBeenCalledTimes(1);
+  expect(statistics).toHaveBeenCalledTimes(2);
   expect(historyNumbers()).toEqual([2, 1]);
   expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ status: 'complete', duration: 600 });
   expect(save.mock.calls.at(-1)![0][0].moves).toHaveLength(6);
@@ -891,14 +891,19 @@ test('simultaneous PBs have separate clickable notifications and dismissal does 
   await click('View PB Ao5');
   expect(container.querySelector<HTMLDialogElement>('.average-dialog')?.open).toBe(true);
   const rows = container.querySelectorAll('[aria-label="Average solves"] tbody tr');
-  expect(Array.from(container.querySelectorAll('[aria-label="Average solves"] thead th'), cell => cell.textContent)).toEqual(['Solve', 'Time', 'Turns', 'TPS', 'View']);
+  expect(Array.from(container.querySelectorAll('[aria-label="Average solves"] thead th'), cell => cell.textContent)).toEqual(['Solve', 'Time', 'Turns', 'TPS']);
   expect(Array.from(rows, row => row.children[0].textContent)).toEqual(['2', '3', '4', '5', '6']);
   expect(Array.from(rows, row => row.children[1].textContent)).toEqual(['(18.00s)', '16.00s', '14.00s', '12.00s', '(0.60s)']);
   expect(rows[0].querySelector('span')?.className).toBe('average-trimmed-worst');
   expect(rows[4].querySelector('span')?.className).toBe('average-trimmed-best');
   expect(container.querySelector('.average-dialog s')).toBeNull();
   expect(container.querySelector('.average-dialog')?.textContent).not.toMatch(/sorted by|excludes the/i);
-  await click('View average solve 6');
+  for (const cell of rows[4].children) {
+    await act(async () => cell.querySelector<HTMLButtonElement>('button')!.click());
+    expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe(save.mock.calls.at(-1)![0][0].id);
+    await click('Close');
+  }
+  await act(async () => rows[4].dispatchEvent(new MouseEvent('click', { bubbles: true })));
   expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe(save.mock.calls.at(-1)![0][0].id);
   await click('Close');
   expect(container.querySelector<HTMLDialogElement>('.average-dialog')?.open).toBe(true);
@@ -1130,6 +1135,7 @@ test.each([5, 12, 100, 1000])('current and best Ao%s open their exact windows wi
     await click(`View ${kind} Ao${count}`);
     const rows = container.querySelectorAll('[aria-label="Average solves"] tbody tr');
     expect(rows).toHaveLength(count);
+    expect(Array.from(container.querySelectorAll('[aria-label="Average solves"] thead th'), cell => cell.textContent)).toEqual(['Solve', 'Time', 'Turns', 'TPS']);
     const trim = Math.ceil(count / 20);
     expect(container.querySelectorAll('.average-trimmed-best')).toHaveLength(trim);
     expect(container.querySelectorAll('.average-trimmed-worst')).toHaveLength(trim);
@@ -1139,7 +1145,7 @@ test.each([5, 12, 100, 1000])('current and best Ao%s open their exact windows wi
       const time = `${(solve.duration / 1000).toFixed(2)}s`;
       return index < trim || index >= count - trim ? `(${time})` : time;
     }));
-    await click(`View average solve ${start + 1}`);
+    await click(`Solve ${start + 1}, open replay`);
     expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe(solves[start].id);
     await click('Close');
     await click('Close average');
@@ -1165,7 +1171,7 @@ test('average solve numbers match full history across DNFs, active solves and di
   expect(Array.from(rows, row => row.children[0].textContent)).toEqual(expected);
   expect(rows[2].querySelector('.average-trimmed-worst')?.textContent).toBe('(DNF)');
   expect(container.querySelector('.average-dialog h2')?.textContent).toBe('Ao5: 13.00s');
-  await click('View average solve 8');
+  await click('Solve 8, open replay');
   expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe('7');
 });
 
@@ -1216,11 +1222,7 @@ test('average columns sort numeric metrics and preserve real numbers, penalties,
   expect(table.querySelector('.average-trimmed-best')?.textContent).toBe('(0.00s)');
   expect(table.querySelector('.average-trimmed-worst')?.textContent).toBe('(DNF)');
   expect(table.querySelector('s')).toBeNull();
-  await sort('View');
-  expect(numbers()).toEqual([1, 2, 3, 4, 5]);
-  await sort('View');
-  expect(numbers()).toEqual([5, 4, 3, 2, 1]);
-  await click('View average solve 2');
+  await click('Solve 2, open replay');
   expect(container.querySelector('[aria-label="Solve replay"]')?.getAttribute('data-solve-id')).toBe('2');
   await click('Close');
   await sort('Solve');
@@ -1754,7 +1756,10 @@ test('Bluetooth setup owns MAC help, accepts keyboard submission, and closes aft
   const dialog = container.querySelector<HTMLDialogElement>('dialog[aria-labelledby="cube-setup-title"]')!;
   const mac = container.querySelector('input[placeholder="AA:BB:CC:DD:EE:FF"]')!;
   expect(mac.closest('dialog')).toBe(dialog);
-  expect(container.querySelector('a[href="/timer/help/mac-address.html"]')?.closest('dialog')).toBe(dialog);
+  const help = Array.from(dialog.querySelectorAll('button')).find(button => button.textContent === "Find my cube's MAC address");
+  expect(help).toBeDefined();
+  await act(async () => help!.click());
+  expect(container.querySelector<HTMLDialogElement>('.mac-help-dialog')!.open).toBe(true);
   await click('Bluetooth cube setup');
   expect(dialog.open).toBe(true);
   await act(async () => mac.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
@@ -2084,8 +2089,8 @@ test('all-time summary shows current and best singles plus all four average size
   expect(records).not.toBe(history);
   expect(records.querySelector('h2')).toBeNull();
   expect(container.querySelector('.timer-toolbar .session-picker')).toBeNull();
-  expect(Array.from(history.querySelectorAll('thead th')).map(cell => cell.textContent)).toEqual(['Solve', 'Time', 'Turns', 'TPS']);
-  expect(history.querySelectorAll('tbody tr:first-child td')).toHaveLength(4);
+  expect(Array.from(history.querySelectorAll('thead th')).map(cell => cell.textContent)).toEqual(['Solve', 'Time', 'Turns', 'TPS', 'Date']);
+  expect(history.querySelectorAll('tbody tr:first-child td')).toHaveLength(5);
   expect(history.querySelector('tbody button')?.getAttribute('aria-label')).toMatch(/^Solve \d+: open replay$/);
   expect(history.querySelector('input[type="file"]')).not.toBeNull();
   expect(history.querySelector('input[type="file"]')!.closest('label')!.hidden).toBe(true);
@@ -2095,6 +2100,40 @@ test('all-time summary shows current and best singles plus all four average size
   expect(rows.map(row => row.querySelector('th')!.textContent)).toEqual(['Single', 'Ao5', 'Ao12', 'Ao100', 'Ao1000']);
   expect(Array.from(rows[0].querySelectorAll('td')).map(cell => cell.textContent)).toEqual(['0.60', '0.60']);
   expect(rows.slice(1).every(row => Array.from(row.querySelectorAll('td')).every(cell => cell.textContent === '--'))).toBe(true);
+});
+test('current Single and rolling averages compare with the preceding solve and do not mark best values', async () => {
+  await showHistory([1000, 2000, 3000, 4000, 5000, 1000].map((time, index) => historySolve(index + 1, time, 0)).reverse());
+  const records = container.querySelector('[aria-label="All-time statistics"]')!;
+  expect(records.querySelector('tbody tr:first-child td:first-of-type .metric-trend')!.getAttribute('aria-label')).toBe('Faster than previous');
+  expect(records.querySelector('tbody tr:nth-child(2) td:first-of-type .metric-trend')!.getAttribute('aria-label')).toBe('Equal to previous');
+  expect(records.querySelector('tbody tr:nth-child(3) .metric-trend')).toBeNull();
+  expect(records.querySelector('td:last-child .metric-trend')).toBeNull();
+  for (const indicator of records.querySelectorAll('.metric-trend')) {
+    expect(indicator.tagName).toBe('svg');
+    expect(indicator.getAttribute('role')).toBe('img');
+    expect(indicator.querySelector('path')).not.toBeNull();
+  }
+  await showHistory([historySolve(2, 2000, 0), historySolve(1, 1000, 0)]);
+  expect(container.querySelector('.metric-trend--slower')!.getAttribute('aria-label')).toBe('Slower than previous');
+  await showHistory([historySolve(2, 1000, 0, 'Default', 'incomplete'), historySolve(1, 1000, 0)]);
+  expect(container.querySelector('.metric-trend--slower')).not.toBeNull();
+});
+
+test('recent solves share the summary row, show the latest five session solves newest first, and open replay', async () => {
+  const solves = Array.from({ length: 6 }, (_, index) => historySolve(index + 1, (index + 1) * 1000, 0));
+  solves[4].penalty = 2000;
+  solves[5].status = 'incomplete';
+  await showHistory([historySolve(8, 8000, 0, 'Other'), ...solves, historySolve(9, 9000, 0, 'Default', 'active')]);
+  const recent = container.querySelector('.timer-recent')!;
+  expect(recent.parentElement).toBe(container.querySelector('.timer-records')!.parentElement);
+  expect(recent.parentElement!.classList.contains('timer-summary')).toBe(true);
+  const buttons = Array.from(recent.querySelectorAll('button'));
+  expect(buttons.map(button => button.textContent)).toEqual(['DNF', '7.00', '4.00', '3.00', '2.00']);
+  await act(async () => buttons[0].click());
+  expect(container.querySelector('[aria-label="Solve replay"]')!.getAttribute('data-solve-id')).toBe('6');
+  await click('Close');
+  await act(async () => buttons[4].click());
+  expect(container.querySelector('[aria-label="Solve replay"]')!.getAttribute('data-solve-id')).toBe('2');
 });
 
 test('Timer limits to the latest 10,000 session solves without losing numbering, saved data, or larger scopes', async () => {

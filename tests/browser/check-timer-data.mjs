@@ -5,6 +5,12 @@ const browser = await chromium.launch({ channel: process.platform === 'win32' ? 
 const base = process.env.SITE_URL ?? 'http://127.0.0.1:4173';
 const recordings = solves => solves.map(({ analysis, cfop, ...solve }) => solve);
 
+async function navigate(page, name) {
+  const link = page.getByRole('navigation', { name: 'CuberPlus', exact: true }).getByRole('link', { name, exact: true });
+  if (!await link.isVisible()) await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await link.click();
+}
+
 async function database(page, records, removeIds = []) {
   return page.evaluate(({ records, removeIds }) => new Promise((resolve, reject) => {
     const request = indexedDB.open('smart-cube-timer', 2);
@@ -21,20 +27,19 @@ async function database(page, records, removeIds = []) {
   }), { records, removeIds });
 }
 
-async function checkAverage(average, numbers, clickableFields = false) {
+async function checkAverage(average, numbers) {
   await expect(average.locator('.btn-close')).toHaveCSS('background-size', '16px 16px');
   expect(await average.locator('.btn-close').evaluate(button => {
     const box = button.getBoundingClientRect(); return [box.width, box.height];
   })).toEqual([32, 32]);
   const table = average.getByRole('table', { name: 'Average solves' });
-  const labels = ['Solve', 'Time', 'Turns', 'TPS', ...(clickableFields ? [] : ['View'])];
+  const labels = ['Solve', 'Time', 'Turns', 'TPS'];
   await expect(table.locator('thead th')).toHaveText(labels);
   await expect(table.locator('tbody th')).toHaveText(numbers.map(String));
   await expect(average.locator('s, del')).toHaveCount(0);
   await expect(average.getByText(/chopped solve-time|sorted by|excludes the|times reflect/i)).toHaveCount(0);
   await expect(average.locator('[title^="Excluded "]')).toHaveCount(2);
-  for (const [label, index] of [['Time', 1], ['Turns', 2], ['TPS', 3], ['View', 0], ['Solve', 0]]) {
-    if (clickableFields && label === 'View') continue;
+  for (const [label, index] of [['Time', 1], ['Turns', 2], ['TPS', 3], ['Solve', 0]]) {
     const header = table.getByRole('columnheader', { name: label, exact: true });
     for (const direction of ['ascending', 'descending']) {
       await header.getByRole('button').click();
@@ -94,16 +99,21 @@ try {
   const data = page.getByRole('button', { name: 'Data', exact: true });
   const load = page.getByRole('button', { name: 'My saved solves', exact: true });
   const demo = page.getByRole('button', { name: /^Dev Solves/ });
-  const choose = page.getByRole('button', { name: 'Choose CSV File', exact: true });
+  const choose = page.getByLabel('CSV files', { exact: true });
   const displayCsv = page.getByRole('button', { name: 'Display CSV Stats', exact: true });
   await expect(data).toBeEnabled({ timeout: 60000 });
   await expect(displayCsv).toHaveCount(0);
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     await data.click();
+    const dialog = page.getByRole('dialog', { name: 'Load analysis data' });
+    await expect(dialog.getByRole('button', { name: 'Close data' })).toBeFocused();
+    const demos = dialog.locator('details').filter({ has: page.locator('summary', { hasText: /^Demo data$/ }) });
+    if (await demos.getAttribute('open') === null) await demos.locator('summary').click();
     const boxes = await Promise.all([load, demo, choose].map(control => control.boundingBox()));
     expect(boxes.every(box => box && box.x >= 0 && box.x + box.width <= width)).toBe(true);
     await page.keyboard.press('Escape');
+    await expect(data).toBeFocused();
   }
   await expect(page.getByText('Read saved Timer solves', { exact: false })).toHaveCount(0);
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -126,7 +136,7 @@ try {
   }]);
   await expect(data).toBeEnabled();
   await data.click();
-  await expect(choose).toContainText('my-solves.csv');
+  await expect(page.getByRole('dialog', { name: 'Load analysis data' })).toContainText('my-solves.csv');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('button', { name: /^Open filters/ })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
@@ -166,6 +176,25 @@ try {
   const timerAverage = page.locator('dialog.average-dialog');
   await expect(timerAverage).toBeVisible();
   await checkAverage(timerAverage, [1, 2, 3, 4, 5]);
+  for (const width of [1440, 720, 390, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (let column = 0; column < 4; column++) {
+      const field = timerAverage.locator('tbody tr').first().getByRole('button').nth(column);
+      await field.focus();
+      await page.keyboard.press(column % 2 ? 'Space' : 'Enter');
+      const replay = page.getByRole('dialog', { name: 'Solve replay', exact: true });
+      await expect(replay).toBeVisible();
+      await expect(replay.getByLabel('Solve ID', { exact: true })).toContainText(seed.id);
+      await page.keyboard.press('Escape');
+      await expect(replay).toHaveCount(0);
+      await expect(field).toBeFocused();
+    }
+    await timerAverage.locator('tbody tr').first().click({ position: { x: 1, y: 1 } });
+    await expect(page.getByRole('dialog', { name: 'Solve replay', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(timerAverage).toBeVisible();
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
   const timerStyle = await timerAverage.evaluate(dialog => {
     const style = getComputedStyle(dialog);
     return [style.backgroundColor, style.color, style.padding, style.borderRadius, getComputedStyle(dialog.querySelector('h2')).fontSize];
@@ -191,7 +220,7 @@ try {
   const filters = page.getByRole('button', { name: /^Open filters/ });
   await expect(filters).toBeVisible({ timeout: 60000 });
   await expect(page.locator('canvas').first()).toBeVisible();
-  await page.getByRole('button', { name: 'All charts', exact: true }).click();
+  await page.getByRole('button', { name: 'All', exact: true }).click();
   await expect(page.getByRole('region', { name: 'First F2L Pair', exact: true }).locator('canvas')).toBeVisible();
   await expect(page.locator('.clickable-grid').getByRole('gridcell', { name: '12.000', exact: true })).toBeVisible();
   const analyzed = await database(page);
@@ -221,11 +250,13 @@ try {
   expect(recordings(await database(page))).toEqual(recordings(updated));
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
+    await data.click();
     await expect(load).toBeVisible();
     const box = await load.boundingBox();
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(width);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.keyboard.press('Escape');
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
   let popups = 0;
@@ -250,6 +281,7 @@ try {
     expect(await replay.evaluate(dialog => dialog.scrollWidth <= dialog.clientWidth)).toBe(true);
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await replay.locator('summary').filter({ hasText: /^Insights/ }).click();
   await expect(replay.getByRole('region', { name: 'Solve mistakes', exact: true })).toBeVisible();
   const footer = replay.locator(':scope > :last-child');
   await footer.getByText('Recording details', { exact: true }).click();
@@ -288,15 +320,15 @@ try {
   expect(recordings(await database(page))).toEqual(recordings(updated));
   for (const [width, theme] of [[1440, 'dark'], [320, 'dark'], [320, 'light']]) {
     await page.setViewportSize({ width, height: 1000 });
-    await page.getByRole('navigation', { name: 'CuberPlus', exact: true }).getByRole('link', { name: 'Options', exact: true }).click();
+    await navigate(page, 'Options');
     await page.getByRole('button', { name: `${theme[0].toUpperCase() + theme.slice(1)} theme`, exact: true }).click();
-    await page.getByRole('navigation', { name: 'CuberPlus', exact: true }).getByRole('link', { name: 'Smartcube Analyzer', exact: true }).click();
+    await navigate(page, 'Smartcube Analyzer');
     const selected = await clickChartPoint(page, 'Average Time');
     const average = page.getByRole('dialog', { name: `Ao5: ${Number(selected.value).toFixed(3)}s`, exact: true });
     await expect(average).toBeVisible();
     await expect(average).toHaveCSS('opacity', '1');
     await expect(average.getByRole('table', { name: 'Average solves' }).locator('tbody tr')).toHaveCount(5);
-    await checkAverage(average, Array.from({ length: 5 }, (_, i) => Number(selected.label) - 4 + i), true);
+    await checkAverage(average, Array.from({ length: 5 }, (_, i) => Number(selected.label) - 4 + i));
     expect(await average.evaluate(dialog => dialog.getBoundingClientRect().width <= innerWidth)).toBe(true);
     if (theme === 'dark') {
       if (width === 320 && process.env.CUBERPLUS_SCREENSHOT_DIR) {
@@ -360,7 +392,7 @@ try {
   });
   await expect(data).toBeEnabled();
   await data.click();
-  await expect(choose).toContainText('numbered-solves.csv');
+  await expect(page.getByRole('dialog', { name: 'Load analysis data' })).toContainText('numbered-solves.csv');
   await page.keyboard.press('Escape');
   await filters.click();
   await page.locator('.offcanvas.show').getByText('Chart settings', { exact: true }).click();
@@ -438,6 +470,7 @@ try {
       expect(latest).toMatchObject(reason === '+2' ? { status: 'complete', penalty: 2000, penaltyReason: 'inspection' } : { status: 'incomplete', dnfReason: 'inspection' });
       expect(latest.inspection).toBeGreaterThanOrEqual(milliseconds);
     }
+    await dismissCelebrations(penaltyPage);
     await penaltyPage.getByRole('button', { name: 'Options', exact: true }).click();
     await inspection.uncheck();
     const session = penaltyPage.getByRole('combobox', { name: 'Session', exact: true }).first();
@@ -447,9 +480,10 @@ try {
     await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
     const original = (await database(penaltyPage)).find(solve => solve.id === seed.id);
     await dismissCelebrations(penaltyPage);
-    await penaltyPage.locator('.site-page--timer').getByRole('link', { name: 'Smartcube Analyzer', exact: true }).click();
+    await navigate(penaltyPage, 'Smartcube Analyzer');
     await penaltyPage.getByRole('button', { name: 'Data', exact: true }).click();
     await penaltyPage.getByRole('button', { name: 'My saved solves', exact: true }).click();
+    await penaltyPage.getByRole('button', { name: 'All', exact: true }).click();
     await penaltyPage.locator('.clickable-grid').getByRole('gridcell', { name: '14.00', exact: true }).click();
     replay = penaltyPage.getByRole('dialog', { name: 'Solve replay', exact: true });
     await expect(replay.getByRole('link', { name: 'Retry', exact: true })).toHaveAttribute('href', `/timer/?retry=${encodeURIComponent(seed.id)}`);
@@ -511,9 +545,10 @@ try {
     await session.selectOption('Default');
     await penaltyPage.getByRole('button', { name: 'Close options', exact: true }).click();
     await expect(penaltyPage.getByRole('table', { name: 'Solve history' }).locator('tbody tr')).toHaveCount(3);
-    await penaltyPage.locator('.site-page--timer').getByRole('link', { name: 'Smartcube Analyzer', exact: true }).click();
+    await navigate(penaltyPage, 'Smartcube Analyzer');
     await penaltyPage.getByRole('button', { name: 'Data', exact: true }).click();
     await penaltyPage.getByRole('button', { name: 'My saved solves', exact: true }).click();
+    await penaltyPage.getByRole('button', { name: 'All', exact: true }).click();
     await penaltyPage.locator('.clickable-grid').getByRole('gridcell', { name: '14.00', exact: true }).click();
     await expect(replay.getByLabel('Solve penalties and deletion', { exact: true }).getByRole('button')).toHaveText(['+2', 'DNF', 'Delete']);
     await expect(replay.locator('.replay-scramble a, .replay-scramble button')).toHaveText(['Retry']);
@@ -526,7 +561,7 @@ try {
     await expect(replay).toHaveCount(0);
     await expect(penaltyPage.locator('.clickable-grid').getByRole('gridcell', { name: '14.00', exact: true })).toHaveCount(0);
     expect(recordings(await database(penaltyPage))).toEqual(recordings(beforeDelete.filter(solve => solve.id !== deletedId && solve.id !== seed.id)));
-    await penaltyPage.getByRole('navigation', { name: 'CuberPlus', exact: true }).getByRole('link', { name: 'Timer', exact: true }).click();
+    await navigate(penaltyPage, 'Timer');
     await expect(penaltyPage.getByRole('table', { name: 'Solve history' }).locator('tbody tr')).toHaveCount(2);
     await penaltyPage.reload();
     expect((await database(penaltyPage)).some(solve => solve.id === deletedId || solve.id === seed.id)).toBe(false);
@@ -536,7 +571,7 @@ try {
   console.log('PASS desktop/mobile Timer and Analyzer retry: same scramble, separate persisted attempts in retries, original unchanged and previous session restored');
   console.log('PASS desktop/mobile Delete before Retry: persisted individual deletion from Timer and Analyzer, refreshed charts and mounted Timer history, other solves preserved');
   console.log('PASS desktop/mobile inspection count-up, automatic +2/DNF, stacked manual penalties, reasons, persistence and undo');
-  console.log('PASS Timer/Analyzer averages: preserved Timer View controls, four clickable Analyzer fields with keyboard focus return, sorting, real solve numbers 69-73, chop colors, inline replay, readonly loading, Escape, light/dark and mobile');
+  console.log('PASS Timer/Analyzer averages: no View columns, row-wide replay, four keyboard-accessible fields with focus return, sorting, real solve numbers 69-73, chop colors, readonly loading, Escape, light/dark and mobile');
 } finally {
   await browser.close();
 }

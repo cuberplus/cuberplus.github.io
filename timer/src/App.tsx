@@ -19,6 +19,7 @@ import { latestSolves } from '../../shared/Components/SolveLimit';
 import { SessionPicker } from './Components/SessionPicker';
 import { noteCloudSolve } from '../../src/cloud/backup';
 import { relativeTime } from './Data/relativeTime';
+import { MacAddressHelp } from '../../shared/Components/MacAddressHelp';
 
 const errorText = (error: Error): string => error.message || 'The operation failed.';
 const historyColumns = [
@@ -67,7 +68,6 @@ export default function App() {
   const [allSessions, setAllSessions] = useState(() => { try { return localStorage.getItem('timer-all-session-history') === 'true'; } catch { return false; } });
   const [historyNow, setHistoryNow] = useState(Date.now);
   useEffect(() => {
-    if (!allSessions) return;
     setHistoryNow(Date.now());
     const clock = setInterval(() => setHistoryNow(Date.now()), 60000);
     return () => clearInterval(clock);
@@ -521,6 +521,7 @@ export default function App() {
   const sessionHistory = useMemo(() => history.filter(solve => solve.session === session && solve.status !== 'active'), [history, session]);
   const filtered = useMemo(() => latestSolves(sessionHistory, solveLimit, solve => Date.parse(solve.createdAt)).reverse(), [sessionHistory, solveLimit]);
   const recordHistory = useMemo(() => history.filter(solve => solve.status !== 'active' && solve.session !== 'Retries'), [history]);
+  const previousStatistics = useMemo(() => sessionStats(recordHistory.slice(1, 1001)), [recordHistory]);
   const statistics = useMemo(() => sessionStats(recordHistory), [recordHistory]);
   const historyRows = useMemo(() => {
     const numbered = numberedSolves(allSessions ? history : sessionHistory);
@@ -541,7 +542,7 @@ export default function App() {
       <button className="history-sort" onClick={() => setHistorySort(current => ({
         column: column.key, direction: current.column === column.key && current.direction === 'ascending' ? 'descending' : 'ascending',
       }))}>{column.label}</button>
-    </th>)}{allSessions && <><th scope="col">Date</th><th scope="col">Session</th></>}</tr></thead>
+    </th>)}<th scope="col">Date</th></tr></thead>
     <tbody>{historyRows.slice(page * 100, (page + 1) * 100).map(({ solve, number }) => {
       const count = turns(solve), tps = solve.duration > 0 ? count * 1000 / solve.duration : null;
       return <tr key={solve.id}>
@@ -549,10 +550,9 @@ export default function App() {
       <td><button className="history-cell history-time" aria-label={`Solve ${number}: ${formatTime(solveTime(solve), precision)}s, open replay`} onClick={() => setReplay(solve)}>{formatTime(solveTime(solve), precision)}s<SolvePenalty solve={solve} /></button></td>
       <td><button className="history-cell" aria-label={`Solve ${number}: ${count} turns, open replay`} onClick={() => setReplay(solve)}>{count}</button></td>
       <td><button className="history-cell" aria-label={`Solve ${number}: ${tps === null ? '--' : tps.toFixed(2)} TPS, open replay`} onClick={() => setReplay(solve)}>{tps === null ? '--' : tps.toFixed(2)}</button></td>
-      {allSessions && <><td><button className="history-cell" aria-label={`Solve ${number}: ${relativeTime(solve.createdAt, historyNow)}, open replay`} onClick={() => setReplay(solve)}><time dateTime={solve.createdAt} title={new Date(solve.createdAt).toLocaleString()}>{relativeTime(solve.createdAt, historyNow)}</time></button></td>
-      <td><button className="history-cell" aria-label={`Solve ${number}: session ${solve.session}, open replay`} onClick={() => setReplay(solve)}>{solve.session}</button></td></>}
+      <td><button className="history-cell" aria-label={`Solve ${number}: ${relativeTime(solve.createdAt, historyNow)}, open replay`} onClick={() => setReplay(solve)}><time dateTime={solve.createdAt} title={new Date(solve.createdAt).toLocaleString()}>{relativeTime(solve.createdAt, historyNow)}</time></button></td>
     </tr>; })}</tbody>
-  </table></div>, [historyRows, historySort, allSessions, precision, page, historyNow]);
+  </table></div>, [historyRows, historySort, precision, page, historyNow]);
   const recovering = timer?.phase === 'recovering';
   const setupCount = timer && !recovering ? timer.instructions.length - timer.scramble.trim().split(/\s+/).length : 0;
   const returning = recovering || (timer?.phase === 'scrambling' && timer.progress < setupCount);
@@ -594,7 +594,7 @@ export default function App() {
       {connected ? <div className="d-grid gap-2 mt-3">
         <button type="button" className="btn btn-outline-secondary" disabled={busy || solving} onClick={() => { setupDialog.current?.close(); void resynchronize(); }}>Read cube state</button>
         <button type="button" className="btn btn-outline-secondary" disabled={busy || solving} onClick={() => { setupDialog.current?.close(); calibrate(); }}>Cube is physically solved - calibrate</button>
-      </div> : <div className="mt-3"><label className="d-block">Bluetooth MAC (only if needed)<input className="form-control mt-2" placeholder="AA:BB:CC:DD:EE:FF" value={mac} disabled={connecting} onChange={event => setMac(event.target.value)} /></label><a className="d-inline-block mt-2" href="/timer/help/mac-address.html" target="_blank" rel="noopener noreferrer">Find my cube's MAC address</a></div>}
+      </div> : <div className="mt-3"><label className="d-block">Bluetooth MAC (only if needed)<input className="form-control mt-2" placeholder="AA:BB:CC:DD:EE:FF" value={mac} disabled={connecting} onChange={event => setMac(event.target.value)} /></label><MacAddressHelp /></div>}
       </form>
       {error && <p role="alert" className="text-danger mt-3 mb-0">{error}</p>}
     </dialog>
@@ -673,7 +673,7 @@ export default function App() {
       </div>{!hideCube && <div className="col-lg-5">
         {cube && timer && <CubeView cube={cube} facelets={timer.facelets} moves={timer.visualizationMoves} animateSeeks />}
       </div>}</div>
-          {!hideProgressBar && cube && solve && <SolveTimeline compact cube={cube} solve={solve} elapsed={elapsed} precision={precision} open={solve.status === 'active' ? undefined : () => setReplay(history.find(item => item.id === solve.id) ?? solve)} />}
+          {!hideProgressBar && cube && solve && <SolveTimeline compact cube={cube} solve={solve} history={history} elapsed={elapsed} precision={precision} open={solve.status === 'active' ? undefined : () => setReplay(history.find(item => item.id === solve.id) ?? solve)} />}
           {cube && solve && solve.status !== 'active' && <div className="timer-feedback"><SolveMistakes cube={cube} solve={solve} history={filtered} brief /></div>}
           {demo && <div className="demo mt-4">
             <p className="text-warning">Simulated cube - not a physical Bluetooth connection</p>
@@ -688,25 +688,28 @@ export default function App() {
             }}>Simulate solve</button>
           </div>}
     </section>
-    <section className="panel mt-3 timer-records">
+    <div className="timer-summary mt-3">
+    <section className="panel timer-records">
       <div className="table-responsive">
         <table className="table table-sm" aria-label="All-time statistics"><thead><tr><th scope="col">Metric <InfoTip>Records use all saved solves across all sessions, regardless of the recent-solves limit. Retry attempts do not count toward records.</InfoTip></th><th scope="col">Current</th><th scope="col">Best</th></tr></thead>
-          <tbody>{statistics.map(stat => <tr key={stat.name}><th scope="row">{stat.name}</th>
+          <tbody>{statistics.map((stat, index) => <tr key={stat.name}><th scope="row">{stat.name}</th>
             {(['current', 'best'] as const).map(kind => <td key={kind}>{stat[kind] === null ? '--' :
               <button className="stat-link" aria-label={`View ${kind} ${stat.name}`} onClick={() => stat.name === 'Single'
                 ? setReplay(recordHistory.find(solve => (solve.status === 'complete' ? solveTime(solve) : 'DNF') === stat[kind]) ?? null)
                 : setAverage(averageDetails(recordHistory, Number(stat.name.slice(2)), kind === 'best'))}>{stat[kind] === 'DNF' ? 'DNF' : formatTime(stat[kind] as number, precision)}</button>}
+              {kind === 'current' && <MetricTrend current={stat.current} previous={previousStatistics[index].current} />}
             </td>)}
           </tr>)}</tbody>
         </table>
       </div>
     </section>
-    {!!filtered.length && <section className="timer-recent" aria-labelledby="timer-recent-title"><div className="timer-recent-heading"><h2 id="timer-recent-title">Recent solves</h2><a href="#timer-history">Full history</a></div><div className="recent-times">
+    {!!filtered.length && <section className="panel timer-recent" aria-labelledby="timer-recent-title"><div className="timer-recent-heading"><h2 id="timer-recent-title">Recent solves</h2></div><div className="recent-times">
       {filtered.slice(0, 5).map(solve => {
         const time = solve.status === 'incomplete' ? 'DNF' : formatTime(solveTime(solve), precision);
         return <button key={solve.id} className="btn btn-outline-secondary" aria-label={`Open recent solve: ${time}${time === 'DNF' ? '' : ' seconds'}`} onClick={() => setReplay(solve)}><span style={{ '--time-length': time.length } as CSSProperties}>{time}</span></button>;
       })}
     </div></section>}
+    </div>
     <section className="panel mt-3 timer-history" id="timer-history" aria-labelledby="timer-history-title">
       <div className="d-flex justify-content-between flex-wrap gap-2 mb-3"><h2 id="timer-history-title" className="h5">{allSessions ? 'All sessions' : session} history</h2><div className="d-flex gap-2">
         <button className="btn btn-outline-secondary" onClick={() => exportHistory('csv')}>Export CSV</button>
@@ -770,4 +773,12 @@ export default function App() {
     </main>
     <Footer />
   </div>;
+}
+export function MetricTrend({ current, previous }: { current: number | 'DNF' | null; previous: number | 'DNF' | null }) {
+  if (current === null || previous === null) return null;
+  const now = current === 'DNF' ? Infinity : current, before = previous === 'DNF' ? Infinity : previous;
+  const direction = now < before ? 'faster' : now > before ? 'slower' : 'equal';
+  return <svg className={`metric-trend metric-trend--${direction}`} viewBox="0 0 16 16" role="img" aria-label={`${direction === 'equal' ? 'Equal to' : direction === 'faster' ? 'Faster than' : 'Slower than'} previous`}>
+    <path d={direction === 'faster' ? 'M1 3h14L8 13Z' : direction === 'slower' ? 'M1 13h14L8 3Z' : 'M1 6h14v4H1Z'} />
+  </svg>;
 }

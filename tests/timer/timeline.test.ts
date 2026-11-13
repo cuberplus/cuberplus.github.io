@@ -6,6 +6,7 @@ import { Cube, inverse, loadCube } from '../../timer/src/Core/puzzle';
 import type { Solve } from '../../timer/src/Core/engine';
 import { SolveTimeline } from '../../timer/src/Components/SolveTimeline';
 import { GetEmptySolve } from '../../smartcubeanalyzer/src/Helpers/CubeHelpers';
+import { StepName } from '../../smartcubeanalyzer/src/Models/Types';
 
 let cube: Cube, root: Root, container: HTMLDivElement, solve: Solve;
 const pll = "R U R' U' R' F R2 U' R' U' R U R' F'", oll = "R U R' U R U2 R'";
@@ -29,10 +30,40 @@ function append(alg: string) {
     solve.duration = elapsed;
   });
 }
-async function draw(elapsed: number, precision: 2 | 3 = 2) {
-  await act(async () => root.render(createElement(SolveTimeline, { cube, solve, elapsed, precision })));
+async function draw(elapsed: number, precision: 2 | 3 = 2, history?: Solve[]) {
+  await act(async () => root.render(createElement(SolveTimeline, { cube, solve, elapsed, precision, history, compact: history !== undefined })));
 }
 const segments = () => Array.from(container.querySelectorAll<HTMLElement>('.trail-segment'));
+function imported(id: string, times: number[], createdAt = '2026-01-01T00:00:00.000Z'): Solve {
+  const { date, endDate, ...data } = GetEmptySolve();
+  return { ...solve, id, createdAt, status: 'complete', duration: times.reduce((sum, time) => sum + time * 1000, 0),
+    imported: { ...data, method: 'CFOP', date: date.toISOString(), endDate: endDate?.toISOString(),
+      steps: data.steps.slice(0, times.length).map((step, i) => ({ ...step, name: [StepName.Cross, StepName.F2L_1, StepName.F2L_2, StepName.F2L_3, StepName.F2L_4, StepName.OLL, StepName.PLL][i], time: times[i] })) } };
+}
+test('compact split colors compare each step against eligible recent history at display precision', async () => {
+  solve = imported('current', [1, 2, 3, 4, 5, 6, 7], '2026-02-01T00:00:00.000Z');
+  const baseline = imported('baseline', [2, 1, 3.004, 5, 4, 7, 6]);
+  const ignored = [solve, { ...baseline, id: 'dnf', status: 'incomplete' as const },
+    { ...baseline, id: 'retry', session: 'Retries' }, { ...baseline, id: 'future', createdAt: '2026-03-01T00:00:00.000Z' },
+    { ...baseline, id: 'roux', imported: { ...baseline.imported!, method: 'ROUX' } }];
+  for (const item of ignored.slice(1)) item.imported = { ...item.imported!, steps: item.imported!.steps.map(step => ({ ...step, time: 100 })) };
+  await draw(solve.duration, 2, [...ignored, baseline]);
+  const splits = Array.from(container.querySelectorAll<HTMLElement>('.trail-compact > span'));
+  expect(splits.map(item => item.dataset.comparison)).toEqual(['faster', 'slower', 'equal', 'faster', 'slower', 'faster', 'slower']);
+  expect(splits[0].getAttribute('aria-label')).toContain('average of 2.00s');
+  expect(splits.every(item => item.className === `split-${item.dataset.comparison}`)).toBe(true);
+});
+test('comparisons use at most 1000 eligible solves and omit unavailable splits and active solves', async () => {
+  solve = imported('current', [1, 2], '2026-02-01T00:00:00.000Z');
+  const recent = Array.from({ length: 1000 }, (_, i) => imported(`old-${i}`, [1]));
+  const history = [...recent, imported('beyond-limit', [100, 100])];
+  await draw(solve.duration, 2, history);
+  expect(container.querySelectorAll('[data-comparison]')).toHaveLength(1);
+  expect(container.querySelector('[data-comparison]')?.getAttribute('data-comparison')).toBe('equal');
+  solve.status = 'active';
+  await draw(solve.duration, 2, history);
+  expect(container.querySelector('[data-comparison]')).toBeNull();
+});
 test('clock ticks advance timings without rescanning the recording, while appended turns invalidate analysis', async () => {
   append('U');
   let reads = 0;

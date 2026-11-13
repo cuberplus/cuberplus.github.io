@@ -87,7 +87,7 @@ try {
   await visit(page, 'Smartcube Analyzer');
   await page.getByRole('button', { name: 'Data', exact: true }).click();
   await page.getByRole('button', { name: 'My saved solves', exact: true }).click();
-  await page.getByRole('button', { name: 'All charts', exact: true }).click();
+  await page.getByRole('button', { name: 'All', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Daily Fastest Solve', exact: true })).toBeVisible({ timeout: 60000 });
   await visit(page, 'Scrambler');
   await expect(page.getByRole('button', { name: 'Print sheet' })).toBeEnabled({ timeout: 120000 });
@@ -146,7 +146,7 @@ try {
     if (name === 'Smartcube Analyzer') {
       await offline.getByRole('button', { name: 'Data', exact: true }).click();
       await offline.getByRole('button', { name: 'My saved solves', exact: true }).click();
-      await offline.getByRole('button', { name: 'All charts', exact: true }).click();
+      await offline.getByRole('button', { name: 'All', exact: true }).click();
       await expect(offline.getByRole('region', { name: 'Daily Fastest Solve', exact: true })).toBeVisible({ timeout: 60000 });
     }
     if (name === 'Scrambler') await expect(offline.getByRole('button', { name: 'Print sheet' })).toBeEnabled({ timeout: 120000 });

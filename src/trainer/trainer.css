@@ -2,7 +2,7 @@
 .trainer-drills { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; }
 .trainer-drill { align-items: center; padding: 2rem; color: var(--bs-body-color); text-align: center; gap: .75rem; }
 .trainer-drill:hover { border-color: var(--bs-primary); }
-.trainer-case-queue { display: flex; justify-content: center; align-items: center; gap: 1.5rem; min-height: 180px; }
+.trainer-case-queue { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 1.5rem; min-height: 180px; }
 .trainer-case-queue > div { display: grid; justify-items: center; }
 .trainer-case-queue p { margin-bottom: .25rem; }
 .trainer-case-queue .database-case-image { width: 90px; height: 90px; flex-basis: auto; }
@@ -44,8 +44,12 @@
   .trainer-run-content { padding-inline: .75rem; }
 }
 .trainer-settings label { margin-bottom: 0; }
+.trainer-case-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: .5rem; padding-block: 1rem; }
+.trainer-solution { font-family: ui-monospace, monospace; overflow-wrap: anywhere; margin-block: 1rem; }
 @media (max-width: 480px) {
   .trainer-case-queue { gap: .5rem; }
   .trainer-case-queue .database-case-image { width: 70px; height: 70px; }
   .trainer-case-current .database-case-image { width: 100px; height: 100px; }
 }
+.trainer-solution .move { display: inline-block; padding: 0 .2rem; color: var(--cp-text); }
+.trainer-solution .move.done { color: var(--bs-success-text-emphasis); text-decoration: underline; }

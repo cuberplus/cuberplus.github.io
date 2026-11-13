@@ -308,6 +308,7 @@ try {
   }
   await page.goto(`${base}/analyzer/`);
   await page.getByRole('button', { name: 'Data', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Load analysis data' }).locator('summary').filter({ hasText: /^Demo data$/ }).click();
   await page.getByRole('button', { name: /^Dev Solves/ }).click();
   const filters = page.getByRole('button', { name: 'Open filters', exact: true });
   await expect(filters).toBeVisible({ timeout: 60000 });

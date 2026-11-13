@@ -7,7 +7,20 @@ h2 { font-size: 1.1rem; font-weight: 650; margin-bottom: 0.8rem; }
 details[open] > .visuals-summary::after { transform: rotate(225deg); }
 .options-dialog::backdrop { background: #000a; }
 .scramble, .move-timeline { font-family: ui-monospace, monospace; line-height: 2.1; }
-.timer-panel { text-align: center; min-height: 360px; }
+.timer-panel { text-align: center; }
+.timer-hero { display: grid; grid-template-columns: minmax(0, 1fr) 160px; gap: 1rem; margin: 0 auto; max-inline-size: 800px; }
+.timer-hero > * { inline-size: auto; min-inline-size: 0; padding: 0; margin: 0; }
+.timer-hero--no-cube { grid-template-columns: minmax(0, 1fr); }
+.timer-hero twisty-player { height: 160px !important; }
+.timer-feedback { margin-block-start: .75rem; font-size: .9rem; }
+.timer-feedback > section { margin-block-start: 0 !important; }
+.timer-summary { display: flex; align-items: stretch; gap: 1rem; }
+.timer-records { flex: 1 1 0; min-inline-size: 0; }
+.timer-records .table { margin-bottom: 0; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.metric-trend { display: inline-block; inline-size: 1em; block-size: 1em; margin-inline-start: .5em; vertical-align: -.125em; fill: currentColor; }
+.metric-trend--faster { color: var(--bs-success-text-emphasis); }
+.metric-trend--slower { color: var(--bs-danger-text-emphasis); }
+.metric-trend--equal { color: #808080; }
 .timer-panel.ready { border-color: var(--cp-accent); }
 .timer-details { display: flex; align-items: center; justify-content: center; }
 .timer-panel > .scramble { position: relative; min-height: 2.5rem; padding-right: 3rem; }
@@ -61,11 +74,19 @@ details[open] > .visuals-summary::after { transform: rotate(225deg); }
 th[aria-sort] .history-sort::after { content: ''; display: inline-block; margin-left: 0.4rem; border-left: 4px solid transparent; border-right: 4px solid transparent; }
 th[aria-sort="ascending"] .history-sort::after { border-bottom: 6px solid currentColor; }
 th[aria-sort="descending"] .history-sort::after { border-top: 6px solid currentColor; }
-@media (max-width: 575px) { .panel { padding: 1rem; } .timer-panel { min-height: 300px; } }
+@media (max-width: 575px) { .panel { padding: 1rem; } }
 .history-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; }
 .timer-onboarding a { display: inline-block; margin-left: .75rem; }
 .timer-onboarding { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
-.trail-compact, .timer-recent { display: none; }
+.timer-recent { display: flex; flex-direction: column; flex: 0 0 clamp(8rem, 22%, 12rem); gap: .5rem; min-inline-size: 0; padding: 1rem; }
+.timer-recent-heading h2 { margin: 0; font-size: .875rem; }
+.recent-times { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(5, minmax(0, 1fr)); gap: 4px; flex: 1; }
+.recent-times .btn { container-type: inline-size; padding: 2px 6px; min-height: 24px; color: var(--cp-text); font-size: .95rem; font-variant-numeric: tabular-nums; }
+.recent-times .btn > span { font-size: min(.95rem, calc(165cqw / var(--time-length))); white-space: nowrap; }
+.timer-timeline .trail-labels, .timer-timeline .trail-axis { display: none !important; }
+.timer-timeline .solve-trail { height: 14px; }
+.trail-compact { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin-block-start: 4px; font-size: .8rem; color: var(--cp-muted); }
+.trail-compact strong { display: block; font-size: .9rem; font-weight: 500; color: var(--cp-text); }
 @media (max-width: 720px) {
   .timer-toolbar { flex-wrap: nowrap; gap: 6px; margin-bottom: 8px; }
   .timer-toolbar .route-heading { font-size: 1.5rem; }
@@ -85,20 +106,11 @@ th[aria-sort="descending"] .history-sort::after { border-top: 6px solid currentC
   .timer-timeline .solve-trail { height: 12px; }
   .trail-compact { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin-top: 4px; font-size: .65rem; color: var(--cp-muted); }
   .trail-compact strong { display: block; font-size: .75rem; font-weight: 500; color: var(--cp-text); }
-  .timer-feedback { display: none; }
-  .timer-records { padding: 0; background: transparent; border: 0; border-radius: 0; margin-top: 10px !important; }
-  .timer-records .table { margin-bottom: 0; font-size: .8rem; font-variant-numeric: tabular-nums; }
-  .timer-records thead th { color: var(--cp-muted); font-weight: 500; font-size: .7rem; }
+  .timer-records .table { margin-bottom: 0; font-size: .9rem; font-variant-numeric: tabular-nums; }
+  .timer-records thead th { color: var(--cp-muted); font-weight: 500; font-size: .8rem; }
   .timer-records .table :is(th, td) { padding: 4px 8px; }
   .timer-records .table :is(th, td):not(:first-child) { text-align: right; }
   .timer-records td:last-child { color: var(--cp-accent); }
-  .timer-recent { display: block; margin-top: 10px; }
-  .timer-recent-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .timer-recent-heading h2 { margin: 0; font-size: .875rem; }
-  .timer-recent-heading a { padding-block: 10px; font-size: .8rem; }
-  .recent-times { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
-  .recent-times .btn { container-type: inline-size; padding: 8px 2px; min-height: 44px; color: var(--cp-text); font-size: .95rem; font-variant-numeric: tabular-nums; }
-  .recent-times .btn > span { font-size: min(.95rem, calc(165cqw / var(--time-length))); white-space: nowrap; }
   .timer-history { padding: 10px; }
   .timer-panel.timer-disconnected { min-height: 0; }
   .timer-disconnected .timer-display { min-height: 0; }
@@ -106,3 +118,15 @@ th[aria-sort="descending"] .history-sort::after { border-top: 6px solid currentC
   .timer-disconnected .row > .col-lg-5 { display: none; }
   .history-pagination { font-size: .875rem; }
 }
+@media (max-width: 575px) {
+  .timer-summary { display: block; }
+  .timer-records, .timer-recent { padding: 0; background: transparent; border: 0; border-radius: 0; }
+  .timer-recent { display: block; margin-block-start: 10px; }
+  .timer-recent-heading { margin-block-end: .5rem; }
+  .recent-times { grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: none; gap: 6px; }
+  .recent-times .btn { padding: 8px 2px; min-height: 44px; }
+}
+.trail-compact .split-faster { color: var(--bs-success-text-emphasis); }
+.trail-compact .split-slower { color: var(--bs-danger-text-emphasis); }
+.trail-compact .split-equal { color: var(--cp-muted); }
+.trail-compact [data-comparison] strong { color: inherit; }
