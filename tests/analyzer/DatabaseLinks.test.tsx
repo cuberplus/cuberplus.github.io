@@ -30,8 +30,8 @@ function renderCase(step: StepName, caseName: string): HTMLElement {
 test('algorithm statistics prioritize failures and time in compact columns', () => {
     const columns = algoCols(StepName.PLL);
     expect(columns.map(column => column.key)).toEqual(['case', 'failureRate', 'avgTime', 'failed', 'total', 'avgMoves', 'expectedMoves', 'avgWasted']);
-    expect(columns[0].width).toBeLessThan(140);
-    expect(columns.every(column => typeof column.width === 'number' && column.width <= 112)).toBe(true);
+    expect(columns[0].width).toBe('max-content');
+    expect(columns.slice(1).every(column => typeof column.width === 'number' && column.width <= 112)).toBe(true);
 });
 
 describe('databaseCaseUrl', () => {

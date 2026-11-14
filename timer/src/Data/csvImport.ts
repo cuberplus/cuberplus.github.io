@@ -5,6 +5,7 @@ import { readSolves, saveSolves } from './storage';
 import { loadCube, movesOf, isMove, SOLVED, type Cube } from '../Core/puzzle';
 import { algorithmMatcher } from '../Analysis/algorithmMatching';
 import type { KPattern } from 'cubing/kpuzzle';
+import type { DataProgress } from '../../../shared/workers/dataTasks';
 
 function rebuildRecording(solve: Solve, recording: AnalyzedSolve['recording'], cube: Cube, applyMoves: (pattern: KPattern, moves: string[]) => KPattern): void {
   const scramble = movesOf(solve.scramble);
@@ -72,7 +73,7 @@ export function validImported(solve: Solve): boolean {
     (solve.moves.length > 0 || solve.startFacelets === SOLVED) && solve.status !== 'active';
 }
 
-export async function importSolveCSVs(files: File[]): Promise<{ added: number; duplicates: number }> {
+export async function importSolveCSVs(files: File[], progress: (value: DataProgress) => void = () => {}): Promise<{ added: number; duplicates: number }> {
   const parsed = (await Promise.all(files.map(async file => {
     const csv = (await file.text()).replace(/^\uFEFF/, ''), header = csv.slice(0, csv.indexOf('\n') < 0 ? csv.length : csv.indexOf('\n')).trim();
     if (!header.startsWith('solve_id,date,total_time') && (!header.split(',').includes('id') || !header.split(',').includes('date') ||
@@ -86,7 +87,10 @@ export async function importSolveCSVs(files: File[]): Promise<{ added: number; d
     [face + suffix, cube.puzzle.moveToTransformation(face + suffix)] as const)));
   const applyMoves = (pattern: KPattern, moves: string[]) => moves.reduce((state, move) => state.applyTransformation(transforms.get(move)!), pattern);
   let duplicates = 0;
-  for (const data of parsed) {
+  const start = performance.now(), report = (processed: number) => progress({ processed, total: parsed.length, analyzed: added.size,
+    skipped: duplicates, failed: 0, remainingMs: processed ? (performance.now() - start) / processed * (parsed.length - processed) : null });
+  for (const [index, data] of parsed.entries()) {
+    if (index % 50 === 0) report(index);
     const id = `${data.source}:${data.rawSourceId || data.id}`;
     if (existing.get(id)?.moves.length || added.has(id)) { duplicates++; continue; }
     const { date, endDate, recording, ...analysis } = data;
@@ -116,6 +120,7 @@ export async function importSolveCSVs(files: File[]): Promise<{ added: number; d
     rebuildRecording(solve, recording, cube, applyMoves);
     added.set(id, solve);
   }
+  report(parsed.length);
   await saveSolves([...added.values(), ...upgraded.values()]);
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('timer-solves-changed'));
   return { added: added.size, duplicates };

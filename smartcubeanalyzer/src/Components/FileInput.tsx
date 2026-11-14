@@ -47,7 +47,7 @@ export class FileInput extends React.Component<Record<string, never>, FileInputS
     private solveLimit = DEFAULT_SOLVE_LIMIT;
     private sessions: string[] = [];
     private sessionScope?: string;
-    private changeSessions = (sessions: string[]) => { if (JSON.stringify(sessions) === JSON.stringify(this.sessions)) return; this.sessions = sessions; if (this.mounted && this.solveLimit && (this.state.isParsing || this.state.solves.length > this.solveLimit)) this.reload?.(); };
+    private changeSessions = (sessions: string[], userInitiated = true) => { if (JSON.stringify(sessions) === JSON.stringify(this.sessions)) return; this.sessions = sessions; if (userInitiated && this.mounted && this.solveLimit && (this.state.isParsing || this.state.solves.length > this.solveLimit)) this.reload?.(); };
     private reload?: () => void;
     private hasSession = (solves: Solve[]) => solves.some(solve => !this.sessionScope || (solve.session || 'Default') === this.sessionScope);
     private changeScope = (limit: number, session: string) => {

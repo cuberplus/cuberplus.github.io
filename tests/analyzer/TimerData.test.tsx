@@ -118,6 +118,21 @@ test('presets keep a visible selected state derived from the actual step filters
     act(() => mockFilterProps.onStepsChange?.([StepName.OLL, StepName.PLL]));
     expect(oll.getAttribute('aria-pressed')).toBe('false');
 });
+test('programmatic session synchronization never reloads a large dataset or resets chosen phases', async () => {
+    localStorage.setItem('recent-solve-limit', '1000');
+    const solves = Array.from({ length: 1005 }, (_, i) => ({ ...own()[0], session: 'Practice, "Summer"', id: String(i) }));
+    localData.mockResolvedValue(solves);
+    const ref = React.createRef<FileInput>();
+    render(<FileInput ref={ref} />);
+    await ready(ref, 1005);
+    const loaded = ref.current!.state.solves;
+    act(() => mockFilterProps.onStepsChange?.([StepName.PLL]));
+    act(() => mockFilterProps.onSessionsChange?.(['Practice, "Summer"', 'Other'], false));
+    await act(async () => window.dispatchEvent(new Event('timer-solves-changed')));
+    expect(localData).toHaveBeenCalledTimes(1);
+    expect(ref.current!.state.solves).toBe(loaded);
+    expect(ref.current!.state.selectedSteps).toEqual([StepName.PLL]);
+});
 
 test('logs load duration once after charts are ready for each dataset, not for filter-only changes or unmounts', async () => {
     const info = jest.spyOn(console, 'info').mockImplementation(() => {});

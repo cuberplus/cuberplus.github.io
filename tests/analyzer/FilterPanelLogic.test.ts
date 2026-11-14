@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, jest, test } from '@jest/globals';
 import { FilterPanel } from '../../smartcubeanalyzer/src/Components/FilterPanel';
 import { Const } from '../../smartcubeanalyzer/src/Models/Constants';
 import { markMistakes } from '../../smartcubeanalyzer/src/Analysis/MistakeAnalysis';
@@ -13,6 +13,21 @@ import {
     StepName,
 } from '../../smartcubeanalyzer/src/Models/Types';
 import { makeCfopSteps, makeSolve, makeSolves, makeStep } from './testUtils';
+
+test('session callbacks distinguish dataset and scope synchronization from user filter changes', () => {
+    const solves = makeSolves(2), onSessionsChange = jest.fn();
+    const props = { solves, onSessionsChange, sessionScope: 'Practice' }, panel = new FilterPanel(props);
+    panel.componentDidMount();
+    expect(onSessionsChange).toHaveBeenLastCalledWith([], false);
+    const previous = panel.state;
+    panel.state = { ...previous, filters: { ...previous.filters, sessions: ['Practice'] } };
+    panel.componentDidUpdate({ ...props, solves: [] }, previous);
+    expect(onSessionsChange).toHaveBeenLastCalledWith(['Practice'], false);
+    panel.componentDidUpdate({ ...props, sessionScope: 'Other' }, previous);
+    expect(onSessionsChange).toHaveBeenLastCalledWith(['Practice'], false);
+    panel.componentDidUpdate(props, previous);
+    expect(onSessionsChange).toHaveBeenLastCalledWith(['Practice'], true);
+});
 
 function permissiveFilters(overrides: Partial<Filters> = {}): Filters {
     return {

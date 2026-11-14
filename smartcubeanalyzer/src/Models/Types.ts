@@ -155,7 +155,7 @@ export const caseCategory = (steps: StepName[]): StepName | undefined => steps.l
     : steps.length === 1 && [StepName.OLL, StepName.PLL].includes(steps[0]) ? steps[0] : undefined;
 
 export interface FilterPanelProps {
-    solves: Solve[], solveLimit?: number, sessionScope?: string, onSessionsChange?: (sessions: string[]) => void,
+    solves: Solve[], solveLimit?: number, sessionScope?: string, onSessionsChange?: (sessions: string[], userInitiated?: boolean) => void,
     preparedSolves?: Solve[],
     suggestedMethod?: Option<MethodName>,
     suggestedSessions?: Option[],

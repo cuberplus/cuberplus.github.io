@@ -3,7 +3,7 @@ import { jest } from '@jest/globals';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { deserialize, serialize } from 'node:v8';
-import { IDBFactory } from 'fake-indexeddb';
+import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import { readSolves, saveSolves } from '../../timer/src/Data/storage';
 import type { Solve } from '../../timer/src/Core/engine';
 import { inverse, loadCube } from '../../timer/src/Core/puzzle';
@@ -118,6 +118,8 @@ function recording(scramble: string, solution: string, status: Solve['status'] =
 }
 async function draw(solve: Solve, change?: (solve: Solve) => void) {
   await act(async () => root.render(createElement(Replay, { cube, solve, close, change, precision: 3 })));
+  const insights = Array.from(container.querySelectorAll('details')).find(element => element.querySelector('summary')?.textContent === 'Insights')!;
+  if (!insights.open) await act(async () => { insights.open = true; insights.dispatchEvent(new Event('toggle')); });
   await feedbackReady();
 }
 async function feedbackReady() {
@@ -172,12 +174,30 @@ test('Analyzer read-only replay has no manual edit controls', async () => {
   expect(container.querySelector('[aria-pressed]')).toBeNull();
   expect(container.querySelector<HTMLAnchorElement>('a')!.getAttribute('href')).toBe('/timer/?retry=replay-fixture');
 });
+test('Analyzer fetches only the requested solve and loads history only when Insights opens', async () => {
+  const solve = recording('R', "R'");
+  await saveSolves(Array.from({ length: 250 }, (_, i) => ({ ...solve, id: i ? `other-${i}` : solve.id })));
+  const readAll = jest.spyOn(IDBObjectStore.prototype, 'getAll');
+  const readOne = jest.spyOn(IDBObjectStore.prototype, 'get');
+  await act(async () => root.render(createElement(AnalyzerReplay, { id: solve.id, close })));
+  await waitFor(() => expect(container.querySelector('.replay-header')).not.toBeNull());
+  expect(readOne).toHaveBeenCalledWith(solve.id);
+  expect(readAll).not.toHaveBeenCalled();
+  expect(container.querySelector('[aria-label="Solve mistakes"]')).toBeNull();
+  const insights = Array.from(container.querySelectorAll('details')).find(element => element.querySelector('summary')?.textContent === 'Insights')!;
+  await act(async () => { insights.open = true; insights.dispatchEvent(new Event('toggle')); });
+  await waitFor(() => expect(readAll).toHaveBeenCalled());
+  await feedbackReady();
+});
 test('temporary CSV replays retain reanalysis, cross selection and mistake feedback without saving or exposing penalties', async () => {
   const solve = recording(pll.split(' ').reverse().map(inverse).join(' '), `U U' ${pll}`);
   const preview = { ...solveAnalysis(solve, cube), source: 'cubeast' as const,
     recording: { solution: solve.moves.map(move => `${move.move}[${move.elapsed}]`).join(' ') } };
   await act(async () => root.render(createElement(AnalyzerReplay, { id: preview.id, preview, close })));
   await waitFor(() => expect(container.querySelector('[aria-label="Base cross color"]')).not.toBeNull());
+  expect(container.querySelector('[aria-label="Solve mistakes"]')).toBeNull();
+  const insights = Array.from(container.querySelectorAll('details')).find(element => element.querySelector('summary')?.textContent === 'Insights')!;
+  await act(async () => { insights.open = true; insights.dispatchEvent(new Event('toggle')); });
   await feedbackReady();
   expect(container.querySelector('[aria-label="Solve mistakes"]')!.textContent).toContain('Single-move undo');
   for (const text of ['+2', 'DNF', 'Delete', 'Retry']) expect(Array.from(container.querySelectorAll('button,a')).some(button => button.textContent === text)).toBe(false);

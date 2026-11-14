@@ -16,7 +16,7 @@ import { caseKeyLabel } from '../../../src/database/caseLabels';
 import { persistReplayAnalysis, reanalyzeSolve } from '../Analysis/analysis';
 import '../CSS/Replay.css';
 
-export function Replay({ cube, solve, history, close, change, remove, retry, retryDisabled = false, readOnly = false, precision = 2, saveError }: { cube: Cube; solve: Solve; history?: Solve[]; close: () => void; change?: (solve: Solve) => void; remove?: (solve: Solve) => Promise<void>; retry?: (solve: Solve) => void; retryDisabled?: boolean; readOnly?: boolean; precision?: 2 | 3; saveError?: string }) {
+export function Replay({ cube, solve, history, close, change, remove, retry, retryDisabled = false, readOnly = false, precision = 2, saveError }: { cube: Cube; solve: Solve; history?: Solve[] | (() => Promise<Solve[]>); close: () => void; change?: (solve: Solve) => void; remove?: (solve: Solve) => Promise<void>; retry?: (solve: Solve) => void; retryDisabled?: boolean; readOnly?: boolean; precision?: 2 | 3; saveError?: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [position, setPosition] = useState(0);
   const [cursor, setCursor] = useState(0);
@@ -28,6 +28,7 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
   const [deleteError, setDeleteError] = useState('');
   const [caseKey, setCaseKey] = useState('');
   const [analysisError, setAnalysisError] = useState('');
+  const [insightsOpen, setInsightsOpen] = useState(false);
   const reanalyze = (crossOverride: number | undefined) => {
     try { setAnalysisError(''); change?.(reanalyzeSolve(solve, cube, crossOverride)); }
     catch (failure) { setAnalysisError(failure instanceof Error ? failure.message : 'Unable to analyze solve.'); }
@@ -163,7 +164,7 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
     {solve.status === 'incomplete' && <p className="text-warning mt-2" aria-label="Penalty reason">DNF reason: {getDnfReason(solve)}</p>}
     {!!solve.penalty && <p className="text-warning mt-2" aria-label="Penalty reason">+{solve.penalty / 1000} {solve.penalty === 2000 ? 'reason' : 'reasons'}: {getPenaltyReasons(solve).join(', ')}</p>}
     {solve.reason && solve.reason !== 'Solve aborted by user.' && <p className="text-secondary small mt-2">{solve.reason}</p>}
-    <details className="replay-disclosure replay-section"><summary>Insights</summary><SolveMistakes cube={cube} solve={solve} history={history} /></details>
+    <details className="replay-disclosure replay-section" onToggle={event => setInsightsOpen(event.currentTarget.open)}><summary>Insights</summary>{insightsOpen && <SolveMistakes cube={cube} solve={solve} history={history} />}</details>
     {change && <div className="replay-disclosure-row"><details className="replay-disclosure"><summary>Analysis settings</summary>
     <div className="d-flex gap-2 align-items-center flex-wrap mt-3">
       <button className="btn btn-outline-primary" disabled={deleting} onClick={() => reanalyze(solve.crossOverride)}>Re-run analysis</button>

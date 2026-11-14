@@ -10,6 +10,7 @@ import type { Solve } from '../../timer/src/Core/engine';
 import { parseCsv } from '../../smartcubeanalyzer/src/Data/CsvParser';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { DataProgress } from '../../shared/workers/dataTasks';
 
 const cube = await loadCube();
 const cubeast = 'id,date,dnf,time,solving_method,session_name,step_0_name,step_0_time,step_0_recognition_time,step_0_execution_time,step_0_slice_turns,step_0_moves\r\nsame,2026-01-01 12:00:00 UTC,false,12000,CFOP,Practice,Cross,1000,200,800,4,"R U R\' U\'"\r\n';
@@ -23,6 +24,15 @@ const native: Solve = {
 beforeEach(() => {
   Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: new IDBFactory() });
   Object.defineProperty(globalThis, 'structuredClone', { configurable: true, value: <T>(value: T): T => deserialize(serialize(value)) as T });
+});
+test('import reports bounded progress including duplicates, then persists every added solve', async () => {
+  const csv = acubemy.split('\n')[0] + '\n' + Array.from({ length: 120 }, (_, i) => acubemy.split('\n')[1].replace('same', String(i % 110))).join('\n');
+  const progress: DataProgress[] = [];
+  expect(await importSolveCSVs([file('many.csv', csv)], value => progress.push(value))).toEqual({ added: 110, duplicates: 10 });
+  expect(progress.map(value => value.processed)).toEqual([0, 50, 100, 120]);
+  expect(progress.every(value => value.total === 120 && value.processed === value.analyzed + value.skipped)).toBe(true);
+  expect(progress.at(-1)).toMatchObject({ analyzed: 110, skipped: 10, remainingMs: 0 });
+  expect(await readSolves()).toHaveLength(110);
 });
 test.each(['cfop-small.csv', 'acubemy.csv'])('temporary %s solves rebuild native replay without writing to storage', async name => {
   const data = parseCsv(readFileSync(join(process.cwd(), 'smartcubeanalyzer', 'public', 'demo', name), 'utf8').split(/\r?\n/).slice(0, 33).join('\n'), ',', true);

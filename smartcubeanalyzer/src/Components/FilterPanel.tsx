@@ -243,10 +243,10 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         newState.lastAppliedSession = nextProps.sessionScope;
         return newState;
     }
-    componentDidMount() { this.props.onStepsChange?.(this.state.filters.steps); this.props.onSessionsChange?.(this.state.filters.sessions); }
+    componentDidMount() { this.props.onStepsChange?.(this.state.filters.steps); this.props.onSessionsChange?.(this.state.filters.sessions, false); }
     componentDidUpdate(_props: FilterPanelProps, previous: FilterPanelState) {
         if (previous.filters.steps !== this.state.filters.steps) this.props.onStepsChange?.(this.state.filters.steps);
-        if (previous.filters.sessions !== this.state.filters.sessions) this.props.onSessionsChange?.(this.state.filters.sessions);
+        if (previous.filters.sessions !== this.state.filters.sessions) this.props.onSessionsChange?.(this.state.filters.sessions, _props.solves === this.props.solves && _props.sessionScope === this.props.sessionScope);
     }
 
     /** Filters own the selection; labels come from the available options, in selection order. */

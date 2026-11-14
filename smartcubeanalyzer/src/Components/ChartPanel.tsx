@@ -53,12 +53,6 @@ type ThemeContextValue = { isDark?: boolean; precision?: 2 | 3 };
 /** Fill the chart card / Ratio box; DataGrid defaults to ~350px without an explicit height chain. */
 const chartDataGridWrapStyle: React.CSSProperties = { height: '100%', width: '100%', minHeight: 0, overflow: 'auto' };
 
-const chartDataGridStyle: React.CSSProperties = { height: '100%' };
-
-// A sortable header gives up part of its width to the sort arrow, so a narrow
-// phone column clips the name to a character or two. Below this the grid scrolls.
-const MIN_COL_WIDTH = 96;
-
 // ── Static DataGrid column definitions ───────────────────────────────────────
 
 const STREAK_COLS = [
@@ -88,8 +82,10 @@ export function algoCols(step: StepName, openCase: (key: string) => void = () =>
         {
             key: 'case',
             name: 'Case',
-            minWidth: 112,
-            width: 112,
+            minWidth: 80,
+            width: 'max-content',
+            cellClass: 'algo-case-cell',
+            headerCellClass: 'algo-case-cell',
             renderCell: ({ row }: RenderCellProps<AlgoPracticeRow>) => {
                 const url = databaseCaseUrl(step, row.case);
                 return url === null ? row.case :
@@ -145,9 +141,9 @@ export function SortableGrid<R>({ rows, columns, className, onCellClick }: Sorta
     }, [rows, sortColumns]);
 
     return <div style={chartDataGridWrapStyle} className={className}>
-        <DataGrid style={chartDataGridStyle} rows={sorted} columns={columns} rowHeight={columns[0]?.key === 'case' ? 64 : 35}
+        <DataGrid style={{ height: '100%' }} rows={sorted} columns={columns} rowHeight={columns[0]?.key === 'case' ? 64 : 35}
             sortColumns={sortColumns} onSortColumnsChange={setSortColumns}
-            defaultColumnOptions={{ sortable: true, minWidth: columns[0]?.key === 'case' ? 64 : MIN_COL_WIDTH }} onCellClick={onCellClick}
+            defaultColumnOptions={{ sortable: true, minWidth: columns[0]?.key === 'case' ? 64 : 96 }} onCellClick={onCellClick}
             onCellKeyDown={(args, event) => { if (onCellClick && args.mode === 'SELECT' && !(event.target instanceof Element && event.target.closest('button,a,input,select,textarea')) && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); event.preventGridDefault(); onCellClick({ ...args, selectCell: () => {} }); } }} />
     </div>;
 }

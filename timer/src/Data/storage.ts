@@ -70,6 +70,9 @@ export async function readSolveIds(): Promise<string[]> {
   const request = await withSolves('readonly', store => store.getAllKeys(), 'Cannot read local solve IDs.');
   return request.result as string[];
 }
+export async function readSolve(id: string): Promise<Solve | undefined> {
+  return (await withSolves('readonly', store => store.get(id), 'Cannot read local solve.')).result as Solve | undefined;
+}
 export async function recoverLocalSolves(cube: Cube, current?: (id: string) => boolean): Promise<Solve[]> {
   const solves = await readSolves(100), active = solves.filter(solve => solve.status === 'active' && !current?.(solve.id));
   if (!active.length) return solves;

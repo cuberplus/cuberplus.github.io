@@ -1,6 +1,6 @@
 import { useContext, useEffect, useRef, useState } from 'react';
 import { Replay } from './Replay';
-import { readSolves, saveSolves } from '../Data/storage';
+import { readSolve, readSolves, saveSolves } from '../Data/storage';
 import { loadCube } from '../Core/puzzle';
 import type { Cube } from '../Core/puzzle';
 import type { Solve } from '../Core/engine';
@@ -12,7 +12,7 @@ export default function AnalyzerReplay({ id, preview, close }: { id: string; pre
   const { precision } = useContext(SettingsContext);
   const dialog = useRef<HTMLDialogElement>(null);
   const opener = useRef(document.activeElement);
-  const [data, setData] = useState<{ solve: Solve; cube: Cube; history: Solve[]; readOnly: boolean } | null>(null);
+  const [data, setData] = useState<{ solve: Solve; cube: Cube; readOnly: boolean } | null>(null);
   const [error, setError] = useState('');
   useEffect(() => () => {
     const element = opener.current;
@@ -22,10 +22,10 @@ export default function AnalyzerReplay({ id, preview, close }: { id: string; pre
   usePageDialog(dialog, !data);
   useEffect(() => {
     let cancelled = false;
-    Promise.all([readSolves(), loadCube()]).then(([solves, cube]) => {
-      const solve = solves.find(solve => solve.id === id && solve.status !== 'active');
+    Promise.all([readSolve(id), loadCube()]).then(([saved, cube]) => {
+      const solve = saved?.status === 'active' ? undefined : saved;
       if (!solve && !preview) throw new Error('This solve is no longer saved in Timer.');
-      if (!cancelled) setData({ solve: solve ?? previewSolve(preview!, cube), cube, history: solves, readOnly: !solve });
+      if (!cancelled) setData({ solve: solve ?? previewSolve(preview!, cube), cube, readOnly: !solve });
     }).catch(error => { if (!cancelled) setError(error instanceof Error ? error.message : 'Unable to load this solve.'); });
     return () => { cancelled = true; };
   }, [id, preview]);
@@ -33,11 +33,11 @@ export default function AnalyzerReplay({ id, preview, close }: { id: string; pre
     setError('');
     if (data?.readOnly) { setData({ ...data, solve }); return; }
     void saveSolves([solve]).then(() => {
-      setData(current => current ? { ...current, solve, history: current.history.map(item => item.id === solve.id ? solve : item) } : null);
+      setData(current => current ? { ...current, solve } : null);
       window.dispatchEvent(new Event('timer-solves-changed'));
     }).catch(failure => setError(failure instanceof Error ? failure.message : 'Unable to save solve.'));
   };
-  return data ? <Replay {...data} close={close} precision={precision} change={change} saveError={error} /> :
+  return data ? <Replay {...data} history={readSolves} close={close} precision={precision} change={change} saveError={error} /> :
     <dialog ref={dialog} className="replay-dialog" aria-label="Solve replay" onCancel={event => { event.preventDefault(); close(); }}>
       <div className="d-flex justify-content-between align-items-center">
         <p role={error ? 'alert' : 'status'}>{error || 'Loading solve replay…'}</p>

@@ -15,7 +15,7 @@ import { PracticeDialog } from '../../../src/trainer/PracticeDialog';
 import { caseKeyLabel } from '../../../src/database/caseLabels';
 
 const emptyHistory: Solve[] = [];
-export function SolveMistakes({ solve, cube, history = emptyHistory, brief = false }: { solve: Solve; cube: Cube; history?: Solve[]; brief?: boolean }) {
+export function SolveMistakes({ solve, cube, history = emptyHistory, brief = false }: { solve: Solve; cube: Cube; history?: Solve[] | (() => Promise<Solve[]>); brief?: boolean }) {
   const feedback = useRef<HTMLElement>(null);
   const visible = useContext(PageVisible);
   const { favorites, unlearn, enabled, categories } = useAlgorithmPreferences();
@@ -31,7 +31,7 @@ export function SolveMistakes({ solve, cube, history = emptyHistory, brief = fal
     let active = true;
     setFailure(null); setResult(null);
     async function analyze() {
-      const result = await solveFeedback(solve, history, () => active);
+      const result = await solveFeedback(solve, typeof history === 'function' ? await history() : history, () => active);
       if (!active || !('analysis' in result) || !result.analysis) return;
       const nonFavorites = enabled && !solve.imported ? nonFavoriteAlgorithms(solve, cube, favorites, categories) : [];
       const unlearned = solve.imported ? [] : unlearnAlgorithms(solve, cube, unlearn);

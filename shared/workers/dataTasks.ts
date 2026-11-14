@@ -38,7 +38,7 @@ export async function runDataTask(task: DataTask, progress: (value: DataProgress
     return { analysis };
   }
   if (task.type === 'reanalyze') return (await import('../../timer/src/Analysis/analysis')).reanalyzeAllSolves(progress);
-  if (task.type === 'import') return (await import('../../timer/src/Data/csvImport')).importSolveCSVs(task.files);
+  if (task.type === 'import') return (await import('../../timer/src/Data/csvImport')).importSolveCSVs(task.files, progress);
   const solves = task.type === 'parse' ? parseCsv(task.csv, ',', true) : await (await import('../../timer/src/Analysis/analyzer-data')).readLocalAnalysis(task.solveLimit, task.sessions);
   solves.sort((a, b) => a.date.getTime() - b.date.getTime());
   const recent = latestSolves(solves.filter(solve => !task.sessions?.length || task.sessions.includes(solve.session || 'Default')), task.solveLimit ?? 0, solve => solve.date.getTime()), selected = new Set(recent);
