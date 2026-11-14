@@ -1,5 +1,6 @@
 import { chromium, expect } from '@playwright/test';
 import { gzipSync, gunzipSync } from 'node:zlib';
+import { readFile } from 'node:fs/promises';
 
 const base = process.env.SITE_URL ?? 'http://127.0.0.1:4173';
 const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : undefined });
@@ -105,7 +106,7 @@ try {
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
   await expect(page.getByRole('button', { name: 'Back up now' })).toBeEnabled();
   await page.getByRole('button', { name: 'Back up now' }).click();
-  await expect(page.getByRole('status')).toContainText('Backed up 3 solves');
+  await expect(page.locator('aside[role="status"]')).toContainText('Backed up 3 solves');
   expect(uploads).toBe(1);
   expect(uploaded.timer.solves.map(solve => solve.id).sort()).toEqual(['cloud-only', 'local-only', 'shared']);
   expect(uploaded.timer.solves.find(solve => solve.id === 'shared').duration).toBe(10000);
@@ -116,9 +117,10 @@ try {
     ...uploaded, timer: pack([solve('shared', 9000), solve('cloud-only', 15000), solve('restored', 20000), solve('shared', 8000)]),
     settings: { ...uploaded.settings, theme: 'dark', 'timer-time-precision': '3', 'timer-sessions': '["Cloud practice"]' },
   };
+  await page.getByText('Restore and connection settings', { exact: true }).click();
   await page.getByRole('button', { name: 'Restore backup', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'Time precision' })).toHaveValue('3');
-  const readHistory = () => page.evaluate(() => new Promise((resolve, reject) => {
+  const readHistory = (target = page) => target.evaluate(() => new Promise((resolve, reject) => {
     const request = indexedDB.open('smart-cube-timer', 2);
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
@@ -132,26 +134,62 @@ try {
   expect(history.find(solve => solve.id === 'shared').duration).toBe(8000);
   expect(await page.evaluate(() => localStorage.getItem('timer-sessions'))).toBe('["Cloud practice"]');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
+  await page.getByText('Restore and connection settings', { exact: true }).click();
   await page.getByRole('button', { name: 'Restore backup', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Connect Google Drive' })).toBeEnabled();
   history = await readHistory();
   expect(history).toHaveLength(4);
   await page.getByRole('checkbox', { name: /every 100 solves/ }).check();
-  await page.getByRole('checkbox', { name: /Single, Ao5, or Ao12/ }).check();
+  await page.getByRole('checkbox', { name: 'Back up after a PB', exact: true }).check();
   await page.reload();
   await expect(page.getByRole('checkbox', { name: /every 100 solves/ })).toBeChecked();
-  await expect(page.getByRole('checkbox', { name: /Single, Ao5, or Ao12/ })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'Back up after a PB', exact: true })).toBeChecked();
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await expect(page.getByRole('button', { name: 'Connect Google Drive' })).toBeVisible();
   }
+  await page.getByText('Restore and connection settings', { exact: true }).click();
   await page.getByRole('combobox', { name: 'Backup provider' }).selectOption('microsoft');
   await expect(page.getByRole('button', { name: 'Connect Microsoft OneDrive' })).toBeEnabled();
   await expect(page.getByText(/Microsoft OneDrive is not configured/)).toHaveCount(0);
+  const sessionSettings = {
+    'timer-sessions': '["Empty training"]',
+    'timer-session-scramblers': '{"Empty training":"2-gen"}',
+    'selected-session': 'Empty training',
+  };
+  await page.evaluate(settings => Object.entries(settings).forEach(([key, value]) => localStorage.setItem(key, value)), sessionSettings);
+  await page.goto(`${base}/timer/`);
+  await expect(page.locator('#history-session')).toBeEnabled();
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.locator('button').filter({ hasText: /^Export JSON$/ }).dispatchEvent('click'),
+  ]);
+  const contents = await readFile(await download.path());
+  const manual = JSON.parse(contents.toString());
+  expect(manual.settings).toMatchObject(sessionSettings);
+  for (const key of ['unrelated-secret', 'timer-pb-daily-records', 'cuberplus-cloud-provider', 'cuberplus-cloud-progress']) {
+    expect(manual.settings).not.toHaveProperty(key);
+  }
+  const restoredContext = await browser.newContext(), restoredPage = await restoredContext.newPage();
+  restoredPage.on('pageerror', failure => errors.push(failure.message));
+  await restoredPage.goto(`${base}/timer/`);
+  await expect(restoredPage.locator('#history-session')).toBeEnabled();
+  await restoredPage.evaluate(() => localStorage.setItem('cuberplus-cloud-provider', 'google'));
+  await Promise.all([
+    restoredPage.waitForEvent('load'),
+    restoredPage.locator('input[type="file"]').setInputFiles({ name: 'complete-backup.json', mimeType: 'application/json', buffer: contents }),
+  ]);
+  expect(await restoredPage.evaluate(keys => Object.fromEntries(keys.map(key => [key, localStorage.getItem(key)])), Object.keys(sessionSettings))).toEqual(sessionSettings);
+  expect(await restoredPage.evaluate(() => localStorage.getItem('cuberplus-cloud-provider'))).toBe('google');
+  await expect(restoredPage.getByRole('combobox', { name: 'Session history', exact: true })).toHaveValue('Empty training');
+  const restoredSolves = await readHistory(restoredPage);
+  expect(restoredSolves.map(solve => solve.id).sort()).toEqual(['cloud-only', 'local-only', 'restored', 'shared']);
+  expect(restoredSolves.every(solve => solve.moves.length === 2)).toBe(true);
+  await restoredContext.close();
   expect(errors).toEqual([]);
   expect(cspErrors).toEqual([]);
-  console.log('Cloud browser regressions passed: Google sign-in, compressed merge, ID deduplication, restore/reload, settings, repeated restore, automatic preferences, responsive layout and OneDrive setup state.');
+  console.log('Backup browser regressions passed: cloud merge/restore, repeated restore, manual JSON round-trip into a fresh browser, empty-session generators, recordings, excluded state, responsive layout and provider setup.');
 } finally {
   await browser.close();
 }

@@ -18,6 +18,7 @@ const calibrate = jest.fn<() => Promise<void>>();
 const save = jest.fn<(solves: Solve[], derivedOnly?: boolean | 'reanalysis') => Promise<void>>().mockResolvedValue();
 const read = jest.fn<() => Promise<Solve[]>>().mockImplementation(async () => recovered);
 const statistics = jest.fn(sessionStats), streakStatistics = jest.fn(dailyStreak), backup = jest.fn<(solves: Solve[]) => string>().mockReturnValue('');
+const parseBackup = jest.fn<() => { solves: Solve[]; settings: Record<string, string | null> }>();
 const countTurns = jest.fn((solve: Solve) => solve.moves.length);
 const erase = jest.fn<(id: string) => Promise<void>>().mockImplementation(async id => {
   recovered = recovered.filter(solve => solve.id !== id);
@@ -48,9 +49,12 @@ await jest.unstable_mockModule('../../timer/src/Bluetooth/bluetooth', () => ({ B
   calibrate = calibrate;
 } }));
 await jest.unstable_mockModule('../../timer/src/Data/storage', () => ({
-  saveSolves: save, deleteSolve: erase, updateSession: changeSession, readSolves: read, recoverLocalSolves: async () => recovered, backupJSON: backup, validateBackup: () => recovered,
+  saveSolves: save, deleteSolve: erase, updateSession: changeSession, readSolves: read, recoverLocalSolves: async () => recovered,
   cubeastCSV, averageDetails, dailyStreak: streakStatistics, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats: statistics, solveEndDate, turns: countTurns,
   formatTime: (ms: number, precision: 2 | 3 = 2) => (ms / 1000).toFixed(precision),
+}));
+await jest.unstable_mockModule('../../src/cloud/userBackup', () => ({
+  userBackupJSON: backup, validateUserBackup: parseBackup,
 }));
 await jest.unstable_mockModule('../../timer/src/Components/CubeView', () => ({
   CubeView: ({ facelets }: { facelets: string }) => createElement('div', { role: 'img', 'aria-label': 'Live 3x3 cube state', 'data-facelets': facelets }),
@@ -106,6 +110,7 @@ beforeEach(async () => {
     return movesOf(alg).reverse().map(inverse);
   });
   save.mockReset().mockResolvedValue(); statistics.mockClear(); streakStatistics.mockClear(); backup.mockClear(); erase.mockClear(); generate.mockReset(); calibrate.mockReset().mockResolvedValue();
+  parseBackup.mockReset().mockImplementation(() => ({ solves: recovered, settings: {} }));
   changeSession.mockReset().mockImplementation(persistSession);
   read.mockClear();
   countTurns.mockClear();
@@ -306,10 +311,12 @@ test('active turns persist fresh snapshots and export the live attempt without r
   await click('Connect cube');
   await act(async () => { move('R', 100); move('U2', 200); });
   statistics.mockClear();
+  const storedSettings = jest.spyOn(Storage.prototype, 'getItem');
   await act(async () => move('U', 300));
   const first = save.mock.calls.at(-1)![0][0];
   for (const time of [400, 500, 600]) await act(async () => move('U', time));
   expect(statistics).not.toHaveBeenCalled();
+  expect(storedSettings.mock.calls.filter(([key]) => key === 'timer-session-scramblers')).toHaveLength(0);
   expect(historyNumbers()).toEqual([1]);
   expect(first).toMatchObject({ status: 'active', moves: [expect.objectContaining({ move: 'U' })] });
   expect(save.mock.calls.at(-1)![0][0].moves).toHaveLength(4);
@@ -428,6 +435,13 @@ test('creating a session can be cancelled and whitespace names cannot be submitt
   await click('Cancel');
   expect(picker.querySelector('input')).toBeNull();
   expect(select.value).toBe('Default');
+});
+test('creating a session cannot reserve the retry-only session name', async () => {
+  await chooseSession('Retries', '2-gen');
+  expect(container.querySelector('.session-picker [role="alert"]')!.textContent).toBe('Retries is reserved for retry attempts.');
+  expect(container.querySelector<HTMLSelectElement>('select[aria-label="Session"]')!.value).toBe('Default');
+  expect(localStorage.getItem('timer-sessions')).toBeNull();
+  expect(localStorage.getItem('timer-session-scramblers')).toBeNull();
 });
 test('in-place practice suspends timer turns and resynchronizes the shared cube after closing', async () => {
   await click('Connect cube');
@@ -785,6 +799,19 @@ test('reads backup files larger than 10 MB instead of rejecting them before impo
   expect(container.textContent).not.toContain('import limit');
 });
 
+test('restoring settings cannot interrupt an active solve', async () => {
+  await click('Connect cube');
+  await act(async () => { move('R', 100); move('U2', 200); move('U', 300); });
+  save.mockClear();
+  parseBackup.mockReturnValueOnce({ solves: [], settings: { theme: 'dark' } });
+  const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+  Object.defineProperty(input, 'files', { value: [{ text: async () => 'backup contents' }] });
+  await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+  expect(container.textContent).toContain('Finish or stop your current Timer solve before restoring settings.');
+  expect(save).not.toHaveBeenCalled();
+  expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Abort solve')).toBe(true);
+});
+
 async function timedApp(solves: Solve[] = []) {
   await act(async () => root.unmount());
   recovered = solves;
@@ -926,7 +953,8 @@ test.each(['rename', 'delete'])('session %s during the penalty window keeps PB n
   }
 });
 
-test('retries keep their result and history but do not enter all-time statistics or PB celebrations', async () => {
+test('an existing Retries session keeps results and history but does not enter all-time statistics or PB celebrations', async () => {
+  localStorage.setItem('timer-sessions', JSON.stringify(['Retries']));
   await timedApp();
   await chooseSession('Retries');
   await finishFirst();

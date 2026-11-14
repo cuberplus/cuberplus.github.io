@@ -97,11 +97,31 @@ test.each(categories)('%s completes with every pre/post AUF combination', catego
     let draw = 0;
     const practice = new Practice(cube, [entry], 'single', defaultBlitzSettings, 0, () => {
       const index = draw++;
-      return index === 4 ? pre : index === 5 ? post : .3;
+      return index === 1 ? pre : index === 2 ? post : .3;
     });
     practice.tick(3000);
+    expect(practice.preAuf).toBe(['', 'U', 'U2', "U'"][Math.floor(pre * 4)]);
+    expect(practice.postAuf).toBe(['', 'U', 'U2', "U'"][Math.floor(post * 4)]);
     expect(complete(practice, practice.solution)).not.toBeNull();
   }
+});
+test('all three upcoming cases retain their sampled setup, solution and color frame through retry and advancement', () => {
+  let seed = 193;
+  const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  const practice = new Practice(cube, algorithms, 'mixed', { ...defaultBlitzSettings, crossColor: 'Random', frontColor: 'Random' }, 0, random);
+  practice.tick(3000);
+  const upcoming = practice.queue.slice(1);
+  for (const entry of upcoming) {
+    practice.move('R', practice.splitAt + 100);
+    practice.retry(practice.splitAt + 200);
+    expect(practice.queue).toContain(entry);
+    practice.skip(practice.splitAt + 300);
+    expect(practice.queue[0]).toBe(entry);
+    expect(practice.initialPattern).toBe(entry.pattern);
+    expect(practice.pattern).toBe(entry.pattern);
+    expect(practice).toMatchObject({ preAuf: entry.preAuf, postAuf: entry.postAuf, colorFrame: entry.colorFrame, solution: entry.solution });
+  }
+  expect(complete(practice, practice.solution)).not.toBeNull();
 });
 test('a chosen alternative sets up that solution and an F2L finish must restore previously solved pairs and the cross', () => {
   const entry = algorithms.find(entry => caseKey(entry) === 'F2L-1')!, algorithm = entry.options[1];

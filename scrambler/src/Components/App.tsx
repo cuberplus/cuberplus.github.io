@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Navigation, { Footer, usePageDialog } from '@cuberplus/navigation';
 import { PageOptionsButton } from '../../../shared/Components/PageOptionsButton';
 import { COLORS, Color, EDGES, HEX } from '../cube/cube';
@@ -104,8 +104,9 @@ function App() {
     return { ...previous, cross, pair: keepValidPair(previous.pair), secondPair: keepValidPair(previous.secondPair) };
   });
   const availablePairs = pairOptions(settings.cross);
-  const sorted = rows.slice().sort((a, b) =>
-    (ascending ? 1 : -1) * (solutionLength(a.moves, batchSettings.metric) - solutionLength(b.moves, batchSettings.metric)) || a.id - b.id);
+  const sorted = useMemo(() => rows.slice().sort((a, b) =>
+    (ascending ? 1 : -1) * (solutionLength(a.moves, batchSettings.metric) - solutionLength(b.moves, batchSettings.metric)) || a.id - b.id),
+  [rows, ascending, batchSettings.metric]);
   const visible = BUILT_INS.filter(([key]) => selected.includes(key));
   const printStyle: React.CSSProperties & { '--print-columns': number } = {
     '--print-columns': Math.max(6, visible.length + custom.length),

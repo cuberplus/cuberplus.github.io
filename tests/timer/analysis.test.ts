@@ -31,17 +31,17 @@ test('changing cross color recalculates boundaries, preserves recording and perm
   expect(solveAnalysis(reanalyzeSolve(overridden, cube, undefined), cube).steps).toEqual(automatic.steps);
   expect(solve.crossOverride).toBeUndefined();
 });
-test('persisted analysis and CFOP are reused after an IndexedDB and backup roundtrip', async () => {
+test('persisted analysis and CFOP are reused locally but omitted from backup snapshots', async () => {
   await saveSolves([sample()]);
   const first = await readLocalAnalysis(), [stored] = await readSolves();
   expect(stored.analysis!.data.mistakeContext).toBeDefined();
   const [restored] = validateBackup(backupJSON([stored]), cube);
-  expect(restored.analysis).toEqual(stored.analysis);
-  expect(restored.cfop).toEqual(stored.cfop);
+  expect(restored.analysis).toBeUndefined();
+  expect(restored.cfop).toBeUndefined();
   const parse = jest.spyOn(cube, 'parse').mockImplementation(() => { throw new Error('Should use cache'); });
   try {
-    expect(solveAnalysis(restored, cube)).toEqual(first[0]);
-    expect(analyzeCFOP(restored, cube).ends).toEqual(stored.cfop!.ends);
+    expect(solveAnalysis(stored, cube)).toEqual(first[0]);
+    expect(analyzeCFOP(stored, cube).ends).toEqual(stored.cfop!.ends);
     expect(await readLocalAnalysis()).toEqual(first);
   } finally { parse.mockRestore(); }
 });

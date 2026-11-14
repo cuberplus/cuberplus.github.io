@@ -119,6 +119,24 @@ test('Blitz history distinguishes totals, dates and bests per drill, and filters
   expect(await screen.findByText('2 runs')).toBeDefined();
   expect(view.container.querySelectorAll('.trainer-run')).toHaveLength(2);
 });
+test('history bests exclude DNFs, retain ties, and stay drill-specific when filtering', async () => {
+  jest.mocked(readBlitzRuns).mockReturnValue([
+    { ...runs[0], id: 'pll-dnf', milliseconds: 1000, dnf: true },
+    runs[0], { ...runs[0], id: 'pll-tied' }, runs[1],
+    { ...runs[2], dnf: true },
+  ]);
+  const view = render(<Trainer />);
+  await screen.findByText('5 runs');
+  const times = () => Array.from(view.container.querySelectorAll('.trainer-run-time'), time => time.textContent);
+  expect(times()).toEqual(['DNF', '8.00sBest', '8.00sBest', '10.00s', 'DNF']);
+  fireEvent.click(screen.getByRole('button', { name: 'OLL Blitz' }));
+  await screen.findByText('1 run');
+  expect(times()).toEqual(['DNF']);
+  fireEvent.click(screen.getByRole('button', { name: 'Back to drills' }));
+  fireEvent.click(screen.getByRole('button', { name: 'PLL Blitz' }));
+  await screen.findByText('4 runs');
+  expect(times()).toEqual(['DNF', '8.00sBest', '8.00sBest', '10.00s']);
+});
 test('Blitz results retain separate retry rows, elapsed time, and attempt order when sorted', async () => {
   jest.mocked(readBlitzRuns).mockReturnValue([{ ...runs[0], milliseconds: 9000, splits: [
     { caseId: 'T', milliseconds: 1000, dnf: true, retry: true, recognitionMilliseconds: 600, executionMilliseconds: 400 },

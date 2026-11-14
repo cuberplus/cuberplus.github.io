@@ -40,6 +40,7 @@ export function SessionPicker({ value, sessions, disabled, change, create, manag
       event.preventDefault();
       if (!name.trim() || disabled) return;
       if (editing === 'rename') { void submitChange(name.trim()); return; }
+      if (name.trim() === 'Retries') { setError('Retries is reserved for retry attempts.'); return; }
       if (options.includes(name.trim())) { setError('Choose a unique session name.'); return; }
       create(name.trim(), scrambler); setEditing(null); setName('');
     }}>

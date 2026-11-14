@@ -1,4 +1,4 @@
-import { memo, useContext, useEffect, useReducer, useRef, useState } from 'react';
+import { memo, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import Navigation, { Footer, PageLocation, PageVisible, usePageDialog } from '@cuberplus/navigation';
 import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
 import { cubeConnection, useCubeConnection } from '../../shared/cube/connection';
@@ -88,9 +88,11 @@ export default function Trainer() {
   const current = drill.current, busy = !!current && ['countdown', 'running'].includes(current.phase);
   const previews = current?.phase === 'running' && settings.upcomingCases ? current.queue.slice(current.index, current.index + 4) : [];
   const entry = current?.queue[current.index];
-  const visibleRuns = runs.filter(run => !kind || run.kind === kind);
-  const best = { OLL: Math.min(...runs.filter(run => run.kind === 'OLL' && !run.dnf).map(run => run.milliseconds)),
-    PLL: Math.min(...runs.filter(run => run.kind === 'PLL' && !run.dnf).map(run => run.milliseconds)) };
+  const visibleRuns = useMemo(() => runs.filter(run => !kind || run.kind === kind), [runs, kind]);
+  const best = useMemo(() => runs.reduce((best, run) => {
+    if (!run.dnf) best[run.kind] = Math.min(best[run.kind], run.milliseconds);
+    return best;
+  }, { OLL: Infinity, PLL: Infinity }), [runs]);
   return <div className="cuberplus-page trainer-page">
     <header className="cuberplus-header"><Navigation current="trainer" /></header>
     <main className="container py-4 trainer-main">

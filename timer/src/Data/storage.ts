@@ -4,7 +4,7 @@ import { analyzeCFOP, CFOP_STEPS, cfopFrame, cfopTiming, elapsedAt, f2lPair } fr
 import { movingAverages } from '../../../shared/statistics/averages';
 import { calendarDay, streakWindows } from '../../../shared/statistics/streaks';
 import { validImported } from './csvImport';
-import { analysisKey, validAnalysis } from '../Analysis/analysis';
+import { analysisKey } from '../Analysis/analysis';
 import type { KPattern, KTransformation } from 'cubing/kpuzzle';
 
 const database = (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
@@ -78,7 +78,7 @@ export async function readSolveIds(): Promise<string[]> {
 export async function recoverLocalSolves(cube: Cube, current?: (id: string) => boolean): Promise<Solve[]> {
   const solves = await readSolves(100), active = solves.filter(solve => solve.status === 'active' && !current?.(solve.id));
   if (!active.length) return solves;
-  const recovered = validateBackup(backupJSON(active), cube);
+  const recovered = validateBackupData(backupData(active), cube);
   await saveSolves(recovered);
   const byId = new Map(recovered.map(solve => [solve.id, solve]));
   return solves.map(solve => byId.get(solve.id) ?? solve);
@@ -124,7 +124,8 @@ const text = (s: string, max = 1000): boolean => typeof s === 'string' && s.leng
 
 // Compact tuples retain the raw data without repeating field names per sample.
 type BackupTurn = [move: string, elapsed: number, hostTime: number, localTimestamp: number | null, cubeTimestamp: number | null, serial?: number];
-type BackupSolve = Omit<Solve, 'moves'> & { moves: BackupTurn[] };
+type BackupSolve = Omit<Solve, 'moves' | 'analysis' | 'cfop'> & { moves: BackupTurn[] };
+export type BackupEnvelope = { format: string; solves: { id: string }[] };
 
 function unpackSolve(solve: BackupSolve): Solve {
   if (!solve || typeof solve !== 'object' || !Array.isArray(solve.moves)) throw new Error('Invalid solve record in backup.');
@@ -138,10 +139,11 @@ function unpackSolve(solve: BackupSolve): Solve {
   };
 }
 
-export function validateBackup(json: string, cube: Cube): Solve[] {
-  const backup = JSON.parse(json) as { format: 'timer-v1'; solves: Solve[] } | { format: 'timer-v2'; solves: BackupSolve[] };
+export const validateBackup = (json: string, cube: Cube): Solve[] => validateBackupData(JSON.parse(json) as BackupEnvelope, cube);
+export function validateBackupData(value: BackupEnvelope, cube: Cube): Solve[] {
+  const backup = value as { format: 'timer-v1'; solves: Solve[] } | { format: 'timer-v2'; solves: BackupSolve[] };
   if (!backup || typeof backup !== 'object' || !['timer-v1', 'timer-v2'].includes(backup.format) || !Array.isArray(backup.solves)) throw new Error('Not a Timer JSON backup.');
-  const solves = backup.format === 'timer-v2' ? backup.solves.map(unpackSolve) : backup.solves;
+  const solves = backup.format === 'timer-v2' ? backup.solves.map(unpackSolve) : backup.solves.map(solve => ({ ...solve }));
   const ids = new Set<string>();
   const transformations = new Map<string, KTransformation>();
   const apply = (pattern: KPattern, algorithm: string): KPattern => {
@@ -174,12 +176,8 @@ export function validateBackup(json: string, cube: Cube): Solve[] {
     if (reasons.some(reason => !['over-turn', 'inspection', 'manual'].includes(reason)) || new Set(reasons).size !== reasons.length ||
         reasons.length * 2000 !== (solve.penalty ?? 0)) throw new Error('Invalid solve record in backup.');
     ids.add(solve.id);
-    if (solve.analysis && !validAnalysis(solve)) delete solve.analysis;
-    if (solve.cfop && (solve.cfop.version !== 1 || typeof solve.cfop.key !== 'string' ||
-      (solve.cfop.cross !== null && (!Number.isInteger(solve.cfop.cross) || solve.cfop.cross < 0 || solve.cfop.cross > 5)) ||
-      !Array.isArray(solve.cfop.ends) || solve.cfop.ends.length > 7 || solve.cfop.ends.some((end, i, ends) => !Number.isInteger(end) || end < (ends[i - 1] ?? 0) || end > solve.moves.length) ||
-      !Array.isArray(solve.cfop.cases) || solve.cfop.cases.length !== solve.cfop.ends.length || solve.cfop.cases.some(name => !text(name, 200)) ||
-      !Array.isArray(solve.cfop.pairs) || solve.cfop.pairs.some(pair => pair !== null && (!Number.isInteger(pair) || pair < 0 || pair > 7)))) delete solve.cfop;
+    // Older backups may contain caches; derive them lazily from the preserved recording/source.
+    delete solve.analysis; delete solve.cfop;
     if (solve.imported) {
       if (!validImported(solve)) throw new Error('Invalid imported solve record in backup.');
       if (!solve.moves.length) return { ...solve };
@@ -204,14 +202,16 @@ export function validateBackup(json: string, cube: Cube): Solve[] {
   });
 }
 
-export const backupJSON = (solves: Solve[]): string => JSON.stringify({
+export const backupData = (solves: Solve[]) => ({
   format: 'timer-v2',
-  solves: solves.map(({ version, appVersion, id, session, createdAt, device, scramble, startFacelets, duration, inspection, penalty, penaltyReason, dnfReason, status, reason, timingBasis, moves, imported, crossOverride, analysis, cfop }): BackupSolve => ({
-    version, appVersion, id, session, createdAt, device, scramble, startFacelets, duration, inspection, penalty, penaltyReason, dnfReason, status, reason, timingBasis, imported, crossOverride, analysis, cfop,
+  solves: solves.map(({ version, appVersion, id, session, createdAt, device, scramble, startFacelets, duration, inspection, penalty, penaltyReason, dnfReason, status, reason, timingBasis, moves, imported, crossOverride }): BackupSolve => ({
+    version, appVersion, id, session, createdAt, device, scramble, startFacelets, duration, inspection, penalty, penaltyReason, dnfReason, status, reason, timingBasis, imported, crossOverride,
     moves: moves.map(({ move, elapsed, hostTime, localTimestamp, cubeTimestamp, serial }): BackupTurn =>
       serial === undefined ? [move, elapsed, hostTime, localTimestamp, cubeTimestamp] : [move, elapsed, hostTime, localTimestamp, cubeTimestamp, serial]),
   })),
 });
+export const backupJSON = (solves: Solve[], settings?: Record<string, string | null | undefined>): string =>
+  JSON.stringify({ ...backupData(solves), ...(settings === undefined ? {} : { settings }) });
 // Ignore sub-nanosecond rounding noise in rolling sums.
 const improves = (time: number, best: number | null): boolean => best === null || time < best - 1e-6;
 const averageValue = (solve: Solve): number => solve.status === 'complete' ? solveTime(solve) : Infinity;

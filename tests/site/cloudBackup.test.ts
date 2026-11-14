@@ -2,6 +2,8 @@
 import type { Solve } from '../../timer/src/Core/engine';
 import { backupNow, cloudState, configureCloud, connectCloud, decodeCloudBackup, dedupeById, encodeCloudBackup, noteCloudSolve, restoreNow } from '../../src/cloud/backup';
 import { CloudHttpError, readRemote, writeRemote } from '../../src/cloud/providers';
+import { excludedSettings, userSettings } from '../fixtures/userSettings';
+import { settingKeys, validateSettings, type Settings } from '../../src/cloud/backupSettings';
 
 jest.mock('../../src/cloud/providers', () => ({
   ...jest.requireActual('../../src/cloud/providers'),
@@ -15,15 +17,15 @@ jest.mock('../../src/cloud/providers', () => ({
 }));
 const mockRead = jest.fn<Promise<Solve[]>, []>();
 const mockSave = jest.fn<Promise<void>, [Solve[]]>();
-const mockValidate = jest.fn((json: string) => {
-  const data = JSON.parse(json) as { format: string; solves: Solve[] };
+const mockValidate = jest.fn((data: { format: string; solves: Solve[] }) => {
   if (data.format !== 'timer-v2' || data.solves.some(solve => !solve.id || solve.duration < 0)) throw new Error('Invalid timer backup');
   return data.solves;
 });
 jest.mock('../../timer/src/Data/storage', () => ({
   readSolves: () => mockRead(), saveSolves: (solves: Solve[]) => mockSave(solves),
   backupJSON: (solves: Solve[]) => JSON.stringify({ format: 'timer-v2', solves }),
-  validateBackup: (json: string) => mockValidate(json),
+  backupData: (solves: Solve[]) => ({ format: 'timer-v2', solves }),
+  validateBackupData: (data: { format: string; solves: Solve[] }) => mockValidate(data),
 }));
 jest.mock('../../timer/src/Core/puzzle', () => ({ loadCube: async () => ({}) }));
 const values = new Map<string, string>();
@@ -204,4 +206,71 @@ test('repeated restore operations remain idempotent and preserve unique IDs', as
   expect(await restoreNow()).toBe(true);
   expect(mockSave.mock.calls[1][0].map(solve => solve.id)).toEqual(['local', 'shared', 'cloud']);
   expect(() => dedupeById([{ id: '' }])).toThrow('Invalid solve ID');
+});
+test('compressed cloud backup preserves every inventoried setting, training record and empty session without credentials', async () => {
+  Object.entries({ ...userSettings, ...excludedSettings }).forEach(([key, value]) => localStorage.setItem(key, value!));
+  expect(await backupNow()).toBe(true);
+  const content = jest.mocked(writeRemote).mock.calls[0][1], decoded = await decodeCloudBackup(content);
+  expect(decoded.settings).toMatchObject(userSettings);
+  expect(decoded.solves).toEqual([local, same]);
+  Object.keys(excludedSettings).forEach(key => expect(decoded.settings).not.toHaveProperty(key));
+  // Restore onto a different browser that has its own solve: cloud records win matching IDs only.
+  values.clear(); localStorage.setItem('oauth-access-token', 'keep-local-token');
+  mockRead.mockResolvedValue([cloud]);
+  jest.mocked(readRemote).mockResolvedValue({ id: 'file', revision: 'etag', content });
+  expect(await restoreNow()).toBe(true);
+  expect(mockSave).toHaveBeenLastCalledWith([cloud, local, same]);
+  Object.entries(userSettings).forEach(([key, value]) => expect(localStorage.getItem(key)).toBe(value));
+  expect(localStorage.getItem('oauth-access-token')).toBe('keep-local-token');
+});
+test.each([
+  ['timer-session-scramblers', '{"Empty":"evil"}'],
+  ['timer-last-cube-mac', 'not-a-mac'],
+  ['timer-sessions', '[{"name":"bad"}]'],
+  ['recent-solve-limit', '-1'],
+  ['cuberplus-trainer-settings-v1', '{"caseNames":"false"}'],
+  ['cuberplus-trainer-custom-v1', '[{"id":"x","name":"Empty","cases":[]}]'],
+  ['cuberplus-trainer-practice-v1', '[{"id":"x","date":"bad","trainingId":"t","caseKey":"PLL-T","recognitionMilliseconds":-1,"executionMilliseconds":5}]'],
+  ['cuberplus-trainer-blitz-v1', '[{"id":"x","kind":"PLL","date":"2026-11-13","milliseconds":1,"splits":[{"caseId":"T","milliseconds":-1}]}]'],
+  ['cuberplus-my-cubes-v1', '[{"id":"cube","mac":123}]'],
+  ['cuberplus-custom-algorithms', '{"PLL-T":[123]}'],
+])('untrusted %s content is rejected before cloud restore or upload modifies anything', async (key, value) => {
+  jest.mocked(readRemote).mockResolvedValue(await remote([cloud], { [key]: value }));
+  localStorage.setItem('theme', 'dark');
+  expect(await restoreNow()).toBe(false);
+  expect(localStorage.getItem('theme')).toBe('dark');
+  expect(mockSave).not.toHaveBeenCalled();
+  expect(await backupNow()).toBe(false);
+  expect(writeRemote).not.toHaveBeenCalled();
+});
+test('null settings reset all new categories while absent legacy fields preserve local data', async () => {
+  Object.entries(userSettings).forEach(([key, value]) => localStorage.setItem(key, value!));
+  const nulls = Object.fromEntries(settingKeys.filter(key => key !== 'recent-solve-limit').map(key => [key, null]));
+  jest.mocked(readRemote).mockResolvedValue(await remote([], nulls));
+  expect(await restoreNow()).toBe(true);
+  for (const key of Object.keys(nulls)) expect(localStorage.getItem(key)).toBeNull();
+  expect(localStorage.getItem('recent-solve-limit')).toBe('2500');
+});
+test('imported unknown storage keys and prototype payloads are never restored or re-uploaded', async () => {
+  const injected = JSON.parse('{"__proto__":{"theme":"light"},"msal.token":"do-not-copy"}') as Settings;
+  expect(validateSettings(injected)).toEqual({});
+  jest.mocked(readRemote).mockResolvedValue(await remote([cloud], injected));
+  localStorage.setItem('theme', 'dark');
+  expect(await restoreNow()).toBe(true);
+  expect(localStorage.getItem('theme')).toBe('dark');
+  expect(localStorage.getItem('msal.token')).toBeNull();
+  expect(await backupNow()).toBe(true);
+  const decoded = await decodeCloudBackup(jest.mocked(writeRemote).mock.calls[0][1]);
+  expect(Object.hasOwn(decoded.settings, '__proto__')).toBe(false);
+  expect(decoded.settings).not.toHaveProperty('msal.token');
+});
+test('legacy minimal trainer settings and records are retained without forcing new defaults', async () => {
+  const legacy = {
+    'cuberplus-trainer-settings-v1': '{}',
+    'timer-hide-distracting-visuals': 'true',
+    'cuberplus-trainer-blitz-v1': '[{"id":"legacy","kind":"OLL","date":"2026-01-01","milliseconds":10,"splits":[{"caseId":"21","milliseconds":10,"auf":"U"}],"settings":{"upcomingCases":true,"caseNames":false,"crossColor":"Yellow","frontColor":"Green"}}]',
+  };
+  jest.mocked(readRemote).mockResolvedValue(await remote([cloud], legacy));
+  expect(await restoreNow()).toBe(true);
+  Object.entries(legacy).forEach(([key, value]) => expect(localStorage.getItem(key)).toBe(value));
 });

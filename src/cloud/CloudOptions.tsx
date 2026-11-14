@@ -12,7 +12,7 @@ export function CloudOptions() {
   const state = useCloud();
   useEffect(() => { void initializeCloud(); }, []);
   return <section className="settings-section" aria-labelledby="cloud-heading">
-    <h3 id="cloud-heading" className="d-flex align-items-center">Cloud backup<InfoTip>Back up solves and move recordings, settings, sessions, custom algorithms, favorites, and Unlearn selections to your own cloud storage.</InfoTip></h3>
+    <h3 id="cloud-heading" className="d-flex align-items-center">Cloud backup<InfoTip>Back up solves and move recordings, settings, empty sessions and their scramble generators, Blitz and practice history, custom trainings, saved cubes and the last Bluetooth MAC address, custom algorithms, favorites, and Unlearn selections to your own cloud storage. Timer JSON exports include the same user settings and training data; CSV exports contain solves only. Sign-in credentials, cloud provider and sync progress, and daily notification suppression are excluded. Analysis caches are rebuilt when needed.</InfoTip></h3>
     <div className="settings-fields mb-3">
     <label className="backup-provider">Backup provider
       <select className="form-select mt-2" value={state.provider} disabled={state.busy}

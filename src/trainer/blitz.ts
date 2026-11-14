@@ -55,16 +55,14 @@ export function readBlitzSettings(): BlitzSettings {
   try {
     const saved = JSON.parse(localStorage.getItem(BLITZ_SETTINGS_STORAGE) ?? '{}') as Partial<BlitzSettings> | null;
     if (!saved) return { ...defaultBlitzSettings };
-    const settings: BlitzSettings = {
-      upcomingCases: typeof saved.upcomingCases === 'boolean' ? saved.upcomingCases : true,
-      caseNames: typeof saved.caseNames === 'boolean' ? saved.caseNames : true,
-      solutionAlgorithms: typeof saved.solutionAlgorithms === 'boolean' ? saved.solutionAlgorithms : true,
-      randomPreAuf: typeof saved.randomPreAuf === 'boolean' ? saved.randomPreAuf : true,
-      randomPostAuf: typeof saved.randomPostAuf === 'boolean' ? saved.randomPostAuf : true,
-      hidePLL: typeof saved.hidePLL === 'boolean' ? saved.hidePLL : false,
-      crossColor: saved.crossColor && [...cubeColors, 'Random'].includes(saved.crossColor) ? saved.crossColor : 'Yellow',
-      frontColor: saved.frontColor && [...cubeColors, 'Random'].includes(saved.frontColor) ? saved.frontColor : 'Green',
-    };
+    const settings = { ...defaultBlitzSettings };
+    for (const key of ['upcomingCases', 'caseNames', 'solutionAlgorithms', 'randomPreAuf', 'randomPostAuf', 'hidePLL'] as const) {
+      if (typeof saved[key] === 'boolean') settings[key] = saved[key];
+    }
+    for (const key of ['crossColor', 'frontColor'] as const) {
+      const color = saved[key];
+      if (color && [...cubeColors, 'Random'].includes(color)) settings[key] = color;
+    }
     if (settings.crossColor !== 'Random' && settings.frontColor !== 'Random' && !adjacentColors(settings.crossColor, settings.frontColor)) {
       settings.crossColor = 'Yellow'; settings.frontColor = 'Green';
     }

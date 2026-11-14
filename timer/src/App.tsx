@@ -7,7 +7,9 @@ import { PageOptionsButton } from '../../shared/Components/PageOptionsButton';
 import { TimerEngine, inspectionPenalty, solveTime, type Solve } from './Core/engine';
 import { inverse, loadCube, movesOf, simplifyMoves, SOLVED, type Cube } from './Core/puzzle';
 import { readSessionScramblers, SESSION_SCRAMBLERS, sessionScramble, type Scrambler } from './Core/scramblers';
-import { averageDetails, backupJSON, cubeastCSV, dailyStreak, deleteSolve, formatTime, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, recoverLocalSolves, saveSolves, sessionStats, solveEndDate, turns, updateSession, validateBackup } from './Data/storage';
+import { averageDetails, cubeastCSV, dailyStreak, deleteSolve, formatTime, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, recoverLocalSolves, saveSolves, sessionStats, solveEndDate, turns, updateSession } from './Data/storage';
+import { userBackupJSON, validateUserBackup } from '../../src/cloud/userBackup';
+import { restoreSettings } from '../../src/cloud/backupSettings';
 import { AverageDetails } from './Components/AverageDetails';
 import { CubeView } from './Components/CubeView';
 import { Replay } from './Components/Replay';
@@ -82,7 +84,7 @@ export default function App() {
   });
   const [retrying, setRetrying] = useState(false);
   const session = retrying ? 'Retries' : selectedSession;
-  const sessionScramblers = useRef(readSessionScramblers());
+  const [initialScramblers] = useState(readSessionScramblers), sessionScramblers = useRef(initialScramblers);
   const [historyPage, setHistoryPage] = useState(0);
   const [changingSession, setChangingSession] = useState(false);
   const sessionChange = useRef(false);
@@ -515,13 +517,15 @@ export default function App() {
   async function importBackup(file?: File) {
     if (!file || !cube) return;
     try {
-      const solves = validateBackup(await file.text(), cube);
+      const { solves, settings } = validateUserBackup(await file.text(), cube);
+      if (Object.keys(settings).length && engine.current?.active) throw new Error('Finish or stop your current Timer solve before restoring settings.');
       await writes.current;
-      await saveSolves(solves);
+      await restoreSettings(settings, () => saveSolves(solves));
       solves.forEach(solve => deletedSolves.current.delete(solve.id));
       recordChecks.current.forEach(check => clearTimeout(check.timeout)); recordChecks.current.clear(); setCelebrations([]);
       updateHistory((await readSolves()).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
       setStorage('Saved locally'); setError('');
+      if (Object.keys(settings).length) location.reload();
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Import failed.'); }
   }
 
@@ -529,7 +533,7 @@ export default function App() {
     if (!cube) return;
     const active = engine.current?.active;
     const solves = active && !deletedSolves.current.has(active.id) ? [active, ...historyRef.current.filter(solve => solve.id !== active.id)] : historyRef.current;
-    const url = URL.createObjectURL(new Blob([format === 'csv' ? cubeastCSV(solves, cube) : backupJSON(solves)], { type: format === 'csv' ? 'text/csv;charset=utf-8' : 'application/json' }));
+    const url = URL.createObjectURL(new Blob([format === 'csv' ? cubeastCSV(solves, cube) : userBackupJSON(solves)], { type: format === 'csv' ? 'text/csv;charset=utf-8' : 'application/json' }));
     const link = document.createElement('a');
     link.href = url; link.download = `timer-${new Date().toISOString().slice(0, 10)}.${format}`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -557,7 +561,7 @@ export default function App() {
       if (left === null || right === null) return left === right ? a.number - b.number : left === null ? 1 : -1;
       return (left - right) * (historySort.direction === 'ascending' ? 1 : -1) || a.number - b.number;
     });
-  }, [sessionHistory, history, allSessions, historySort, solveLimit]);
+  }, [sessionHistory, historySort, solveLimit]);
   useEffect(() => setHistoryPage(0), [session, allSessions, historySort, solveLimit]);
   const page = Math.min(historyPage, Math.max(0, Math.ceil(historyRows.length / 100) - 1));
   const historyTable = useMemo(() => <div className="table-responsive" role="region" aria-label="Scrollable solve history" tabIndex={0}><table className="table align-middle history-table" aria-label="Solve history">
@@ -568,12 +572,13 @@ export default function App() {
     </th>)}<th scope="col">Date</th></tr></thead>
     <tbody>{historyRows.slice(page * 100, (page + 1) * 100).map(({ solve, number }) => {
       const count = turns(solve), tps = solve.duration > 0 ? count * 1000 / solve.duration : null;
+      const time = formatTime(solveTime(solve), precision), rate = tps === null ? '--' : tps.toFixed(2), date = relativeTime(solve.createdAt, historyNow);
       return <tr key={solve.id}>
       <td><button className="history-cell" aria-label={`Solve ${number}: open replay`} onClick={() => setReplay(solve)}>{number}</button></td>
-      <td><button className="history-cell history-time" aria-label={`Solve ${number}: ${formatTime(solveTime(solve), precision)}s, open replay`} onClick={() => setReplay(solve)}>{formatTime(solveTime(solve), precision)}s<SolvePenalty solve={solve} /></button></td>
+      <td><button className="history-cell history-time" aria-label={`Solve ${number}: ${time}s, open replay`} onClick={() => setReplay(solve)}>{time}s<SolvePenalty solve={solve} /></button></td>
       <td><button className="history-cell" aria-label={`Solve ${number}: ${count} turns, open replay`} onClick={() => setReplay(solve)}>{count}</button></td>
-      <td><button className="history-cell" aria-label={`Solve ${number}: ${tps === null ? '--' : tps.toFixed(2)} TPS, open replay`} onClick={() => setReplay(solve)}>{tps === null ? '--' : tps.toFixed(2)}</button></td>
-      <td><button className="history-cell" aria-label={`Solve ${number}: ${relativeTime(solve.createdAt, historyNow)}, open replay`} onClick={() => setReplay(solve)}><time dateTime={solve.createdAt} title={new Date(solve.createdAt).toLocaleString()}>{relativeTime(solve.createdAt, historyNow)}</time></button></td>
+      <td><button className="history-cell" aria-label={`Solve ${number}: ${rate} TPS, open replay`} onClick={() => setReplay(solve)}>{rate}</button></td>
+      <td><button className="history-cell" aria-label={`Solve ${number}: ${date}, open replay`} onClick={() => setReplay(solve)}><time dateTime={solve.createdAt} title={new Date(solve.createdAt).toLocaleString()}>{date}</time></button></td>
     </tr>; })}</tbody>
   </table></div>, [historyRows, historySort, precision, page, historyNow]);
   const recovering = timer?.phase === 'recovering';

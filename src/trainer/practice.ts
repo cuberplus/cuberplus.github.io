@@ -13,6 +13,9 @@ export interface PracticeAttempt {
   recognitionMilliseconds: number; executionMilliseconds: number;
   dnf?: boolean;
 }
+interface PracticeCase extends AlgorithmCase {
+  preAuf: string; postAuf: string; solution: string; pattern: KPattern; colorFrame: string;
+}
 export function readTrainings(): CustomTraining[] {
   const saved = JSON.parse(localStorage.getItem(TRAININGS_STORAGE) ?? '[]') as CustomTraining[];
   if (!Array.isArray(saved) || saved.some(item => !item || typeof item.id !== 'string' || typeof item.name !== 'string' ||
@@ -30,7 +33,7 @@ export function saveAttempt(attempt: PracticeAttempt) {
   localStorage.setItem(PRACTICE_STORAGE, JSON.stringify([attempt, ...readAttempts().filter(item => item.id !== attempt.id)]));
 }
 export class Practice {
-  readonly queue: AlgorithmCase[] = [];
+  readonly queue: PracticeCase[] = [];
   phase: 'countdown' | 'running' | 'cancelled' = 'countdown';
   countdownAt: number;
   splitAt = 0;
@@ -56,7 +59,17 @@ export class Practice {
     this.fillQueue();
   }
   private fillQueue() {
-    while (this.queue.length < 4) this.queue.push(this.cases[Math.floor(this.random() * this.cases.length)]);
+    while (this.queue.length < 4) {
+      const entry = this.cases[Math.floor(this.random() * this.cases.length)];
+      const preAuf = this.settings.randomPreAuf !== false ? aufMoves[Math.floor(this.random() * 4)] : '';
+      const postAuf = this.settings.randomPostAuf !== false ? aufMoves[Math.floor(this.random() * 4)] : '';
+      const solution = [preAuf, this.algorithm ?? entry.algorithm, postAuf].filter(Boolean).join(' ');
+      const pattern = !this.algorithm && entry.setup
+        ? this.cube.solved().applyAlg(postAuf ? inverse(postAuf) : '').applyAlg(entry.setup).applyAlg(preAuf ? inverse(preAuf) : '')
+        : casePattern(this.cube, solution);
+      this.queue.push({ ...entry, preAuf, postAuf, solution, pattern,
+        colorFrame: this.frames[Math.floor(this.random() * this.frames.length)].colorFrame });
+    }
   }
   tick(now: number) {
     if (this.phase !== 'countdown' || now - this.countdownAt < 3000) return;
@@ -64,14 +77,10 @@ export class Practice {
   }
   private loadCase() {
     const entry = this.queue[0];
-    this.preAuf = this.settings.randomPreAuf !== false ? aufMoves[Math.floor(this.random() * 4)] : '';
-    this.postAuf = this.settings.randomPostAuf !== false ? aufMoves[Math.floor(this.random() * 4)] : '';
-    this.solution = [this.preAuf, this.algorithm ?? entry.algorithm, this.postAuf].filter(Boolean).join(' ');
-    this.initialPattern = this.pattern = !this.algorithm && entry.setup
-      ? this.cube.solved().applyAlg(this.postAuf ? inverse(this.postAuf) : '').applyAlg(entry.setup).applyAlg(this.preAuf ? inverse(this.preAuf) : '')
-      : casePattern(this.cube, this.solution);
+    this.preAuf = entry.preAuf; this.postAuf = entry.postAuf; this.solution = entry.solution;
+    this.initialPattern = this.pattern = entry.pattern;
     this.preservedPairs = [4, 5, 6, 7].filter(pair => this.pairSolved(this.pattern, pair));
-    this.colorFrame = this.frames[Math.floor(this.random() * this.frames.length)].colorFrame;
+    this.colorFrame = entry.colorFrame;
     this.moves = []; this.firstMoveAt = null;
   }
   private pairSolved(pattern: KPattern, corner: number) {

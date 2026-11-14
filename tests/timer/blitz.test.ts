@@ -257,6 +257,21 @@ test('gray-sticker preference defaults off, persists, and accepts older settings
   localStorage.setItem(BLITZ_STORAGE, JSON.stringify([{ ...run, settings: { ...run.settings, hidePLL: 'yes' } }]));
   expect(() => readBlitzRuns()).toThrow('Saved Blitz');
 });
+test('settings retain explicit boolean choices and default invalid fields independently', () => {
+  const choices = { upcomingCases: false, caseNames: false, solutionAlgorithms: false, randomPreAuf: false, randomPostAuf: false, hidePLL: true };
+  localStorage.setItem(BLITZ_SETTINGS_STORAGE, JSON.stringify({ ...choices, crossColor: 'Random', frontColor: 'Red' }));
+  expect(readBlitzSettings()).toEqual({ ...choices, crossColor: 'Random', frontColor: 'Red' });
+  localStorage.setItem(BLITZ_SETTINGS_STORAGE, JSON.stringify({ ...choices, upcomingCases: 0, solutionAlgorithms: null, randomPostAuf: 'false',
+    hidePLL: 1, crossColor: 'invalid', frontColor: 'Blue' }));
+  expect(readBlitzSettings()).toEqual({ ...defaultBlitzSettings, caseNames: false, randomPreAuf: false, frontColor: 'Blue' });
+  localStorage.setItem(BLITZ_SETTINGS_STORAGE, JSON.stringify({ ...choices, crossColor: 'White', frontColor: 'Yellow' }));
+  expect(readBlitzSettings()).toEqual({ ...choices, crossColor: 'Yellow', frontColor: 'Green' });
+});
+test.each(['null', '[]', 'false', '42', '"not settings"', '{'])('unusable settings %s fall back without overwriting storage', saved => {
+  localStorage.setItem(BLITZ_SETTINGS_STORAGE, saved);
+  expect(readBlitzSettings()).toEqual(defaultBlitzSettings);
+  expect(localStorage.getItem(BLITZ_SETTINGS_STORAGE)).toBe(saved);
+});
 test.each([
   { edges: [1, 0, 2, 3], corners: [0, 1, 2, 3] },
   { edges: [0, 0, 2, 3], corners: [0, 1, 2, 3] },

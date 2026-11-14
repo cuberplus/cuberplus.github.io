@@ -8,6 +8,7 @@ import { InfoTip } from '../../shared/Components/InfoTip';
 import { categories, type AlgorithmCase } from '../database/algorithms';
 import { getAlgorithms } from '../database/customAlgorithms';
 import CaseImage from '../database/CaseImage';
+import { DrillCaseImage } from './DrillCaseImage';
 import type { BlitzSettings } from './blitz';
 import { Practice, readAttempts, readTrainings, saveAttempt, TRAININGS_STORAGE, type CustomTraining, type PracticeAttempt } from './practice';
 import { caseKey, findTrainingCase } from './cases';
@@ -122,7 +123,9 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
           hidePLL={shown.category === 'OLL' && settings.hidePLL} />
         {settings.solutionAlgorithms !== false && <SolutionProgress cube={cube!} start={current!.initialPattern} pattern={current!.pattern} algorithm={current!.solution} />}
         {settings.upcomingCases && <div className="trainer-case-queue" aria-label="Upcoming 3 cases">
-          {current!.queue.slice(1, 4).map((item, index) => <div key={index}><p>Next {index + 1}</p><CaseImage category={item.category} id={item.id} />
+          {current!.queue.slice(1, 4).map((item, index) => <div key={index} data-pre-auf={item.preAuf} data-post-auf={item.postAuf} data-color-frame={item.colorFrame}>
+            <p>Next {index + 1}</p><DrillCaseImage cube={cube!} category={item.category} id={item.id} pattern={item.pattern}
+              colorFrame={item.colorFrame} hidePLL={item.category === 'OLL' && settings.hidePLL} />
             {settings.caseNames && <strong>{item.category} {item.id}</strong>}</div>)}
         </div>}
       </>}

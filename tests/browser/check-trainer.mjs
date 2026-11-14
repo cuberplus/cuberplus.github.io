@@ -303,7 +303,7 @@ try {
   await expect(page.locator('.trainer-practice[data-case="F2L-1"]')).toBeVisible({ timeout: 10000 });
   await expect(page.locator('.trainer-practice')).toHaveAttribute('data-pre-auf', '');
   await expect(page.locator('.trainer-practice')).toHaveAttribute('data-post-auf', '');
-  await expect(page.locator('.trainer-case-queue img')).toHaveCount(3);
+  await expect(page.locator('.trainer-case-queue').getByRole('img')).toHaveCount(3);
   const solution = page.getByRole('group', { name: 'Suggested solution', exact: true });
   await page.evaluate(async () => {
     const [{ algorithmMatcher }, { loadCube }, { cfopFrame }] = await Promise.all([
