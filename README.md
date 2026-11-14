@@ -41,9 +41,12 @@ npm run build
 npm run preview
 ```
 
-The build runs TypeScript and ESLint before writing `build/`. Preview serves
-that directory at `http://127.0.0.1:4173`. With preview running, browser checks
-use locally installed Microsoft Edge:
+The build typechecks and lints application code, shared modules, maintenance
+scripts, and Vite configuration before writing `build/`. Compiler and lint
+rules reject implicit returns, unused declarations, implicit dictionary-property
+access, unsafe types, and redundant assertions. Preview serves that directory at
+`http://127.0.0.1:4173`. With preview running, browser checks use locally installed
+Microsoft Edge:
 
 ```powershell
 npm run test:site
@@ -57,6 +60,20 @@ behavior, and load-time/solver performance budgets. Production declarations
 must not use `any` or `unknown`. Analyzer production lines must remain flat or
 shrinking; tests are exempt. See the root and Analyzer `AGENTS.md` files for
 contributor instructions.
+ESLint also caps classic cyclomatic complexity at 130 per function.
+
+Maintenance scripts run with Node's TypeScript support:
+
+```powershell
+node --experimental-strip-types scripts\capture-database.ts
+node --experimental-strip-types scripts\generate-case-images.ts
+node --experimental-strip-types scripts\update-alternatives.ts
+```
+
+`npm run test:tooling` checks the scripts, early theme bootstrap, and raw grid
+stylesheet delivery; it also runs as part of `npm test`. The grid stylesheet is
+read directly from the installed dependency and emitted without CSS minification,
+which preserves its cascade layers without maintaining a duplicate copy.
 
 ## Repository layout
 
@@ -96,8 +113,8 @@ Native recordings support playback, timeline seeking, individual moves,
 retries, reversible +2/DNF buttons, and deletion. Case buttons open a
 single-case algorithm modal instead of navigating away.
 The controls below mistakes can rerun analysis or override the cross color.
-Derived analysis, estimated mistake costs, and replay boundaries are cached and
-included in backups. Imported chart analysis reuses the supplied splits;
+Derived analysis, estimated mistake costs, and replay boundaries are cached
+locally and regenerated after restoring a backup. Imported chart analysis reuses the supplied splits;
 recorded replay boundaries are derived and saved when a replay is opened.
 
 History and raw move timings are saved in this browser's IndexedDB. Interrupted

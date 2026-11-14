@@ -203,11 +203,11 @@ export const algorithms: AlgorithmCase[] = [
 
 export function casePattern(cube: Cube, algorithm: string): KPattern {
   const transform = cube.puzzle.algToTransformation(algorithm);
-  const centers = transform.transformationData.CENTERS.permutation;
+  const centers = transform.transformationData['CENTERS'].permutation;
   // Start with calibrated centers, even when the algorithm ends in a rotated frame.
   const frame = ['', 'x', 'x2', "x'", 'z', "z'"].flatMap(tilt =>
     ['', 'y', 'y2', "y'"].map(yaw => cube.solved().applyAlg(`${tilt} ${yaw}`)))
-    .find(pattern => pattern.patternData.CENTERS.pieces.every((piece, i) => piece === centers[i]))!;
+    .find(pattern => pattern.patternData['CENTERS'].pieces.every((piece, i) => piece === centers[i]))!;
   return frame.applyTransformation(transform.invert());
 }
 

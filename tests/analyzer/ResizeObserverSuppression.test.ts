@@ -2,6 +2,7 @@
 import { describe, expect, test } from '@jest/globals';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { ScriptTarget, transpileModule } from 'typescript';
 
 /**
  * Chart.js and react-data-grid trip the browser's benign "ResizeObserver loop"
@@ -12,15 +13,15 @@ import { join } from 'path';
  * The suppression relies on stopImmediatePropagation, which only silences
  * listeners registered *after* ours. The dev overlay registers its listener as
  * the bundle loads, so a suppressor living in src/index.tsx is always too late.
- * It therefore has to sit in public/theme-init.js, which index.html loads ahead
+ * It therefore has to sit in /analyzer/theme-init.js, which index.html loads ahead
  * of the bundle. These tests guard both the behavior and that ordering, since
  * moving the listener "somewhere tidier" silently breaks it.
  */
 
-const PUBLIC_DIR = join(process.cwd(), "smartcubeanalyzer", "public");
-const themeInit = readFileSync(join(PUBLIC_DIR, 'theme-init.js'), 'utf8');
-const indexHtml = readFileSync(join(PUBLIC_DIR, '..', '..', 'index.html'), 'utf8');
-const indexTsx = readFileSync(join(PUBLIC_DIR, '..', '..', 'src', 'index.tsx'), 'utf8');
+const themeInit = transpileModule(readFileSync(join(process.cwd(), 'shared', 'config', 'theme-init.ts'), 'utf8'),
+    { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText;
+const indexHtml = readFileSync(join(process.cwd(), 'index.html'), 'utf8');
+const indexTsx = readFileSync(join(process.cwd(), 'src', 'index.tsx'), 'utf8');
 
 const RESIZE_OBSERVER_MESSAGES = [
     'ResizeObserver loop completed with undelivered notifications.',
@@ -28,7 +29,7 @@ const RESIZE_OBSERVER_MESSAGES = [
 ];
 
 /**
- * Runs public/theme-init.js the way the browser does, then dispatches an error
+ * Runs the compiled theme initializer, then dispatches an error
  * event and reports whether a listener registered afterwards (standing in for
  * the dev server's overlay) still saw it.
  */
@@ -75,6 +76,38 @@ describe('ResizeObserver warning suppression', () => {
         expect(document.documentElement.getAttribute('data-bs-theme')).toBe(theme === 'light' ? 'light' : 'dark');
         localStorage.clear();
     });
+
+    test.each(['', 'invalid', 'constructor', '__proto__'])('invalid theme %s falls back to Aurora', theme => {
+        localStorage.setItem('theme', theme);
+        new Function(themeInit).call(window);
+        expect(document.documentElement.getAttribute('data-theme')).toBe('aurora');
+        expect(document.documentElement.getAttribute('data-bs-theme')).toBe('dark');
+        localStorage.clear();
+    });
+
+    test('storage failure and absent metadata never block initialization', () => {
+        const getItem = jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
+        try {
+            new Function(themeInit).call(window);
+            expect(document.documentElement.getAttribute('data-theme')).toBe('aurora');
+        } finally { getItem.mockRestore(); }
+    });
+
+    test.each([
+        ['light', '#f3f6fa'], ['dark', '#10141e'], ['aurora', '#091e29'],
+        ['disco', '#20102e'], ['inferno', '#1c0c0a'], ['invalid', '#091e29'],
+    ])('sets the browser color for %s without leaking script variables', (theme, color) => {
+        const meta = document.createElement('meta');
+        meta.name = 'theme-color';
+        document.head.append(meta);
+        localStorage.setItem('theme', theme);
+        const globals = Object.getOwnPropertyNames(window);
+        try {
+            new Function(themeInit).call(window);
+            expect(meta.content).toBe(color);
+            expect(Object.getOwnPropertyNames(window)).toEqual(globals);
+        } finally { meta.remove(); localStorage.clear(); }
+    });
 });
 
 describe('suppression is registered early enough to work', () => {
@@ -87,9 +120,10 @@ describe('suppression is registered early enough to work', () => {
 
     test('index.html loads theme-init.js before the bundle', () => {
         expect(indexHtml).toContain('theme-init.js');
-        // CRA injects the bundle at the end of <body>, so the script has to be
-        // in the markup ahead of that closing tag to win the race.
-        expect(indexHtml.indexOf('theme-init.js')).toBeLessThan(indexHtml.indexOf('</body>'));
+        const tag = indexHtml.match(/<script[^>]*src="\/analyzer\/theme-init\.js"[^>]*>/)?.[0] ?? '';
+        expect(tag).not.toBe('');
+        expect(tag).not.toMatch(/\s(?:async|defer|type)(?=[\s=>])/);
+        expect(indexHtml.indexOf('theme-init.js')).toBeLessThan(indexHtml.indexOf('<script type="module"'));
         expect(indexHtml).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/);
     });
 });

@@ -1,6 +1,6 @@
 import React from "react";
 import Navigation, { PageVisible, SettingsContext, usePageDialog } from '@cuberplus/navigation';
-import { FileInputProps, FileInputState, MethodName, Solve, StepName } from "../Models/Types";
+import { FileInputState, MethodName, Solve, StepName } from "../Models/Types";
 import { dataTask } from '../../../shared/workers/dataClient';
 import type { DataTask } from '../../../shared/workers/dataTasks';
 import { FilterPanel } from "./FilterPanel";
@@ -12,8 +12,8 @@ import ReactGA from 'react-ga4';
 import { DEFAULT_SOLVE_LIMIT } from '../../../shared/Components/SolveLimit';
 import { InfoTip } from '../../../shared/Components/InfoTip';
 
-function ScopeSync({ limit, change }: { limit: number; change: (limit: number) => void }) {
-    React.useLayoutEffect(() => change(limit), [limit, change]);
+function ScopeSync({ limit, session, change }: { limit: number; session: string; change: (limit: number, session: string) => void }) {
+    React.useLayoutEffect(() => change(limit, session), [limit, session, change]);
     return null;
 }
 
@@ -32,7 +32,7 @@ function DataDialog({ dialog, children }: { dialog: React.RefObject<HTMLDialogEl
     </dialog>;
 }
 
-export class FileInput extends React.Component<FileInputProps, FileInputState> {
+export class FileInput extends React.Component<Record<string, never>, FileInputState> {
     static contextType = PageVisible;
     state: FileInputState = { solves: [], isParsing: false, currentMethod: MethodName.CFOP };
 
@@ -46,11 +46,19 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
     private preparedSolves?: Solve[];
     private solveLimit = DEFAULT_SOLVE_LIMIT;
     private sessions: string[] = [];
+    private sessionScope?: string;
     private changeSessions = (sessions: string[]) => { if (JSON.stringify(sessions) === JSON.stringify(this.sessions)) return; this.sessions = sessions; if (this.mounted && this.solveLimit && (this.state.isParsing || this.state.solves.length > this.solveLimit)) this.reload?.(); };
     private reload?: () => void;
-    private changeLimit = (limit: number) => { const previous = this.solveLimit; if (limit === previous) return; this.solveLimit = limit; if (this.mounted && previous && (!limit || limit > previous) && (this.state.isParsing || this.state.solves.length > previous)) this.reload?.(); };
+    private hasSession = (solves: Solve[]) => solves.some(solve => !this.sessionScope || (solve.session || 'Default') === this.sessionScope);
+    private changeScope = (limit: number, session: string) => {
+        const previous = this.solveLimit, changed = session !== this.sessionScope, detailLimit = changed ? limit : previous;
+        this.solveLimit = limit; this.sessionScope = session;
+        if (changed) this.sessions = session ? [session] : [];
+        if (!this.mounted) return;
+        if (changed && (this.state.isParsing || this.state.source?.startsWith('Demo:') || this.state.source === 'Shown solves' && !this.hasSession(this.state.solves))) this.showTimerData();
+        else if (detailLimit && (changed || !limit || limit > previous) && (this.state.isParsing || this.state.solves.length > detailLimit)) this.reload?.();
+    };
     private loadStarted = performance.getEntriesByName?.('analyzer-load-start').at(-1)?.startTime ?? performance.now();
-    private initialLoad = true;
     private pendingLog = false;
     private logReady = () => {
         if (!this.pendingLog || !this.mounted) return;
@@ -60,14 +68,10 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
         console.info(`[Analyzer] Loaded in ${duration.toFixed(1)} ms (${this.state.source ?? 'Shown solves'}, ${this.state.solves.length} solves)`);
     };
 
-    constructor(props: FileInputProps) {
-        super(props);
-        ReactGA.initialize('G-BHXNCQ3K0D');
-    }
-
     private removeSolve = (event: Event) => {
         const detail = (event as CustomEvent<string | string[]>).detail, ids = new Set(Array.isArray(detail) ? detail : [detail]);
-        this.setState(state => ({ solves: state.solves.filter(solve => !ids.has(solve.id) || (solve.source !== 'timer' && !solve.id.startsWith(`${solve.source}:`))) }));
+        this.setState(state => ({ solves: state.solves.filter(solve => !ids.has(solve.id) || (solve.source !== 'timer' && !solve.id.startsWith(`${solve.source}:`))) }),
+            () => { if (this.state.source === 'Shown solves' && !this.hasSession(this.state.solves)) this.showTimerData(); });
     };
     private refresh = (event?: Event) => {
         if (event instanceof CustomEvent && (event as CustomEvent<{ reanalyzed?: boolean }>).detail?.reanalyzed) this.setState({ savedAnalysisChanged: true });
@@ -75,12 +79,12 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
         const ids = await readSolveIds();
         if (this.mounted) this.setState({ unloadedCount: ids.filter(id => !this.loadedIds.has(id)).length });
     }).catch(() => {}); };
-    componentDidMount() { this.mounted = true; this.wasVisible = this.context !== false; window.addEventListener('timer-solve-deleted', this.removeSolve); window.addEventListener('timer-solves-changed', this.refresh); this.showTimerData(true); }
+    componentDidMount() { this.mounted = true; this.wasVisible = this.context !== false; window.addEventListener('timer-solve-deleted', this.removeSolve); window.addEventListener('timer-solves-changed', this.refresh); this.showTimerData(); }
     componentDidUpdate() { const visible = this.context !== false, entering = visible && !this.wasVisible; this.wasVisible = visible; if (entering) this.refresh(); }
     componentWillUnmount() { this.mounted = false; this.requestId++; this.tasks.forEach(cancel => cancel()); window.removeEventListener('timer-solve-deleted', this.removeSolve); window.removeEventListener('timer-solves-changed', this.refresh); }
     private async read(task: DataTask): Promise<Solve[]> {
         if (!this.mounted) throw new Error('Data loading cancelled.');
-        const { promise, cancel } = dataTask(task.type === 'parse' || task.type === 'local' ? { ...task, solveLimit: this.solveLimit, sessions: this.sessions } : task); this.tasks.add(cancel);
+        const { promise, cancel } = dataTask(task.type === 'parse' || task.type === 'local' ? { ...task, solveLimit: this.solveLimit, sessions: task.sessions ?? this.sessions } : task); this.tasks.add(cancel);
         try { const result = await promise; if (!('solves' in result)) throw new Error('Invalid analysis data.'); return result.solves; }
         finally { this.tasks.delete(cancel); }
     }
@@ -88,8 +92,8 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
     private async loadData(read: (requestId: number) => Promise<Solve[]>, source: string | (() => string) = 'Shown solves', prepared = true, report = true) {
         this.reload = () => { void this.loadData(read, source, prepared, false); };
         const requestId = ++this.requestId;
-        if (!this.initialLoad) this.loadStarted = performance.now();
-        this.initialLoad = false; this.pendingLog = false;
+        if (requestId > 1) this.loadStarted = performance.now();
+        this.pendingLog = false;
         this.tasks.forEach(cancel => cancel()); this.tasks.clear();
         this.dataDialogRef.current?.close();
         this.setState({ isParsing: true, loadError: undefined });
@@ -128,23 +132,23 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
     }
 
     showTestData(file?: string) {
+        this.sessions = [];
         void this.loadData(async requestId => {
             const csv = await GetDemoData(file, '/analyzer/');
             return requestId === this.requestId ? this.read({ type: 'parse', csv }) : [];
         }, `Demo: ${DEMO_DATASETS.find(dataset => dataset.file === file)?.name ?? 'Dev Solves'}`);
     }
 
-    showTimerData(auto = false) {
-        if (auto && (this.state.solves.length || this.state.isParsing)) return;
+    showTimerData() {
         let demo = false;
         void this.loadData(async requestId => {
             const solves = demo ? [] : await this.read({ type: 'local' });
             if (requestId !== this.requestId) return [];
-            if (solves.length) { this.loadedIds = new Set(solves.map(solve => solve.id)); this.setState({ unloadedCount: 0 }); return solves; }
-            if (!auto) throw new Error('No saved CuberPlus solves found. Import CSVs in Options or use Timer, then try again.');
+            if (this.hasSession(solves)) return solves;
+            const sessions = demo ? this.sessions : [];
             demo = true;
             const csv = await GetDemoData(undefined, '/analyzer/');
-            return requestId === this.requestId ? this.read({ type: 'parse', csv }) : [];
+            return requestId === this.requestId ? this.read({ type: 'parse', csv, sessions }) : [];
         }, () => demo ? 'Demo: Dev Solves' : 'Shown solves');
     }
 
@@ -175,9 +179,9 @@ export class FileInput extends React.Component<FileInputProps, FileInputState> {
                     </DataDialog>
                     {(!!this.state.unloadedCount || this.state.savedAnalysisChanged) && <Alert variant="warning">{this.state.savedAnalysisChanged ? 'Saved solve analysis has changed.' : `${this.state.unloadedCount} saved solves are not loaded.`} Your current data has been kept. <Button variant="outline-primary" disabled={this.state.isParsing} onClick={() => this.showTimerData()}>Reload all solves</Button></Alert>}
                     {this.state.loadError && <Alert variant="warning">{this.state.loadError}</Alert>}
-                    <SettingsContext.Consumer>{({ solveLimit, session, allSessions }) => <><ScopeSync limit={solveLimit} change={this.changeLimit} /><FilterPanel
+                    <SettingsContext.Consumer>{({ solveLimit, session, allSessions }) => <><ScopeSync limit={solveLimit} session={allSessions ? '' : session} change={this.changeScope} /><FilterPanel
                         ref={this.filterPanelRef}
-                        solves={this.state.solves} solveLimit={solveLimit} sessionScope={allSessions ? '' : session} onSessionsChange={this.changeSessions}
+                        solves={this.state.solves} solveLimit={solveLimit} sessionScope={this.state.source?.startsWith('Demo:') ? undefined : allSessions ? '' : session} onSessionsChange={this.changeSessions}
                         preparedSolves={this.preparedSolves}
                         suggestedMethod={this.state.suggestedMethod}
                         suggestedSessions={this.state.suggestedSessions}

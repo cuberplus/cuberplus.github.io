@@ -40,8 +40,8 @@ export function analyzeCFOP(solve: Solve, cube: Cube) {
     if (state.cross === null || !cross(state.cross)) return;
     const completed = layers[state.cross].pairs.filter(([corner, edge]) => solved('CORNERS', corner) && solved('EDGES', edge)).map(([corner]) => corner);
     const pairs = completed.length, fresh = completed.filter(corner => !state.seen.has(corner)), gained = pairs - state.pairs.length;
-    const top = [3, 4, 5, 0, 1, 2][state.cross], facelets = cube.facelets(state.pattern);
-    const done = [true, ...[1, 2, 3, 4].map(count => pairs >= count), pairs === 4 && [...facelets.slice(top * 9, top * 9 + 9)].every(face => face === 'URFDLB'[top]), cube.isSolved(state.pattern)];
+    const top = [3, 4, 5, 0, 1, 2][state.cross];
+    const done = [true, ...[1, 2, 3, 4].map(count => pairs >= count), pairs === 4 && [...cube.facelets(state.pattern).slice(top * 9, top * 9 + 9)].every(face => face === 'URFDLB'[top]), cube.isSolved(state.pattern)];
     while (state.ends.length < done.length && done[state.ends.length]) {
       if (state.ends.length > 0 && state.ends.length < 5) state.pairs.push(gained === 1 && fresh.length === 1 ? fresh[0] : null);
       state.cases.push(state.ends.length && end === state.ends.at(-1) ? 'Solved' :
@@ -51,7 +51,7 @@ export function analyzeCFOP(solve: Solve, cube: Cube) {
     completed.forEach(corner => state.seen.add(corner));
   };
   if (state.processed === 0) check(0);
-  while (state.processed < solve.moves.length) { state.pattern = state.pattern.applyMove(solve.moves[state.processed].move); check(++state.processed); }
+  while (state.processed < solve.moves.length) { state.pattern = cube.applyMove(state.pattern, solve.moves[state.processed].move); check(++state.processed); }
   const unfinished = solve.status === 'incomplete' && !(['manual', 'inspection'].includes(solve.dnfReason ?? '') && cube.isSolved(state.pattern));
   const result = { cross: state.cross, ends: unfinished ? state.ends.slice(0, 6) : [...state.ends], cases: unfinished ? state.cases.slice(0, 6) : [...state.cases], pairs: [...state.pairs] };
   return result;
@@ -60,7 +60,7 @@ export const f2lPair = (corner: number | null | undefined, cross: number | null)
   corner == null || cross === null ? '' : pairColors(corners[corner].filter(face => face !== cross));
 export function cfopRotation(cube: Cube, cross: number | null, first: number | null | undefined): string {
   const tilt = crossRotation(cross);
-  return `${tilt} ${first == null ? '' : ['', 'y', 'y2', "y'"].find(yaw => cube.solved().applyAlg(`${tilt} ${yaw}`).patternData.CORNERS.pieces[7] === first) ?? ''}`.trim();
+  return `${tilt} ${first == null ? '' : ['', 'y', 'y2', "y'"].find(yaw => cube.solved().applyAlg(`${tilt} ${yaw}`).patternData['CORNERS'].pieces[7] === first) ?? ''}`.trim();
 }
 export function elapsedAt(solve: Solve, end: number): number {
   const move = solve.moves[end - 1], first = solve.moves[0], span = (solve.moves.at(-1)?.cubeTimestamp ?? 0) - (first?.cubeTimestamp ?? 0);
@@ -73,6 +73,6 @@ export function cfopTiming(solve: Solve, ends: number[], step: number, elapsed =
   return { start, end, time, recognition, execution: time - recognition };
 }
 export function cfopFrame(cube: Cube, cross: number | string): (move: string) => string {
-  const centers = cube.solved().applyAlg(typeof cross === 'number' ? crossRotation(cross) : cross).patternData.CENTERS.pieces;
+  const centers = cube.solved().applyAlg(typeof cross === 'number' ? crossRotation(cross) : cross).patternData['CENTERS'].pieces;
   return move => 'ULFRBD'[centers.indexOf('ULFRBD'.indexOf(move[0]))] + move.slice(1);
 }

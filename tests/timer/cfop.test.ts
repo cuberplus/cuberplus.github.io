@@ -14,6 +14,15 @@ const EXTRACT = ["R U R'", "F U F'", "L U L'", "B U B'"];
 const scramble = [PLL, OLL, ...EXTRACT, 'D'].join(' ');
 const undo = (alg: string) => alg.split(/\s+/).reverse().map(inverse).join(' ');
 const solution = ['D', ...[...EXTRACT].reverse(), OLL, PLL].map(undo);
+test('cached move transformations match native moves and still reject invalid notation', () => {
+  const pattern = cube.solved().applyAlg("R U2 F'");
+  for (const move of [...'URFDLB'].flatMap(face => [face, `${face}2`, `${face}'`])) {
+    const expected = pattern.applyMove(move).patternData;
+    expect(cube.applyMove(pattern, move).patternData).toEqual(expected);
+    expect(cube.applyMove(pattern, move).patternData).toEqual(expected);
+  }
+  for (const move of ['R U', 'invalid', '']) expect(() => cube.applyMove(pattern, move)).toThrow();
+});
 test('cached first-pair identities follow changes to the supplied color labels', () => {
   const moves = solution.slice(0, 2).join(' ');
   const colors = ['White', 'Red', 'Green', 'Yellow', 'Orange', 'Blue'];

@@ -9,6 +9,7 @@ export default ts.config(
     files: ['**/*.{ts,tsx}'],
     languageOptions: { parserOptions: { project: './tsconfig.json', tsconfigRootDir: import.meta.dirname } },
     rules: {
+      complexity: ['error', { max: 130, variant: 'classic' }],
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-empty-object-type': 'error',
       '@typescript-eslint/no-unsafe-function-type': 'error',
@@ -18,6 +19,9 @@ export default ts.config(
       '@typescript-eslint/no-unsafe-call': 'error',
       '@typescript-eslint/no-unsafe-return': 'error',
       '@typescript-eslint/no-unsafe-argument': 'error',
+      '@typescript-eslint/no-unnecessary-type-assertion': 'error',
+      '@typescript-eslint/no-redundant-type-constituents': 'error',
+      '@typescript-eslint/no-duplicate-type-constituents': 'error',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       'no-restricted-syntax': ['error',
         { selector: 'TSUnknownKeyword', message: 'Declare the actual shape or use a constrained generic.' },

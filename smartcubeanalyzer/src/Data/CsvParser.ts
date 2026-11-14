@@ -1,8 +1,9 @@
 import { Const } from "../Models/Constants";
-import { GetEmptySolve } from "../Helpers/CubeHelpers";
+import { GetEmptySolve, sumStepTotals } from "../Helpers/CubeHelpers";
 import { Solve, CrossColor, MethodName, Step, StepName } from "../Models/Types";
 import { firstF2LPair } from '../../../shared/cube/f2l';
 import { COLORS } from '../../../scrambler/src/cube/cube';
+import { memoize } from '../Helpers/memoize';
 
 export const AUF_MOVES = new Set(['U', "U'", 'U2', "U2'", "U3", "U3'"]);
 export const ROTATIONS = new Set(['x', 'y', 'z'].flatMap(face => ['', "'", '2', "2'", '3', "3'"].map(suffix => face + suffix)));
@@ -111,6 +112,16 @@ export function effectiveCrossExecutionSec(
     return segmentExecutionSec;
 }
 
+function applyStepTiming(step: Step, moves: MoveTiming[], previousEnd: number | null, aufMoves = AUF_MOVES, crossFallback = 0): void {
+    const segments = computeStepSegments(moves, previousEnd, step.name, aufMoves);
+    step.recognitionTime = segments.recognition;
+    step.preAufTime = segments.preAuf;
+    step.postAufTime = segments.postAuf;
+    const execution = segments.preAuf + segments.coreExecution + segments.postAuf;
+    step.executionTime = step.name === StepName.Cross ? effectiveCrossExecutionSec(moves, execution, crossFallback) : execution;
+    step.time = step.recognitionTime + step.executionTime;
+}
+
 /** Splits a CSV line on `splitter`, ignoring separators inside [...] (e.g. case "[FL,BR]->FR 30"). */
 function splitCsvLine(line: string, splitterCode: number): string[] {
     const out: string[] = [];
@@ -139,20 +150,14 @@ export function tokenizeMoves(raw: string | undefined | null): string[] {
     return normalized ? normalized.split(/\s+/) : [];
 }
 
-const consolidatedMoves = new Map<string, string>();
-const consolidatedTokens = new Map<string, RegExpExecArray | null>();
+const consolidationToken = memoize((token: string) => /^([RLUDFBrludfbMES]w?)(2'?|'?)$/.exec(token));
 /** Merge sensor-split turns, but retain cancellations as evidence of actual undos. */
-export function consolidateMoves(raw: string): string {
-    const cached = consolidatedMoves.get(raw);
-    if (cached !== undefined) return cached;
-    if (!/([RLUDFBrludfbMES]w?)(?:2'?|')?\s+\1(?:2'?|')?(?=\s|$|")/.test(raw)) { consolidatedMoves.set(raw, raw); return raw; }
+export const consolidateMoves = memoize((raw: string): string => {
+    if (!/([RLUDFBrludfbMES]w?)(?:2'?|')?\s+\1(?:2'?|')?(?=\s|$|")/.test(raw)) return raw;
     const result: string[] = [];
     let previous: string[] | null = null;
     const amount = (suffix: string) => suffix.startsWith('2') ? 2 : suffix === "'" ? 3 : 1;
-    const tokens = tokenizeMoves(raw), parsed = tokens.map(token => {
-        if (!consolidatedTokens.has(token)) consolidatedTokens.set(token, /^([RLUDFBrludfbMES]w?)(2'?|'?)$/.exec(token));
-        return consolidatedTokens.get(token) ?? null;
-    });
+    const tokens = tokenizeMoves(raw), parsed = tokens.map(consolidationToken);
     const inverse = (left: number, right: number) => {
         const a = parsed[left], b = parsed[right];
         return a && b && a[1] === b[1] && (amount(a[2]) + amount(b[2])) % 4 === 0;
@@ -165,18 +170,12 @@ export function consolidateMoves(raw: string): string {
         else result.push(token);
         previous = total ? ['', move![1], ['', '', '2', "'"][total]] : previous?.[1] === move?.[1] ? null : move;
     }
-    const value = result.join(' ');
-    consolidatedMoves.set(raw, value);
-    return value;
-}
+    return result.join(' ');
+});
 
-const moveCounts = new Map<string | undefined | null, number>();
 /** Counts move tokens excluding cube rotations (x, y, z). Use for all turn counts. */
-export function countMovesExcludingRotations(movesString: string | undefined | null): number {
-    let count = moveCounts.get(movesString);
-    if (count === undefined) moveCounts.set(movesString, count = tokenizeMoves(movesString).filter(t => !ROTATIONS.has(t.toLowerCase())).length);
-    return count;
-}
+export const countMovesExcludingRotations = memoize((movesString: string | undefined | null): number =>
+    tokenizeMoves(movesString).filter(t => !ROTATIONS.has(t.toLowerCase())).length);
 
 function consolidateStep(step: Step): boolean {
     const moves = consolidateMoves(step.moves);
@@ -215,9 +214,9 @@ function parseCubeastCsv(stringVal: string, splitter: string, keepRecording: boo
         "id": (obj, value) => { obj.id = value; obj.rawSourceId = value; obj.source = 'cubeast'; },
         "time": (obj, value) => { obj.time = Number(value) / 1000; if (obj.time < 1) obj.isCorrupt = true; },
         "dnf": (obj, value) => { obj.dnf = value.toLowerCase() === 'true'; },
-        "one_turn_away_two_second_penalty": (obj, value, scratch) => { if (value.toLowerCase() === 'true') scratch.penaltyMs += 2000; },
-        "inspection_two_second_penalty": (obj, value, scratch) => { if (value.toLowerCase() === 'true') scratch.penaltyMs += 2000; },
-        "manual_two_second_penalty": (obj, value, scratch) => { if (value.toLowerCase() === 'true') scratch.penaltyMs += 2000; },
+        "one_turn_away_two_second_penalty": (_obj, value, scratch) => { if (value.toLowerCase() === 'true') scratch.penaltyMs += 2000; },
+        "inspection_two_second_penalty": (_obj, value, scratch) => { if (value.toLowerCase() === 'true') scratch.penaltyMs += 2000; },
+        "manual_two_second_penalty": (_obj, value, scratch) => { if (value.toLowerCase() === 'true') scratch.penaltyMs += 2000; },
         "date": (obj, value) => { obj.date = parseUtcDateTime(value); },
         "solve_end_date": (obj, value) => { if (value) obj.endDate = new Date(value); },
         "solution_rotation": (obj, value) => {
@@ -253,14 +252,14 @@ function parseCubeastCsv(stringVal: string, splitter: string, keepRecording: boo
         const stepIndex = +key[5];
         const stepKey = key.split("_").slice(2).join("_");
         if (stepKey === "recorded_moves") {
-            return (obj, value, scratch) => {
+            return (_obj, value, scratch) => {
                 if (keepRecording) scratch.recorded[stepIndex] = value;
                 const moveTimings = parseRecordedMoves(value);
                 if (moveTimings.length > 0) scratch.moves[stepIndex] = moveTimings;
             };
         }
         if (stepKey === "cumulative_time") {
-            return (obj, value, scratch) => {
+            return (_obj, value, scratch) => {
                 const sec = Number(value) / 1000;
                 if (Number.isFinite(sec) && sec >= 0) scratch.cumulativeSec[stepIndex] = sec;
             };
@@ -351,7 +350,6 @@ function parseCubeastCsv(stringVal: string, splitter: string, keepRecording: boo
 
         let prevEndTsMs: number | null = null;
         let normalized = false;
-        let recognitionTotal = 0, executionTotal = 0, preAufTotal = 0, postAufTotal = 0, turnsTotal = 0;
         for (let i = 0; i < obj.steps.length; i++) {
             const step = obj.steps[i];
             const moveTimings = scratch.moves[i];
@@ -361,15 +359,7 @@ function parseCubeastCsv(stringVal: string, splitter: string, keepRecording: boo
                 const crossExecFallback = !isCross ? 0
                     : step.executionTime > 0 ? step.executionTime
                     : Math.max(csvCumulativeSec, 0);
-                const seg = computeStepSegments(moveTimings, prevEndTsMs, step.name);
-                step.recognitionTime = seg.recognition;
-                step.preAufTime = seg.preAuf;
-                step.postAufTime = seg.postAuf;
-                const segmentExec = seg.preAuf + seg.coreExecution + seg.postAuf;
-                step.executionTime = isCross
-                    ? effectiveCrossExecutionSec(moveTimings, segmentExec, crossExecFallback)
-                    : segmentExec;
-                step.time = step.recognitionTime + step.executionTime;
+                applyStepTiming(step, moveTimings, prevEndTsMs, AUF_MOVES, crossExecFallback);
                 let moves = moveTimings[0].move;
                 for (let m = 1; m < moveTimings.length; m++) moves += " " + moveTimings[m].move;
                 step.moves = moves;
@@ -384,17 +374,8 @@ function parseCubeastCsv(stringVal: string, splitter: string, keepRecording: boo
                 }
             }
             normalized = consolidateStep(step) || normalized;
-            recognitionTotal += step.recognitionTime;
-            executionTotal += step.executionTime;
-            preAufTotal += step.preAufTime;
-            postAufTotal += step.postAufTime;
-            turnsTotal += step.turns;
         }
-        obj.recognitionTime = recognitionTotal;
-        obj.executionTime = executionTotal;
-        obj.preAufTime = preAufTotal;
-        obj.postAufTime = postAufTotal;
-        obj.turns = turnsTotal;
+        Object.assign(obj, sumStepTotals(obj.steps), { time: obj.time });
         if (normalized) obj.tps = obj.time > 0 ? obj.turns / obj.time : 0;
 
         obj.rawSource = obj.source;
@@ -431,17 +412,7 @@ function* csvRows(csv: string, separator: string): Generator<string[]> {
 
 function parseAcubemyCsv(stringVal: string, splitter: string, keepRecording: boolean): Solve[] {
 
-    type AcubemyStepDef = { index: number; name: StepName; movesField: string };
-
-    const ACUBEMY_STEP_DEFS: AcubemyStepDef[] = [
-        { index: 0, name: StepName.Cross, movesField: "cross_moves" },
-        { index: 1, name: StepName.F2L_1, movesField: "f2l_pair1_moves" },
-        { index: 2, name: StepName.F2L_2, movesField: "f2l_pair2_moves" },
-        { index: 3, name: StepName.F2L_3, movesField: "f2l_pair3_moves" },
-        { index: 4, name: StepName.F2L_4, movesField: "f2l_pair4_moves" },
-        { index: 5, name: StepName.OLL, movesField: "oll_moves" },
-        { index: 6, name: StepName.PLL, movesField: "pll_moves" },
-    ];
+    const stepMoveFields = ['cross_moves', ...[1, 2, 3, 4].map(pair => `f2l_pair${pair}_moves`), 'oll_moves', 'pll_moves'];
 
     const records = csvRows(stringVal.trim(), splitter);
     const header = records.next();
@@ -451,92 +422,30 @@ function parseAcubemyCsv(stringVal: string, splitter: string, keepRecording: boo
     const keyIndex: Record<string, number> = {};
     keys.forEach((key, i) => { if (!(key in keyIndex)) keyIndex[key] = i; });
 
-    /** Strips rotations from solution and move_times in parallel so lengths stay in sync. */
-    const stripRotationsFromSolutionAndTimes = (
-        solutionMovesRaw: string | undefined | null,
-        moveTimesRaw: string | undefined | null
-    ): { solutionNoRot: string; moveTimesNoRot: string } => {
-        const solutionTokens = tokenizeMoves(solutionMovesRaw);
-        const timeTokens = tokenizeMoves(moveTimesRaw).map(Number);
-        if (!solutionTokens.length || solutionTokens.length !== timeTokens.length) return { solutionNoRot: '', moveTimesNoRot: '' };
-        const keptMoves: string[] = [];
-        const keptTimes: number[] = [];
-        for (let i = 0; i < solutionTokens.length; i++) {
-            if (ROTATIONS.has(solutionTokens[i].toLowerCase())) continue;
-            keptMoves.push(solutionTokens[i]);
-            keptTimes.push(timeTokens[i]);
-        }
-        return { solutionNoRot: keptMoves.join(' '), moveTimesNoRot: keptTimes.join(' ') };
+    /** Pair moves and timestamps before stripping rotations so they cannot drift apart. */
+    const recordedTimeline = (solution: string, timestamps: string): MoveTiming[] => {
+        const moves = tokenizeMoves(solution), times = tokenizeMoves(timestamps);
+        return moves.length !== times.length ? [] : moves.flatMap((move, i) =>
+            ROTATIONS.has(move.toLowerCase()) ? [] : [{ move, timestamp: Number(times[i]) }]);
     };
 
-    type StepRange = { startIdx: number; endIdx: number };
-
-    /** solutionMovesRaw and moveTimesRaw must already have rotations stripped (use stripRotationsFromSolutionAndTimes). */
-    const recomputeAcubemyStepTimes = (
-        solve: Solve,
-        stepDefs: AcubemyStepDef[],
-        solutionMovesRaw: string | undefined | null,
-        moveTimesRaw: string | undefined | null,
-        aufMoves: Set<string> = AUF_MOVES,
-        crossCsvExecutionFallbackSec = 0
-    ) => {
-        const solutionTokens = tokenizeMoves(solutionMovesRaw);
-        const timeTokens = tokenizeMoves(moveTimesRaw).map(Number);
-        if (!solutionTokens.length || solutionTokens.length !== timeTokens.length) return;
-
-        const matchStepRange = (
-            stepMoves: string,
-            searchFrom: number
-        ): StepRange | null => {
-            const tokens = tokenizeMoves(stepMoves);
-            if (tokens.length === 0) return null;
-            for (let i = searchFrom; i <= solutionTokens.length - tokens.length; i++) {
-                if (tokens.every((token, offset) => solutionTokens[i + offset] === token))
-                    return { startIdx: i, endIdx: i + tokens.length - 1 };
-            }
-            return null;
-        };
-
-        const steps = solve.steps;
-        const stepRanges: (StepRange | null)[] = [];
-        let searchFrom = 0;
-        for (const def of stepDefs) {
-            const range = matchStepRange(steps[def.index].moves, searchFrom);
-            stepRanges[def.index] = range;
-            if (range) searchFrom = range.endIdx + 1;
-        }
-
-        let prevEndIdx: number | null = null;
-
-        for (const def of stepDefs) {
-            const s = steps[def.index];
-            const range = stepRanges[def.index];
-
-            if (!range) {
-                continue;
-            }
-
-            const moveTimings: MoveTiming[] = [];
-            for (let k = range.startIdx; k <= range.endIdx; k++) {
-                moveTimings.push({ move: solutionTokens[k], timestamp: timeTokens[k] });
-            }
-
-            const prevEndTsMs = prevEndIdx == null ? null : timeTokens[prevEndIdx];
-            const seg = computeStepSegments(moveTimings, prevEndTsMs, s.name, aufMoves);
-
-            s.recognitionTime = seg.recognition;
-            s.preAufTime = seg.preAuf;
-            s.postAufTime = seg.postAuf;
-            const segmentExec = seg.preAuf + seg.coreExecution + seg.postAuf;
-            s.executionTime = def.name === StepName.Cross
-                ? effectiveCrossExecutionSec(moveTimings, segmentExec, crossCsvExecutionFallbackSec) : segmentExec;
-            s.time = s.recognitionTime + s.executionTime;
-            s.tps = s.time > 0 ? s.turns / s.time : 0;
-            solve.recognitionTime += s.recognitionTime;
-            solve.executionTime += s.executionTime;
-            solve.preAufTime += s.preAufTime;
-            solve.postAufTime += s.postAufTime;
-            prevEndIdx = range.endIdx;
+    const recomputeStepTimes = (solve: Solve, timeline: MoveTiming[], crossFallback: number): void => {
+        const aufMoves = getAufMovesForSolve(solve);
+        let searchFrom = 0, previousEnd: number | null = null;
+        for (const step of solve.steps) {
+            const tokens = tokenizeMoves(step.moves);
+            if (!tokens.length) continue;
+            const start = timeline.findIndex((_, i) => i >= searchFrom && i <= timeline.length - tokens.length &&
+                tokens.every((token, offset) => timeline[i + offset].move === token));
+            if (start < 0) continue;
+            searchFrom = start + tokens.length;
+            applyStepTiming(step, timeline.slice(start, searchFrom), previousEnd, aufMoves, crossFallback);
+            step.tps = step.time > 0 ? step.turns / step.time : 0;
+            solve.recognitionTime += step.recognitionTime;
+            solve.executionTime += step.executionTime;
+            solve.preAufTime += step.preAufTime;
+            solve.postAufTime += step.postAufTime;
+            previousEnd = timeline[searchFrom - 1].timestamp;
         }
     };
 
@@ -592,12 +501,12 @@ function parseAcubemyCsv(stringVal: string, splitter: string, keepRecording: boo
 
         if (solve.method === MethodName.CFOP) {
             // Acubemy uses zero-based OLL IDs, with -1 for a skip.
-            solve.steps = ACUBEMY_STEP_DEFS.map(def => ({
-                ...steps[def.index], name: def.name, moves: stripRotationsFromMoveString(get(def.movesField)),
-                turns: countMovesExcludingRotations(get(def.movesField)),
-                case: def.name === StepName.OLL ? ollCaseRaw === '-1' ? 'Solved'
+            solve.steps = Const.MethodSteps[MethodName.CFOP].map((name, index) => ({
+                ...steps[index], name, moves: stripRotationsFromMoveString(get(stepMoveFields[index])),
+                turns: countMovesExcludingRotations(get(stepMoveFields[index])),
+                case: name === StepName.OLL ? ollCaseRaw === '-1' ? 'Solved'
                     : /^\d+$/.test(ollCaseRaw) && +ollCaseRaw < 57 ? String(+ollCaseRaw + 1) : ''
-                    : def.name === StepName.PLL ? pllCaseRaw === 'Unknown' ? 'Solved' : pllCaseRaw : '',
+                    : name === StepName.PLL ? pllCaseRaw === 'Unknown' ? 'Solved' : pllCaseRaw : '',
             }));
         } else {
             solve.steps = Const.MethodSteps[solve.method].map((name, i) => ({ ...steps[i], name }));
@@ -608,31 +517,13 @@ function parseAcubemyCsv(stringVal: string, splitter: string, keepRecording: boo
         if (keepRecording) solve.recording = get("raw_solution") && get("raw_timestamps")
             ? { solution: get("raw_solution"), timestamps: get("raw_timestamps") }
             : { solution: solutionMovesRaw, timestamps: moveTimesRaw };
-        const { solutionNoRot, moveTimesNoRot } = stripRotationsFromSolutionAndTimes(solutionMovesRaw, moveTimesRaw);
+        const timeline = recordedTimeline(solutionMovesRaw, moveTimesRaw);
 
-        solve.turns = countMovesExcludingRotations(solutionNoRot || solutionMovesRaw);
+        solve.turns = timeline.length || countMovesExcludingRotations(solutionMovesRaw);
         solve.tps = solve.time > 0 ? solve.turns / solve.time : 0;
 
-        const crossExecMs = getNumber("cross_execution_time");
-        const crossTimeMs = getNumber("cross_time");
-        const crossCsvExecutionFallbackSec =
-            crossExecMs > 0
-                ? crossExecMs / 1000
-                : crossTimeMs > 0
-                  ? crossTimeMs / 1000
-                  : 0;
-
-        if (solve.method === MethodName.CFOP && solutionNoRot && moveTimesNoRot) {
-            const solveAufMoves = getAufMovesForSolve(solve);
-            recomputeAcubemyStepTimes(
-                solve,
-                ACUBEMY_STEP_DEFS,
-                solutionNoRot,
-                moveTimesNoRot,
-                solveAufMoves,
-                crossCsvExecutionFallbackSec
-            );
-        }
+        const crossMs = [getNumber("cross_execution_time"), getNumber("cross_time")].find(time => time > 0) ?? 0;
+        if (solve.method === MethodName.CFOP && timeline.length) recomputeStepTimes(solve, timeline, crossMs / 1000);
 
         return solve;
     });

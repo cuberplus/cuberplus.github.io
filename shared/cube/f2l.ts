@@ -27,6 +27,7 @@ export function completedF2LCross(scramble: string, solution: string, preferred 
     const cross = [preferred, 3, 0, 1, 2, 4, 5].find(face => face >= 0 && layers[face].edges.every(edge => edges[edge / 2] === edge) && layers[face].corners.every(corner => corners[corner / 3] === corner));
     if (cross !== undefined) return cross;
   }
+  return undefined;
 }
 
 // Eliminate viewing rotations so imported recordings can be checked in their calibrated frame.
@@ -75,4 +76,5 @@ function findFirstF2LPair(scramble: string, solution: string, cross: number, col
       }
     }
   } catch { /* Missing or non-fixed-frame recordings have no reliable pair identity. */ }
+  return undefined;
 }

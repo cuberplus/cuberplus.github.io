@@ -4,7 +4,7 @@ import { jest } from '@jest/globals';
 import { TimerEngine, setPenalty, type Solve } from '../../timer/src/Core/engine';
 import { parseCsv } from '../../smartcubeanalyzer/src/Data/CsvParser';
 import { Cube, inverse, loadCube, SOLVED } from '../../timer/src/Core/puzzle';
-import { average, averageDetails, backupJSON, cubeastCSV, dailyStreak, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, recoverLocalSolves, saveSolves, sessionStats, turns, updateSession, validateBackup } from '../../timer/src/Data/storage';
+import { average, averageDetails, backupJSON, cubeastCSV, dailyStreak, newPersonalBests, numberedSolves, personalBestNotifications, readSolveIds, readSolves, recoverLocalSolves, saveSolves, sessionStats, turns, updateSession, validateBackup } from '../../timer/src/Data/storage';
 import { readTimerData } from '../../timer/src/Analysis/analyzer-data';
 import { APP_VERSION } from '@cuberplus/navigation';
 
@@ -17,6 +17,31 @@ function sample(): Solve {
   ['R', 'U2', 'U2', "R'"].forEach((move, i) => timer.turn({ move, hostTime: i * 100, localTimestamp: i * 100, cubeTimestamp: null }));
   return timer.result!;
 }
+test('a synchronous write failure rolls back the entire batch', async () => {
+  const previous = indexedDB;
+  globalThis.indexedDB = new IDBFactory();
+  try {
+    const seed = sample();
+    const invalid = { ...seed, id: 'invalid', uncloneable: () => {} };
+    await expect(saveSolves([seed, invalid])).rejects.toThrow();
+    expect(await readSolves()).toEqual([]);
+    await saveSolves([seed]);
+    expect(await readSolveIds()).toEqual([seed.id]);
+  } finally { globalThis.indexedDB = previous; }
+});
+test('reading IDs waits for the read transaction to commit', async () => {
+  const previous = indexedDB, getAllKeys = IDBObjectStore.prototype.getAllKeys;
+  globalThis.indexedDB = new IDBFactory();
+  try {
+    await saveSolves([sample()]);
+    jest.spyOn(IDBObjectStore.prototype, 'getAllKeys').mockImplementationOnce(function(this: IDBObjectStore) {
+      const request = getAllKeys.call(this);
+      request.addEventListener('success', () => this.transaction.abort());
+      return request;
+    });
+    await expect(readSolveIds()).rejects.toThrow('Cannot read local solve IDs.');
+  } finally { jest.restoreAllMocks(); globalThis.indexedDB = previous; }
+});
 test('session rename and deletion persist every matching solve without changing other sessions or solve data', async () => {
   const previous = indexedDB;
   globalThis.indexedDB = new IDBFactory();

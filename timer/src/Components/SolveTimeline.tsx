@@ -26,7 +26,7 @@ export function SolveTimeline({ cube, solve, history, elapsed, precision, open, 
         i < ends.length ? cfopTiming(item, ends, i).time / 1000 : undefined);
     });
     return CFOP_STEPS.map((_, i) => {
-      const values = timings.flatMap(row => row[i] !== undefined && Number.isFinite(row[i]) ? [row[i]!] : []);
+      const values = timings.flatMap(row => row[i] !== undefined && Number.isFinite(row[i]) ? [row[i]] : []);
       return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined;
     });
   }, [cube, history, solve.id, solve.createdAt, solve.status, compact, cfop]);

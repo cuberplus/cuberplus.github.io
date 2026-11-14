@@ -1,4 +1,4 @@
-import { KPattern, type KPatternData, type KPuzzle } from 'cubing/kpuzzle';
+import { KPattern, type KPatternData, type KPuzzle, type KTransformation } from 'cubing/kpuzzle';
 import { puzzles } from 'cubing/puzzles';
 import { randomScrambleForEvent } from 'cubing/scramble';
 import { experimentalSolve3x3x3IgnoringCenters } from 'cubing/search';
@@ -47,8 +47,14 @@ function parity(pieces: number[]): number {
 }
 
 export class Cube {
+  private moves = new Map<string, KTransformation>();
   constructor(readonly puzzle: KPuzzle) {}
   solved(): KPattern { return this.puzzle.defaultPattern(); }
+  applyMove(pattern: KPattern, move: string): KPattern {
+    let transformation = this.moves.get(move);
+    if (!transformation) this.moves.set(move, transformation = this.puzzle.moveToTransformation(move));
+    return pattern.applyTransformation(transformation);
+  }
   facelets(pattern: KPattern): string {
     const stickers = SOLVED.split('');
     for (const orbit of ['EDGES', 'CORNERS'] as const) {
@@ -87,7 +93,7 @@ export class Cube {
       if (new Set(data[orbit].pieces).size !== locations[orbit].length ||
           data[orbit].orientation.reduce((a, b) => a + b, 0) % size) throw new Error('Invalid cube orientation.');
     }
-    if (parity(data.EDGES.pieces) !== parity(data.CORNERS.pieces)) throw new Error('Invalid cube parity.');
+    if (parity(data['EDGES'].pieces) !== parity(data['CORNERS'].pieces)) throw new Error('Invalid cube parity.');
     return new KPattern(this.puzzle, data);
   }
   equals(a: KPattern, b: KPattern): boolean { return this.facelets(a) === this.facelets(b); }

@@ -2,6 +2,7 @@ import { calculateMovingAverage, calculateMovingStdDev } from '../Helpers/MathHe
 import { analyzeMoveMistakes, coreMovesCount, MoveMistake, typicalCaseMoves } from './MoveAnalysis';
 import { consolidateMoves, getAufMovesForSolve, tokenizeMoves } from '../Data/CsvParser';
 import { Solve, StepName } from '../Models/Types';
+import { memoize } from '../Helpers/memoize';
 
 const CASE_MOVES_RULE = 'More than 2 extra core moves versus your typical count for this case and method (5+ examples required). AUF excluded.';
 export const MISTAKES = {
@@ -50,15 +51,12 @@ const LAST_LAYER = new Set([StepName.OLL, StepName.PLL, StepName.EOLL, StepName.
 type MoveFacts = { core: number; issues: MoveMistake[] };
 const moveFactsCache = new Map<string, Map<string, MoveFacts>>();
 const multiply = Math.imul;
-const moveHashes = new Map<string, number>();
 let latest: { context: string; reasons: Pick<Solve, 'mistakes' | 'isMistake'>[] } | undefined;
-function moveHash(moves: string): number {
-    let hash = moveHashes.get(moves);
-    if (hash !== undefined) return hash;
-    hash = 2166136261;
+const moveHash = memoize((moves: string): number => {
+    let hash = 2166136261;
     for (let i = 0; i < moves.length; i++) hash = multiply(hash ^ moves.charCodeAt(i), 16777619);
-    moveHashes.set(moves, hash); return hash;
-}
+    return hash;
+});
 function moveFacts(moves: string, auf: Set<string>): MoveFacts {
     const face = String(auf.values().next().value);
     let cache = moveFactsCache.get(face);

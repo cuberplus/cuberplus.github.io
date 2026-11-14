@@ -94,7 +94,7 @@ export class Practice {
     this.firstMoveAt ??= now;
     this.pattern = this.pattern.applyMove(move); this.moves.push(move);
     const entry = this.queue[0], pattern = normalized(this.cube, this.pattern, '');
-    const cross = [4, 5, 6, 7].every(i => pattern.patternData.EDGES.pieces[i] === i && !pattern.patternData.EDGES.orientation[i]);
+    const cross = [4, 5, 6, 7].every(i => pattern.patternData['EDGES'].pieces[i] === i && !pattern.patternData['EDGES'].orientation[i]);
     const pairs = [4, 5, 6, 7].every(pair => this.pairSolved(pattern, pair));
     const done = entry.category === 'PLL' ? this.cube.isSolved(pattern) :
       entry.category === 'OLL' ? cross && pairs && this.cube.facelets(pattern).slice(0, 9) === 'UUUUUUUUU' :

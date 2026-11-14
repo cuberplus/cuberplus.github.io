@@ -105,26 +105,28 @@ export interface Filters {
     sources: Solve['source'][]
 }
 
-export interface Step {
+export interface StepTotals {
     time: number,
     executionTime: number,
     recognitionTime: number,
     preAufTime: number,
     postAufTime: number,
     turns: number,
+}
+
+export interface Step extends StepTotals {
     tps: number,
     moves: string,
     case: string,
     name: StepName
 }
 
-export interface Solve {
+export interface Solve extends StepTotals {
     id: string,
     source: 'cubeast' | 'acubemy' | 'timer',
     rawSourceId?: string,
     rawSource?: string,
     recording?: { solution: string; timestamps?: string },
-    time: number,
     date: Date,
     dnf?: boolean,
     crossColor: CrossColor,
@@ -134,11 +136,6 @@ export interface Solve {
     tps: number,
     // `null` means the source/CSV didn't report inspection time (e.g. Acubemy exports).
     inspectionTime: number | null,
-    recognitionTime: number,
-    executionTime: number,
-    preAufTime: number,
-    postAufTime: number,
-    turns: number,
     steps: Step[],
     isCorrupt: boolean,
     method: MethodName,
@@ -170,7 +167,15 @@ export interface FilterPanelProps {
     onReady?: () => void
 }
 
-export interface FilterPanelState {
+export interface ChartSettings {
+    windowSize: number;
+    pointsPerGraph: number;
+    badTime: number;
+    goodTime: number;
+    use4SegmentTiming: boolean;
+}
+
+export interface FilterPanelState extends ChartSettings {
     allSolves: Solve[], recordSolves: Solve[],
     filteredSolves: Solve[],
     compressedSolves: Solve[],
@@ -180,31 +185,17 @@ export interface FilterPanelState {
     lastAppliedSolveLimit: number, lastAppliedSession?: string, sessionOverride?: boolean,
     filters: Filters,
 
-    // Objects required for filter objects to work
+    // Keep click order for the picker while analysis steps follow method order.
     chosenSteps: Option<StepName>[],
-    chosenColors: Option[],
-    chosenPLLs: Option[],
-    chosenOLLs: Option[],
-    chosenSessions: Option[],
-    solveCleanliness: Option[],
-    solveLuckiness: Option[],
-    chosenSources: Option[],
     tabKey: number,
     autoWindowSize: boolean,
     autoBenchmarks: boolean,
-    windowSize: number,
-    pointsPerGraph: number,
     showFilters: boolean,
-    badTime: number,
-    goodTime: number,
     method: Option<MethodName>,
     useLogScale: boolean,
-    use4SegmentTiming: boolean,
     chopAverages: boolean,
     chopPercentage: number
 }
-
-export type FileInputProps = Record<string, never>;
 
 export interface FileInputState {
     csvFileNames?: string,
@@ -221,16 +212,11 @@ export interface FileInputState {
     source?: string
 }
 
-export interface ChartPanelProps {
-    windowSize: number,
-    pointsPerGraph: number,
+export interface ChartPanelProps extends ChartSettings {
     solves: Solve[], recordSolves?: Solve[],
-    badTime: number,
-    goodTime: number,
     methodName: MethodName,
     steps: StepName[],
     useLogScale: boolean,
-    use4SegmentTiming: boolean,
     chopAverages?: boolean,
     chopPercentage?: number,
     onReady?: () => void

@@ -33,11 +33,46 @@ const historyColumns = [
 ] as const;
 type HistoryColumn = typeof historyColumns[number]['key'];
 type HiddenVisuals = { timer: boolean; cube: boolean; progressBar: boolean };
+const hiddenVisualOptions = [['timer', 'Timer'], ['cube', 'Cube'], ['progressBar', 'Progress bar']] as const;
 
 function SolvePenalty({ solve }: { solve: Solve | null | undefined }) {
   if (solve?.status === 'incomplete') return <>{' '}<span className="badge text-bg-danger solve-penalty">DNF</span></>;
   if (solve?.status === 'complete' && solve.penalty) return <>{' '}<span className="badge text-bg-warning solve-penalty">+{solve.penalty / 1000}</span></>;
   return null;
+}
+
+function ScrambleInstructions({ timer, preparing, busy, refresh, abort }: {
+  timer: TimerEngine | null; preparing: boolean; busy: boolean; refresh: () => void; abort: () => void;
+}) {
+  const recovering = timer?.phase === 'recovering', solving = timer?.phase === 'solving';
+  const setupCount = timer && !recovering ? timer.instructions.length - timer.scramble.trim().split(/\s+/).length : 0;
+  const returning = recovering || (timer?.phase === 'scrambling' && timer.progress < setupCount);
+  const displayedMoves = returning && timer ? timer.instructions.slice(0, recovering ? undefined : setupCount) : timer?.scramble && !preparing ? timer.scramble.split(/\s+/) : [];
+  const displayedOffset = returning ? 0 : setupCount;
+  const correctionMoves = timer?.phase === 'scrambling' || recovering ? timer.recovery : [];
+  const currentMoveClass = timer?.isPartialTurn ? 'current partial' : 'current';
+  const scrambleMoves = timer ? displayedMoves.flatMap((move, i) => correctionMoves.length && !timer.completed[i + displayedOffset] ? [] :
+    [<span key={i} className={`move ${timer.completed[i + displayedOffset] ? 'done' : !correctionMoves.length && i + displayedOffset === timer.progress ? currentMoveClass : timer.isPartialMove(i + displayedOffset) ? 'partial' : ''}`} title={timer.isPartialMove(i + displayedOffset) ? 'Partially complete' : undefined}>{move}</span>]) : [];
+  return <>
+    {recovering && <p className="small text-secondary mb-2">Return the cube to solved</p>}
+    {returning && !recovering && <p className="small text-secondary mb-2">First solve the current cube</p>}
+    <div className={`scramble mb-3${solving ? ' scramble-solving' : ''}`} aria-label="Scramble">
+      <div className="scramble-content" aria-hidden={solving}>{timer && displayedMoves.length ? <span role="group" aria-label={returning ? 'Path to solved' : 'Original scramble'}>{scrambleMoves.slice(0, -2)}<span className="scramble-tail">{scrambleMoves.slice(-2)}</span></span>
+        : !timer || timer.phase === 'disconnected' ? <span className="text-secondary">Connect a cube to generate a scramble.</span> : null}
+      {correctionMoves.length > 0 && !preparing && <span role="group" aria-label="Correction moves">{correctionMoves.map((move, i) =>
+        <span key={i} className={`move correction ${i === 0 ? 'current' : ''}`}>{move}</span>)}</span>}
+      </div>
+      {solving && <div className="scramble-placeholder text-secondary">
+        <span role="status">Scrambles hidden while solving</span>
+        <button className="btn btn-sm btn-outline-warning" onClick={abort}>Abort solve</button>
+      </div>}
+      <button className={`btn btn-sm btn-outline-secondary scramble-refresh${solving ? ' invisible' : ''}`} aria-label="New scramble" title="New scramble" aria-hidden={solving} disabled={busy || !timer || !['scrambling', 'ready', 'finished'].includes(timer.phase)} onClick={refresh}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+          <path d="M20 6v5h-5M20 11a8 8 0 1 0-2.3 6.7" />
+        </svg>
+      </button>
+    </div>
+  </>;
 }
 
 export default function App() {
@@ -77,9 +112,9 @@ export default function App() {
   }, [allSessions]);
   const [hiddenVisuals, setHiddenVisuals] = useState<HiddenVisuals>(() => {
     try {
-      const value = JSON.parse(localStorage.getItem('timer-hide-distracting-visuals') ?? 'false') as Partial<HiddenVisuals> | boolean | null;
-      const hidden = typeof value === 'object' && value !== null ? value : {};
-      return { timer: value === true || hidden.timer === true, cube: value === true || hidden.cube === true, progressBar: value === true || hidden.progressBar === true };
+      const hidden = JSON.parse(localStorage.getItem('timer-hide-distracting-visuals') ?? 'false') as Partial<HiddenVisuals> | boolean | null;
+      if (typeof hidden !== 'object' || hidden === null) return { timer: hidden === true, cube: hidden === true, progressBar: hidden === true };
+      return { timer: hidden.timer === true, cube: hidden.cube === true, progressBar: hidden.progressBar === true };
     } catch { return { timer: false, cube: false, progressBar: false }; }
   });
   const [retrying, setRetrying] = useState(false);
@@ -249,6 +284,7 @@ export default function App() {
           if (!candidate.previous.some(item => item.id === copy.id && item.status !== 'active')) {
             void writes.current.then(() => {
               if (!failedSaves.current.has(copy.id) && !deletedSolves.current.has(copy.id)) return noteCloudSolve(candidate.solve, personalBests);
+              return undefined;
             });
           }
           const records = notificationRecords(personalBests);
@@ -463,10 +499,11 @@ export default function App() {
   }
 
   function startDemo() { engine.current?.connect('Simulated 3x3'); setDemo(true); calibrate(); }
-  function changeInspection(value: boolean) {
-    setInspection(value);
-    if (engine.current) engine.current.inspectionPenaltyEnabled = value;
-    try { localStorage.setItem('timer-inspection', String(value)); }
+  function changePenalty(kind: 'inspection' | 'over-turn-penalty', value: boolean) {
+    const [update, field] = kind === 'inspection' ? [setInspection, 'inspectionPenaltyEnabled'] as const : [setOverTurnPenalty, 'overTurnPenaltyEnabled'] as const;
+    update(value);
+    if (engine.current) engine.current[field] = value;
+    try { localStorage.setItem(`timer-${kind}`, String(value)); }
     catch { setError('Penalty preference changed, but this browser could not save the preference.'); }
   }
   function changeSolve(solve: Solve) {
@@ -485,12 +522,6 @@ export default function App() {
     if (timer.phase === 'disconnected') timer.message = 'Connect your cube to retry this scramble.';
     else if (['recovery', 'recovering'].includes(timer.phase)) void resynchronize();
     else void prepareScramble();
-  }
-  function changeOverTurnPenalty(value: boolean) {
-    setOverTurnPenalty(value);
-    if (engine.current) engine.current.overTurnPenaltyEnabled = value;
-    try { localStorage.setItem('timer-over-turn-penalty', String(value)); }
-    catch { setError('Penalty preference changed, but this browser could not save the preference.'); }
   }
   function changeHiddenVisuals(value: HiddenVisuals) { setHiddenVisuals(value); try { localStorage.setItem('timer-hide-distracting-visuals', JSON.stringify(value)); } catch { setError('Visual preference changed, but this browser could not save the preference.'); } }
   function changeLongPbNotifications(value: boolean) {
@@ -581,20 +612,9 @@ export default function App() {
       <td><button className="history-cell" aria-label={`Solve ${number}: ${date}, open replay`} onClick={() => setReplay(solve)}><time dateTime={solve.createdAt} title={new Date(solve.createdAt).toLocaleString()}>{date}</time></button></td>
     </tr>; })}</tbody>
   </table></div>, [historyRows, historySort, precision, page, historyNow]);
-  const recovering = timer?.phase === 'recovering';
-  const setupCount = timer && !recovering ? timer.instructions.length - timer.scramble.trim().split(/\s+/).length : 0;
-  const returning = recovering || (timer?.phase === 'scrambling' && timer.progress < setupCount);
-  const displayedMoves = returning && timer ? timer.instructions.slice(0, recovering ? undefined : setupCount) : timer?.scramble && !preparing.current ? timer.scramble.split(/\s+/) : [];
-  const displayedOffset = returning ? 0 : setupCount;
-  const correctionMoves = timer?.phase === 'scrambling' || recovering ? timer.recovery : [];
-  const showCorrections = correctionMoves.length > 0 && !preparing.current;
   const solving = timer?.phase === 'solving';
   const hideTimer = solving && hiddenVisuals.timer, hideCube = solving && hiddenVisuals.cube, hideProgressBar = solving && hiddenVisuals.progressBar;
-  const allVisualsHidden = hiddenVisuals.timer && hiddenVisuals.cube && hiddenVisuals.progressBar;
-  const someVisualsHidden = hiddenVisuals.timer || hiddenVisuals.cube || hiddenVisuals.progressBar;
-  const currentMoveClass = timer?.isPartialTurn ? 'current partial' : 'current';
-  const scrambleMoves = timer ? displayedMoves.flatMap((move, i) => correctionMoves.length && !timer.completed[i + displayedOffset] ? [] :
-    [<span key={i} className={`move ${timer.completed[i + displayedOffset] ? 'done' : !correctionMoves.length && i + displayedOffset === timer.progress ? currentMoveClass : timer.isPartialMove(i + displayedOffset) ? 'partial' : ''}`} title={timer.isPartialMove(i + displayedOffset) ? 'Partially complete' : undefined}>{move}</span>]) : [];
+  const allVisualsHidden = Object.values(hiddenVisuals).every(Boolean), someVisualsHidden = Object.values(hiddenVisuals).some(Boolean);
   const connected = timer && timer.phase !== 'disconnected';
   useEffect(() => { if (connected) setupDialog.current?.close(); }, [connected]);
   const canConnect = !!cube && !busy && !connecting && !sharedCube.connecting && !connected && !!navigator.bluetooth && window.isSecureContext;
@@ -633,10 +653,10 @@ export default function App() {
         <h2 id="options-title" className="mb-0">Options</h2>
         <button className="btn-close" aria-label="Close options" onClick={() => optionsDialog.current?.close()} />
       </div>
-      <SessionPicker value={session} sessions={sessions} disabled={!historyReady || changingSession || timer?.phase === 'solving' || !!retry.current} change={selectSession} create={createSession} manage={manageSession} />
-      <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="inspection-help" checked={inspection} disabled={timer?.phase === 'solving'} onChange={event => changeInspection(event.target.checked)} /><span className="form-check-label">15-second inspection</span></label>
+      <SessionPicker value={session} sessions={sessions} disabled={!historyReady || changingSession || solving || !!retry.current} change={selectSession} create={createSession} manage={manageSession} />
+      <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="inspection-help" checked={inspection} disabled={solving} onChange={event => changePenalty('inspection', event.target.checked)} /><span className="form-check-label">15-second inspection</span></label>
         <InfoTip id="inspection-help">Count up after scrambling. Starting at 15 seconds adds +2; starting at 17 seconds or later is DNF. +2 penalties stack.</InfoTip></div>
-      <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="over-turn-penalty-help" checked={overTurnPenalty} onChange={event => changeOverTurnPenalty(event.target.checked)} /><span className="form-check-label">Extra-turn +2 penalty</span></label>
+      <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="over-turn-penalty-help" checked={overTurnPenalty} onChange={event => changePenalty('over-turn-penalty', event.target.checked)} /><span className="form-check-label">Extra-turn +2 penalty</span></label>
         <InfoTip id="over-turn-penalty-help">Apply +2 for an extra turn within 0.5 seconds after finishing.</InfoTip></div>
       <FavoriteOptions cube={cube} history={history} />
       <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="long-pb-notifications-help" checked={showEveryLongPb} onChange={event => changeLongPbNotifications(event.target.checked)} /><span className="form-check-label">Notify for every Ao100/Ao1000 PB</span></label>
@@ -649,9 +669,7 @@ export default function App() {
         </summary>
         <fieldset className="mt-3 ms-3">
           <legend className="visually-hidden">Visuals hidden while solving</legend>
-          <label className="form-check"><input type="checkbox" className="form-check-input" checked={hiddenVisuals.timer} onChange={event => changeHiddenVisuals({ ...hiddenVisuals, timer: event.target.checked })} /><span className="form-check-label">Timer</span></label>
-          <label className="form-check"><input type="checkbox" className="form-check-input" checked={hiddenVisuals.cube} onChange={event => changeHiddenVisuals({ ...hiddenVisuals, cube: event.target.checked })} /><span className="form-check-label">Cube</span></label>
-          <label className="form-check"><input type="checkbox" className="form-check-input" checked={hiddenVisuals.progressBar} onChange={event => changeHiddenVisuals({ ...hiddenVisuals, progressBar: event.target.checked })} /><span className="form-check-label">Progress bar</span></label>
+          {hiddenVisualOptions.map(([key, label]) => <label key={key} className="form-check"><input type="checkbox" className="form-check-input" checked={hiddenVisuals[key]} onChange={event => changeHiddenVisuals({ ...hiddenVisuals, [key]: event.target.checked })} /><span className="form-check-label">{label}</span></label>)}
         </fieldset>
       </details>
       {(error.startsWith('Visual preference changed') || error.startsWith('Penalty preference changed') || error.startsWith('PB notification preference changed')) && <p role="alert" className="text-warning mt-3 mb-0">{error}</p>}
@@ -663,24 +681,9 @@ export default function App() {
     <section className={`panel timer-panel ${!connected ? 'timer-disconnected ' : ''}${timer?.phase === 'ready' ? 'ready' : ''}`}>
       {retry.current && <p className="small text-secondary" role="status">Retry will be saved in Retries, then return to {retry.current.previousSession || 'Default'}.{' '}
         <button className="btn btn-sm btn-outline-secondary" disabled={busy || solving || resynchronizing.current} onClick={() => { finishRetry(); if (timer?.phase === 'disconnected') timer.message = 'Connect your cube to begin.'; else void prepareScramble(); }}>Cancel retry</button></p>}
-      {recovering && <p className="small text-secondary mb-2">Return the cube to solved</p>}
-      {returning && !recovering && <p className="small text-secondary mb-2">First solve the current cube</p>}
-      <div className={`scramble mb-3${solving ? ' scramble-solving' : ''}`} aria-label="Scramble">
-        <div className="scramble-content" aria-hidden={solving}>{timer && displayedMoves.length ? <span role="group" aria-label={returning ? 'Path to solved' : 'Original scramble'}>{scrambleMoves.slice(0, -2)}<span className="scramble-tail">{scrambleMoves.slice(-2)}</span></span>
-          : !connected ? <span className="text-secondary">Connect a cube to generate a scramble.</span> : null}
-        {showCorrections && <span role="group" aria-label="Correction moves">{correctionMoves.map((move, i) =>
-          <span key={i} className={`move correction ${i === 0 ? 'current' : ''}`}>{move}</span>)}</span>}
-        </div>
-        {solving && <div className="scramble-placeholder text-secondary">
-          <span role="status">Scrambles hidden while solving</span>
-          <button className="btn btn-sm btn-outline-warning" onClick={() => { timer?.fail('Solve aborted by user.', true, 'solve aborted'); void prepareScramble(true); }}>Abort solve</button>
-        </div>}
-        <button className={`btn btn-sm btn-outline-secondary scramble-refresh${solving ? ' invisible' : ''}`} aria-label="New scramble" title="New scramble" aria-hidden={solving} disabled={busy || !timer || !['scrambling', 'ready', 'finished'].includes(timer.phase)} onClick={() => { finishRetry(); void prepareScramble(); }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-            <path d="M20 6v5h-5M20 11a8 8 0 1 0-2.3 6.7" />
-          </svg>
-        </button>
-      </div>
+      <ScrambleInstructions timer={timer} preparing={preparing.current} busy={busy}
+        refresh={() => { finishRetry(); void prepareScramble(); }}
+        abort={() => { timer?.fail('Solve aborted by user.', true, 'solve aborted'); void prepareScramble(true); }} />
       <div className={`row g-3 align-items-center timer-hero${hideCube ? ' timer-hero--no-cube' : ''}`}><div className={hideCube ? 'col-12' : 'col-lg-7'}>
       {hideTimer ? <div className="solving-indicator" role="status" aria-label="Solving">
         <span>Solving</span><span className="solving-dots" aria-hidden="true"><span>...</span></span>
@@ -720,7 +723,7 @@ export default function App() {
             {(['current', 'best'] as const).map(kind => <td key={kind}>{stat[kind] === null ? '--' :
               <button className="stat-link" aria-label={`View ${kind} ${stat.name}`} onClick={() => stat.name === 'Single'
                 ? setReplay(recordHistory.find(solve => (solve.status === 'complete' ? solveTime(solve) : 'DNF') === stat[kind]) ?? null)
-                : setAverage(averageDetails(recordHistory, Number(stat.name.slice(2)), kind === 'best'))}>{stat[kind] === 'DNF' ? 'DNF' : formatTime(stat[kind] as number, precision)}</button>}
+                : setAverage(averageDetails(recordHistory, Number(stat.name.slice(2)), kind === 'best'))}>{stat[kind] === 'DNF' ? 'DNF' : formatTime(stat[kind], precision)}</button>}
               {kind === 'current' && <MetricTrend current={stat.current} previous={previousStatistics[index].current} />}
             </td>)}
           </tr>)}</tbody>
@@ -745,7 +748,7 @@ export default function App() {
       </div><div className="d-flex gap-2">
         <button className="btn btn-outline-secondary" onClick={() => exportHistory('csv')}>Export CSV</button>
         <button hidden className="btn btn-outline-secondary" onClick={() => exportHistory('json')}>Export JSON</button>
-        <label hidden className={`btn btn-outline-secondary mb-0 ${timer?.phase === 'solving' ? 'disabled' : ''}`}>Import JSON<input type="file" className="visually-hidden" accept=".json,application/json" disabled={timer?.phase === 'solving'} onChange={event => { void importBackup(event.target.files?.[0]); event.target.value = ''; }} /></label>
+        <label hidden className={`btn btn-outline-secondary mb-0 ${solving ? 'disabled' : ''}`}>Import JSON<input type="file" className="visually-hidden" accept=".json,application/json" disabled={solving} onChange={event => { void importBackup(event.target.files?.[0]); event.target.value = ''; }} /></label>
       </div></div>
       {historyTable}
       {!!historyRows.length && <nav className="history-pagination" aria-label="Solve history pages">

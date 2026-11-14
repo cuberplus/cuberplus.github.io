@@ -12,13 +12,14 @@ import { DebouncedNumber } from '../../../shared/Components/DebouncedNumber';
 import { FormControl, Row, Offcanvas, Col, Button, Container, Spinner } from 'react-bootstrap';
 import { InfoTip } from '../../../shared/Components/InfoTip';
 import { Const } from "../Models/Constants";
-import { CalculateAllSessionOptions, CalculateBenchmarkTimes, CalculateWindowSize } from "../Helpers/CubeHelpers";
+import { CalculateAllSessionOptions, CalculateBenchmarkTimes, CalculateWindowSize, sumStepTotals } from "../Helpers/CubeHelpers";
 import ReactSwitch from "react-switch";
 import { PageVisible } from '@cuberplus/navigation';
 import { DEFAULT_SOLVE_LIMIT, latestSolves } from '../../../shared/Components/SolveLimit';
 
 /** react-bootstrap's FormControl accepts input, select and textarea events, so borrow its own handler type. */
 type FormControlChangeHandler = NonNullable<React.ComponentProps<typeof FormControl>['onChange']>;
+type MultiFilterKey = KeysOfType<Filters, string[]>;
 
 function defaultDateRange(): Pick<Filters, 'startDate' | 'endDate'> {
     return {
@@ -74,13 +75,6 @@ function defaultSelections(method: MethodName, sessions: Option[], bench: { good
             highestInspection: 300,
         },
         chosenSteps: FilterPanel.getStepOptionsForMethod(method),
-        chosenColors: COLOR_OPTIONS,
-        chosenSessions: sessions,
-        chosenSources: SOURCE_OPTIONS,
-        chosenPLLs: Const.PllCases,
-        chosenOLLs: Const.OllCases,
-        solveCleanliness: Const.solveCleanliness,
-        solveLuckiness: Const.solveLuckiness,
         autoWindowSize: true,
         autoBenchmarks: true,
         ...bench,
@@ -172,16 +166,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         return solves.map((solve) => {
             const newSteps: Step[] = solve.steps.filter((x) => steps.find((y) => y === x.name));
 
-            let stepTime = 0, stepTurns = 0, execution = 0, recognition = 0, preAuf = 0, postAuf = 0;
-            for (const step of newSteps) {
-                stepTime += step.time;
-                stepTurns += step.turns;
-                execution += step.executionTime;
-                recognition += step.recognitionTime;
-                preAuf += step.preAufTime;
-                postAuf += step.postAufTime;
-            }
-
+            const totals = sumStepTotals(newSteps), { time: stepTime, turns: stepTurns } = totals;
             const turns = stepTurns > 0 ? stepTurns : solve.turns;
             // Full solves retain source timing and penalties; subsets use step timing.
             const hasStepTimings = solve.steps.some(step => step.time > 0);
@@ -192,12 +177,9 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
             // Every other field is carried over untouched.
             return {
                 ...solve,
+                ...totals,
                 time,
                 tps,
-                recognitionTime: recognition,
-                executionTime: execution,
-                preAufTime: preAuf,
-                postAufTime: postAuf,
                 turns,
                 steps: newSteps,
             };
@@ -221,13 +203,12 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         const solvesChanged = nextProps.solves !== prevState.lastAppliedSolves;
         if (solvesChanged) {
             if (nextProps.suggestedMethod !== undefined) {
-                const method = nextProps.suggestedMethod.value as MethodName;
+                const method = nextProps.suggestedMethod.value;
                 newState.method = nextProps.suggestedMethod;
                 newState.filters = { ...newState.filters, method, steps: Const.MethodSteps[method] };
                 newState.chosenSteps = FilterPanel.getStepOptionsForMethod(method);
             }
             if (nextProps.suggestedSessions !== undefined && nextProps.sessionScope === undefined) {
-                newState.chosenSessions = nextProps.suggestedSessions;
                 newState.filters = { ...newState.filters, sessions: nextProps.suggestedSessions.map(x => x.value) };
             }
             if (nextProps.suggestedWindowSize !== undefined) {
@@ -235,8 +216,8 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
             }
         }
         if (nextProps.sessionScope !== undefined && !newState.sessionOverride && (solvesChanged || scopeChanged)) {
-            newState.chosenSessions = nextProps.sessionScope ? [{ label: nextProps.sessionScope, value: nextProps.sessionScope }] : CalculateAllSessionOptions(nextProps.solves);
-            newState.filters = { ...newState.filters, sessions: newState.chosenSessions.map(option => option.value) };
+            const sessions = nextProps.sessionScope ? [nextProps.sessionScope] : CalculateAllSessionOptions(nextProps.solves).map(option => option.value);
+            newState.filters = { ...newState.filters, sessions };
         }
         newState.recordSolves = nextProps.solves.filter(solve => !newState.filters.sessions.length || newState.filters.sessions.includes(solve.session || 'Default'));
         const recent = latestSolves(nextProps.sessionScope === undefined ? nextProps.solves : newState.recordSolves, solveLimit, solve => solve.date.getTime());
@@ -268,16 +249,20 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         if (previous.filters.sessions !== this.state.filters.sessions) this.props.onSessionsChange?.(this.state.filters.sessions);
     }
 
-    /** Multi-selects all behave the same: raw options in state, their values in filters. */
-    setMulti(filterKey: keyof Filters, stateKey: keyof FilterPanelState, selectedList: Option[]) {
-        this.setState(prev => ({ ...prev, filters: { ...prev.filters, [filterKey]: selectedList.map(x => x.value) }, [stateKey]: selectedList, sessionOverride: filterKey === 'sessions' || prev.sessionOverride }));
+    /** Filters own the selection; labels come from the available options, in selection order. */
+    selectedOptions(filterKey: MultiFilterKey, options: Option[]): Option[] {
+        return this.state.filters[filterKey].map(value => options.find(option => option.value === value) ?? { label: value, value });
+    }
+
+    setMulti(filterKey: MultiFilterKey, selectedList: Option[]) {
+        this.setState(prev => ({ ...prev, filters: { ...prev.filters, [filterKey]: selectedList.map(x => x.value) }, sessionOverride: filterKey === 'sessions' || prev.sessionOverride }));
     }
 
     setFilter<K extends keyof Filters>(filterKey: K, value: Filters[K]) {
         this.setState(prev => ({ ...prev, filters: { ...prev.filters, [filterKey]: value }, sessionOverride: filterKey === 'sessions' || prev.sessionOverride }));
     }
 
-    setNumberFilter(filterKey: KeysOfType<Filters, number>, event: React.ChangeEvent<HTMLInputElement>) {
+    setNumberFilter(filterKey: KeysOfType<Filters, number>, event: Parameters<FormControlChangeHandler>[0]) {
         this.setFilter(filterKey, parseInt(event.target.value));
     }
 
@@ -285,23 +270,11 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         this.setState(prev => ({ ...prev, [stateKey]: value }));
     }
 
-    setNumberField(stateKey: KeysOfType<FilterPanelState, number>, event: React.ChangeEvent<HTMLInputElement>) {
-        this.setField(stateKey, parseInt(event.target.value));
+    setNumberField(stateKey: KeysOfType<FilterPanelState, number>, event: Parameters<FormControlChangeHandler>[0]) {
+        const raw = event.target.value;
+        this.setField(stateKey, stateKey === 'chopPercentage' ? Math.max(0, Math.min(49, Number(raw) || 0))
+            : stateKey === 'windowSize' ? Math.max(5, Number(raw) || 5) : parseInt(raw));
     }
-
-    crossColorsChanged(selectedList: Option[]) { this.setMulti('crossColors', 'chosenColors', selectedList); }
-
-    chosenSessionsChanged(selectedList: Option[]) { this.setMulti('sessions', 'chosenSessions', selectedList); }
-
-    sourcesChanged(selectedList: Option[]) { this.setMulti('sources', 'chosenSources', selectedList); }
-
-    pllChanged(selectedList: Option[]) { this.setMulti('pllCases', 'chosenPLLs', selectedList); }
-
-    ollChanged(selectedList: Option[]) { this.setMulti('ollCases', 'chosenOLLs', selectedList); }
-
-    setCleanliness(selectedList: Option[]) { this.setMulti('solveCleanliness', 'solveCleanliness', selectedList); }
-
-    setLuckiness(selectedList: Option[]) { this.setMulti('solveLuckiness', 'solveLuckiness', selectedList); }
 
     windowSizeChanged(newWindowSize: number) {
         this.setState({ windowSize: newWindowSize });
@@ -345,28 +318,6 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
 
     applyStepsPreset(steps: StepName[]) { this.chosenStepsChanged(FilterPanel.toOptions(steps)); }
 
-    setStartDate(newStartDate: Date) { this.setFilter('startDate', newStartDate); }
-
-    setEndDate(newEndDate: Date) { this.setFilter('endDate', newEndDate); }
-
-    setSlowestSolve(event: React.ChangeEvent<HTMLInputElement>) { this.setNumberFilter('slowestTime', event); }
-
-    setFastestSolve(event: React.ChangeEvent<HTMLInputElement>) { this.setNumberFilter('fastestTime', event); }
-
-    setLowestInspection(event: React.ChangeEvent<HTMLInputElement>) { this.setNumberFilter('lowestInspection', event); }
-
-    setHighestInspection(event: React.ChangeEvent<HTMLInputElement>) { this.setNumberFilter('highestInspection', event); }
-
-    setBadTime(event: React.ChangeEvent<HTMLInputElement>) { this.setNumberField('badTime', event); }
-
-    setGoodTime(event: React.ChangeEvent<HTMLInputElement>) { this.setNumberField('goodTime', event); }
-
-    setChopPercentage(event: React.ChangeEvent<HTMLInputElement>) {
-        this.setField('chopPercentage', Math.max(0, Math.min(49, Number(event.target.value) || 0)));
-    }
-
-    setWindowSize(event: React.ChangeEvent<HTMLInputElement>) { this.setField('windowSize', Math.max(5, Number(event.target.value) || 5)); }
-
     setAutoWindowSize(checked: boolean) {
         this.setState(previous => ({ autoWindowSize: checked, windowSize: checked ? CalculateWindowSize(previous.filteredSolves.length) : previous.windowSize }));
     }
@@ -375,12 +326,6 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         const baseSolves = this.state.filteredSolves.length > 0 ? this.state.filteredSolves : this.state.allSolves;
         this.setState(previous => ({ autoBenchmarks: checked, ...(checked ? CalculateBenchmarkTimes(baseSolves) : { goodTime: previous.goodTime, badTime: previous.badTime }) }));
     }
-
-    setPointsPerGraph(event: React.ChangeEvent<HTMLInputElement>) { this.setNumberField('pointsPerGraph', event); }
-
-    setUseLogScale(checked: boolean) { this.setField('useLogScale', checked); }
-
-    setUse4SegmentTiming(checked: boolean) { this.setField('use4SegmentTiming', checked); }
 
     tabSelect(key: number) { this.setField('tabKey', key); }
 
@@ -392,7 +337,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         this.filterRevision++;
         const solves = this.state.allSolves;
         const sessions = this.props.sessionScope ? [{ label: this.props.sessionScope, value: this.props.sessionScope }] : CalculateAllSessionOptions(solves);
-        this.setState({ ...defaultSelections(this.state.method.value as MethodName, sessions, CalculateBenchmarkTimes(solves)), sessionOverride: false });
+        this.setState({ ...defaultSelections(this.state.method.value, sessions, CalculateBenchmarkTimes(solves)), sessionOverride: false });
     }
 
     createFilterHtml(filter: JSX.Element, title: string, tooltip: string): JSX.Element {
@@ -402,42 +347,37 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
     }
 
     /** A multi-select filter card; every one of these shares the same wiring. */
-    multiFilter<T extends string>(options: Option<T>[], value: Option<T>[], onChange: (v: Option<T>[]) => void, title: string, tooltip: string): JSX.Element {
-        return this.createFilterHtml(<MultiSelect options={options} value={value} onChange={onChange} labelledBy={filterId(title)} />, title, tooltip);
+    multiFilter(options: Option[], filterKey: MultiFilterKey, title: string, tooltip: string): JSX.Element {
+        return this.createFilterHtml(<MultiSelect options={options} value={this.selectedOptions(filterKey, options)} onChange={(selected: Option[]) => this.setMulti(filterKey, selected)} labelledBy={filterId(title)} />, title, tooltip);
     }
 
     /** A multi-select filter card whose options are split into expandable sub-menus. */
-    groupedMultiFilter(groups: OptionGroup[], value: Option[], onChange: (v: Option[]) => void, title: string, tooltip: string): JSX.Element {
-        return this.createFilterHtml(<GroupedMultiSelect groups={groups} value={value} onChange={onChange} labelledBy={filterId(title)} />, title, tooltip);
+    groupedMultiFilter(groups: OptionGroup[], filterKey: MultiFilterKey, title: string, tooltip: string): JSX.Element {
+        return this.createFilterHtml(<GroupedMultiSelect groups={groups} value={this.selectedOptions(filterKey, groups.flatMap(group => group.options))} onChange={selected => this.setMulti(filterKey, selected)} labelledBy={filterId(title)} />, title, tooltip);
     }
 
     /** A filter card holding a low/high pair of numeric inputs. */
     rangeFilter(
-        max: string,
-        low: { id: string; value: number; onChange: FormControlChangeHandler },
-        high: { id: string; value: number; onChange: FormControlChangeHandler },
+        max: string, fields: [KeysOfType<Filters, number>, string][],
         title: string, tooltip: string): JSX.Element {
         return this.createFilterHtml(<div className="row">
-            {[low, high].map((f, index) => <div className="form-outline col-6" key={f.id}>
-                <label htmlFor={f.id}>{index === 0 ? 'Minimum' : 'Maximum'} (s)</label>
-                <DebouncedNumber min="0" max={max} id={f.id} aria-label={`${title} ${index === 0 ? 'minimum' : 'maximum'}`} value={f.value} onChange={f.onChange} />
+            {fields.map(([field, id], index) => <div className="form-outline col-6" key={id}>
+                <label htmlFor={id}>{index === 0 ? 'Minimum' : 'Maximum'} (s)</label>
+                <DebouncedNumber min="0" max={max} id={id} aria-label={`${title} ${index === 0 ? 'minimum' : 'maximum'}`} value={this.state.filters[field]} onChange={event => this.setNumberFilter(field, event)} />
             </div>)}
         </div>, title, tooltip);
     }
 
     /** A filter card with an "Auto" switch that disables its numeric inputs. */
     autoFilter(
-        auto: { id: string; checked: boolean; onChange: (v: boolean) => void },
-        min: string,
-        max: string,
-        fields: { id: string; value: number; onChange: FormControlChangeHandler }[],
+        auto: 'autoWindowSize' | 'autoBenchmarks', fields: KeysOfType<FilterPanelState, number>[], min: string, max: string,
         title: string, tooltip: string): JSX.Element {
         return this.createFilterHtml(<div className="row align-items-center g-2">
-            <div className="col-auto d-flex align-items-center gap-2"><label htmlFor={auto.id} className="small">Auto</label>
-                <ReactSwitch id={auto.id} checked={auto.checked} onChange={auto.onChange} /></div>
-            {fields.map(f => <div className="col" key={f.id}>
-                <label htmlFor={f.id}>{fields.length > 1 ? f.id === 'goodTime' ? 'Good (s)' : 'Bad (s)' : 'Solves'}</label>
-                <DebouncedNumber min={min} max={max} id={f.id} aria-label={fields.length > 1 ? f.id === 'goodTime' ? 'Good solve time' : 'Bad solve time' : title} value={f.value} onChange={f.onChange} disabled={auto.checked} />
+            <div className="col-auto d-flex align-items-center gap-2"><label htmlFor={auto} className="small">Auto</label>
+                <ReactSwitch id={auto} checked={this.state[auto]} onChange={checked => auto === 'autoWindowSize' ? this.setAutoWindowSize(checked) : this.setAutoBenchmarks(checked)} /></div>
+            {fields.map(field => <div className="col" key={field}>
+                <label htmlFor={field}>{fields.length > 1 ? field === 'goodTime' ? 'Good (s)' : 'Bad (s)' : 'Solves'}</label>
+                <DebouncedNumber min={min} max={max} id={field} aria-label={fields.length > 1 ? field === 'goodTime' ? 'Good solve time' : 'Bad solve time' : title} value={this.state[field]} onChange={event => this.setNumberField(field, event)} disabled={this.state[auto]} />
             </div>)}
         </div>, title, tooltip);
     }
@@ -461,74 +401,60 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
 
                     <details open className="filter-group"><summary>Basics</summary>
                     {this.createFilterHtml(<Select classNamePrefix="method-select" aria-labelledby={filterId('Which Method?')} options={this.getMethodOptions()} value={this.state.method} onChange={this.methodChanged.bind(this)} />, "Which Method?", "Choose the solving method.")}
-                    {this.multiFilter(this.getSessionOptions(), this.state.chosenSessions, this.chosenSessionsChanged.bind(this), "Which Sessions?", "Choose sessions to include.")}
-                    {this.multiFilter(SOURCE_OPTIONS, this.state.chosenSources, this.sourcesChanged.bind(this), "Source", "Include CuberPlus, Cubeast or Acubemy solves.")}
+                    {this.multiFilter(this.getSessionOptions(), 'sessions', "Which Sessions?", "Choose sessions to include.")}
+                    {this.multiFilter(SOURCE_OPTIONS, 'sources', "Source", "Include CuberPlus, Cubeast or Acubemy solves.")}
                     {([['startDate', 'Start'], ['endDate', 'End']] as const).map(([field, label]) => <React.Fragment key={field}>{this.createFilterHtml(
                         <><label id={`filter-${field}`} htmlFor={field}>{label} date</label><DebouncedDate id={field} value={this.state.filters[field]} onChange={date => this.setFilter(field, date)} container={container} /></>,
                         `Pick ${label} Date`, `Choose ${label.toLowerCase()} date`
                     )}</React.Fragment>)}
-                    {this.multiFilter(
-                        FilterPanel.getStepOptionsForMethod(this.state.filters.method),
-                        this.state.chosenSteps, this.chosenStepsChanged.bind(this),
+                    {this.createFilterHtml(
+                        <MultiSelect options={FilterPanel.getStepOptionsForMethod(this.state.filters.method)} value={this.state.chosenSteps} onChange={this.chosenStepsChanged.bind(this)} labelledBy={filterId('Which step to drill down?')} />,
                         "Which step to drill down?",
                         "Choose which steps to analyze across the dashboard."
                     )}
                     </details>
 
                     <details className="filter-group"><summary>Cases and solve quality</summary>
-                    {this.groupedMultiFilter(Const.PllGroups, this.state.chosenPLLs, this.pllChanged.bind(this), "PLL Cases", "Choose PLL cases. Re-analyze saved recordings in Options to reconstruct missing cases.")}
-                    {this.groupedMultiFilter(Const.OllGroups, this.state.chosenOLLs, this.ollChanged.bind(this), "OLL Cases", "Choose OLL cases. Re-analyze saved recordings in Options to reconstruct missing cases.")}
-                    {this.multiFilter(Const.solveCleanliness, this.state.solveCleanliness, this.setCleanliness.bind(this), "Solve Cleanliness", "Clean means no detected mistake signals. See the Mistakes chart for the exact rules; missing data cannot prove a solve was clean.")}
-                    {this.multiFilter(Const.solveLuckiness, this.state.solveLuckiness, this.setLuckiness.bind(this), "Solve Luckiness", "Choose fullstep solves or solves with skips.")}
-                    {this.multiFilter(COLOR_OPTIONS, this.state.chosenColors, this.crossColorsChanged.bind(this), "Cross Color", "Pick the starting cross color")}
+                    {this.groupedMultiFilter(Const.PllGroups, 'pllCases', "PLL Cases", "Choose PLL cases. Re-analyze saved recordings in Options to reconstruct missing cases.")}
+                    {this.groupedMultiFilter(Const.OllGroups, 'ollCases', "OLL Cases", "Choose OLL cases. Re-analyze saved recordings in Options to reconstruct missing cases.")}
+                    {this.multiFilter(Const.solveCleanliness, 'solveCleanliness', "Solve Cleanliness", "Clean means no detected mistake signals. See the Mistakes chart for the exact rules; missing data cannot prove a solve was clean.")}
+                    {this.multiFilter(Const.solveLuckiness, 'solveLuckiness', "Solve Luckiness", "Choose fullstep solves or solves with skips.")}
+                    {this.multiFilter(COLOR_OPTIONS, 'crossColors', "Cross Color", "Pick the starting cross color")}
 
-                    {this.rangeFilter("300",
-                        { id: "fastestSolve", value: this.state.filters.fastestTime, onChange: this.setFastestSolve.bind(this) },
-                        { id: "slowestSolve", value: this.state.filters.slowestTime, onChange: this.setSlowestSolve.bind(this) },
+                    {this.rangeFilter("300", [['fastestTime', 'fastestSolve'], ['slowestTime', 'slowestSolve']],
                         "Solve Times",
                         "Choose slowest and fastest solves to keep"
                     )}
 
-                    {this.rangeFilter("100000",
-                        { id: "lowestInspection", value: this.state.filters.lowestInspection, onChange: this.setLowestInspection.bind(this) },
-                        { id: "highestInspection", value: this.state.filters.highestInspection, onChange: this.setHighestInspection.bind(this) },
+                    {this.rangeFilter("100000", [['lowestInspection', 'lowestInspection'], ['highestInspection', 'highestInspection']],
                         "Inspection Time",
                         "Choose lowest and highest inspection times to keep"
                     )}
                     </details>
 
                     <details className="filter-group"><summary>Chart settings</summary>
-                    {this.autoFilter(
-                        { id: "autoWindowSize", checked: this.state.autoWindowSize, onChange: this.setAutoWindowSize.bind(this) },
-                        "5", "10000",
-                        [{ id: "windowSize", value: this.state.windowSize, onChange: this.setWindowSize.bind(this) }],
+                    {this.autoFilter('autoWindowSize', ['windowSize'], "5", "10000",
                         "Sliding Window Size",
                         "Choose the sliding window size. When Auto is enabled, the size is chosen automatically based on how many solves are shown. If you see no data, try lowering this value."
                     )}
 
                     {this.createFilterHtml(
-                        <DebouncedNumber min="5" max="10000" id="pointsPerGraph" aria-labelledby={filterId('Points Per Graph')} value={this.state.pointsPerGraph} onChange={this.setPointsPerGraph.bind(this)} />,
+                        <DebouncedNumber min="5" max="10000" id="pointsPerGraph" aria-labelledby={filterId('Points Per Graph')} value={this.state.pointsPerGraph} onChange={e => this.setNumberField('pointsPerGraph', e)} />,
                         "Points Per Graph",
                         "Choose how many points to show on each chart. If this value is set too high, you may see performance issues."
                     )}
 
-                    {this.switchFilter("useLogScale", this.state.useLogScale, this.setUseLogScale.bind(this),
+                    {this.switchFilter("useLogScale", this.state.useLogScale, checked => this.setField('useLogScale', checked),
                         "Use Logarithmic Scale",
                         "Use a Logarithmic Scale for the Y axis. If you are unsure what this means, leave it disabled"
                     )}
 
-                    {this.switchFilter("use4SegmentTiming", this.state.use4SegmentTiming, this.setUse4SegmentTiming.bind(this),
+                    {this.switchFilter("use4SegmentTiming", this.state.use4SegmentTiming, checked => this.setField('use4SegmentTiming', checked),
                         "4-Segment Timing",
                         "Show recognition, pre-AUF, execution, and post-AUF as separate segments in timing charts. When off, shows only recognition and execution."
                     )}
 
-                    {this.autoFilter(
-                        { id: "autoBenchmarks", checked: this.state.autoBenchmarks, onChange: this.setAutoBenchmarks.bind(this) },
-                        "0", "300",
-                        [
-                            { id: "goodTime", value: this.state.goodTime, onChange: this.setGoodTime.bind(this) },
-                            { id: "badTime", value: this.state.badTime, onChange: this.setBadTime.bind(this) },
-                        ],
+                    {this.autoFilter('autoBenchmarks', ['goodTime', 'badTime'], "0", "300",
                         "Benchmarks",
                         "Choose what you consider a 'good' solve and a 'bad' solve. When Auto is enabled, good/bad are calculated from your current Ao100 and +25% for bad."
                     )}
@@ -536,7 +462,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                     {this.createFilterHtml(
                         <div className="row align-items-center g-2">
                             <div className="col-auto d-flex align-items-center"><ReactSwitch id="chopAverages" aria-label="Chop rolling average" checked={this.state.chopAverages} onChange={checked => this.setField('chopAverages', checked)} /></div>
-                            <div className="col"><DebouncedNumber id="chopPercentage" aria-label="Chop percentage per end" min="0" max="49" step="1" value={this.state.chopPercentage} disabled={!this.state.chopAverages} onChange={this.setChopPercentage.bind(this)} /></div>
+                            <div className="col"><DebouncedNumber id="chopPercentage" aria-label="Chop percentage per end" min="0" max="49" step="1" value={this.state.chopPercentage} disabled={!this.state.chopAverages} onChange={event => this.setNumberField('chopPercentage', event)} /></div>
                         </div>,
                         "Chop Rolling Average",
                         "Remove this percentage of the fastest and slowest solves from each rolling-average window, rounded up. At least one solve is retained. Does not change standard Ao5/Ao12/Ao100/Ao1000 records."
@@ -582,7 +508,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
 
         const f = this.state.filters, dates = defaultDateRange();
         const activeFilters = [
-            f.sources.length !== SOURCE_OPTIONS.length, f.sessions.length > 0 && this.state.chosenSessions.length !== this.getSessionOptions().length,
+            f.sources.length !== SOURCE_OPTIONS.length, f.sessions.length > 0 && f.sessions.length !== this.getSessionOptions().length,
             f.startDate.getTime() !== dates.startDate.getTime() || f.endDate.getTime() !== dates.endDate.getTime(),
             f.steps.length !== Const.MethodSteps[f.method].length, f.crossColors.length !== COLOR_OPTIONS.length,
             f.pllCases.length !== Const.PllCases.length, f.ollCases.length !== Const.OllCases.length,

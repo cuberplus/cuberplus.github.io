@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { FACES, HEX, applyMoves, parseAlgorithm, solvedCube, stickers } from '../cube/cube';
 
 const OFFSETS = [[3, 0], [6, 3], [3, 3], [3, 6], [0, 3], [9, 3]];

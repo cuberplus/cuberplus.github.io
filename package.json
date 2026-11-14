@@ -30,12 +30,13 @@
     "deploy": "gh-pages -d build",
     "start": "vite --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src shared timer/src smartcubeanalyzer/src scrambler/src",
+    "lint": "eslint src shared timer/src smartcubeanalyzer/src scrambler/src scripts vite.config.ts",
     "build": "npm run typecheck && npm run lint && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
-    "test": "npm run test:web && npm run test:timer",
+    "test": "npm run test:web && npm run test:timer && npm run test:tooling",
     "test:web": "jest --runInBand --selectProjects site analyzer",
     "test:timer": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --selectProjects timer",
+    "test:tooling": "node --experimental-vm-modules --test tests/tooling/typed-scripts.test.mjs",
     "test:site": "node tests/browser/check-site.mjs && node tests/browser/check-persistent-app.mjs && node tests/browser/check-scramble.mjs"
   },
   "browserslist": {

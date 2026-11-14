@@ -24,11 +24,11 @@ export function usedAlgorithms(solve: Solve, cube: Cube): AlgorithmUse[] {
   if (!cache) observations.set(cube, cache = new WeakMap());
   const algorithms = getAlgorithms(), cached = cache.get(solve);
   if (cached?.catalog === algorithms) return cached.uses;
-  const { cross, ends } = analyzeCFOP(solve, cube), matcher = algorithmMatcher(cube);
+  const { cross, ends, cases } = analyzeCFOP(solve, cube), matcher = algorithmMatcher(cube);
   if (cross === null) return [];
   const result: AlgorithmUse[] = [], frame = cfopFrame(cube, cross);
   const states = [cube.parse(solve.startFacelets)];
-  for (const { move } of solve.moves) states.push(states.at(-1)!.applyMove(move));
+  for (const { move } of solve.moves) states.push(cube.applyMove(states.at(-1)!, move));
   let cursor = ends[0] ?? 0;
   for (let step = 1; step < ends.length; step++) {
     const from = cursor, to = ends[step];
@@ -61,7 +61,7 @@ export function usedAlgorithms(solve: Solve, cube: Cube): AlgorithmUse[] {
           continue;
         }
       }
-      const recognized = recognizeCase(step, cube, cross, states[from], states[to]);
+      const recognized = (from === (ends[step - 1] ?? 0) ? cases[step] : undefined) ?? recognizeCase(step, cube, cross, states[from], states[to]);
       const caseKey = recognized && recognized !== 'Solved' ? `${step < 5 ? 'F2L' : step === 5 ? 'OLL' : 'PLL'}-${recognized}` : '';
       if (caseKey) {
         const algorithm = solve.moves.slice(from, to).map(item => frame(item.move)).join(' '), signature = matcher.signature(algorithm);

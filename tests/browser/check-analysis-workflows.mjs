@@ -5,7 +5,10 @@ import { join } from 'node:path';
 const base = process.env.SITE_URL ?? 'http://127.0.0.1:4173';
 const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : undefined });
 const context = await browser.newContext();
-await context.addInitScript(() => localStorage.setItem('theme', 'dark'));
+await context.addInitScript(() => {
+  localStorage.setItem('theme', 'dark');
+  localStorage.setItem('timer-all-session-history', 'true');
+});
 const page = await context.newPage(), errors = [], timings = {};
 page.on('pageerror', error => errors.push(error.message));
 try {
@@ -15,11 +18,22 @@ try {
   await expect(page.getByRole('heading', { name: 'Options', exact: true })).toBeVisible();
   timings['Navigate during analyzer loading'] = Math.round(performance.now() - start);
   await page.getByRole('link', { name: 'Smartcube Analyzer', exact: true }).click();
-  await expect(page.locator('canvas').first()).toBeVisible({ timeout: 120000 });
-  await expect(page.getByRole('button', { name: 'Data', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Data', exact: true })).toBeEnabled({ timeout: 120000 });
+  await expect(page.locator('canvas').first()).toBeVisible();
   timings['Initial full-data analyzer load including navigation'] = Math.round(performance.now() - start);
   console.log('Initial analyzer loaded:', timings);
+  const records = page.getByRole('region', { name: 'Current Records', exact: true });
+  await records.scrollIntoViewIfNeeded();
+  await expect(records.getByRole('columnheader').first()).toBeVisible();
+  const headers = await records.getByRole('columnheader').evaluateAll(nodes => nodes.map(node => {
+    const { x, y, width, height } = node.getBoundingClientRect();
+    return { x, y, width, height };
+  }));
+  expect(headers.length).toBeGreaterThan(1);
+  expect(headers.every(header => header.width > 20 && header.height > 16 && Math.abs(header.y - headers[0].y) < 1)).toBe(true);
+  expect(headers.slice(1).every((header, index) => header.x >= headers[index].x + headers[index].width - 1)).toBe(true);
   await page.getByRole('button', { name: 'F2L', exact: true }).click();
+  await page.getByRole('button', { name: 'Cases', exact: true }).click();
   const caseButton = page.locator('.algo-case-link').first();
   await expect(caseButton).toBeVisible({ timeout: 30000 });
   await expect(caseButton.locator('img,svg')).toHaveCount(1);

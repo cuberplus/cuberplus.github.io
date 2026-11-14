@@ -87,7 +87,7 @@ export function makeLabels(length: number, pointsPerGraph: number, start = 1): s
 
 export function splitIntoChunks<T>(values: T[], chunks: number): T[][] {
     const size: number = Math.ceil(values.length / chunks);
-    return Array.from({ length: chunks }, (v, i) =>
+    return Array.from({ length: chunks }, (_, i) =>
         values.slice(i * size, i * size + size)
     );
 }

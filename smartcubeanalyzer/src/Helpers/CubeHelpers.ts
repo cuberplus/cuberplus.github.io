@@ -1,6 +1,6 @@
 import { Option } from "../Models/Types";
 import { Const } from "../Models/Constants";
-import { CrossColor, MethodName, Solve, Step, StepName } from "../Models/Types";
+import { CrossColor, MethodName, Solve, Step, StepName, StepTotals } from "../Models/Types";
 import { calculateMovingAverageChopped } from "./MathHelpers";
 
 export function GetEmptyStep(): Step {
@@ -16,6 +16,13 @@ export function GetEmptySolve(): Solve {
         steps: [GetEmptyStep(), GetEmptyStep(), GetEmptyStep(), GetEmptyStep(), GetEmptyStep(), GetEmptyStep(), GetEmptyStep(), GetEmptyStep(), GetEmptyStep()],
         isCorrupt: false, method: MethodName.CFOP, session: "", isMistake: false, isFullStep: true
     };
+}
+
+const STEP_TOTAL_KEYS = ['time', 'turns', 'recognitionTime', 'executionTime', 'preAufTime', 'postAufTime'] as const;
+export function sumStepTotals(steps: Step[]): StepTotals {
+    const totals: StepTotals = { time: 0, turns: 0, recognitionTime: 0, executionTime: 0, preAufTime: 0, postAufTime: 0 };
+    for (const step of steps) for (const key of STEP_TOTAL_KEYS) totals[key] += step[key];
+    return totals;
 }
 
 export function CalculateMostUsedMethod(solves: Solve[]): MethodName {

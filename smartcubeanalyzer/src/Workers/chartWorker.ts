@@ -1,24 +1,19 @@
 import { calculateMovingAverage, calculateMovingPercentage, calculateMovingAverageChopped, makeLabels, reduceDataset } from '../Helpers/MathHelpers';
-import { buildRunningAverageData, buildRunningStdDevData, buildRunningTpsData, buildRunningInspectionData, buildRunningTurnsData, buildRunningRecognitionExecution, buildHistogramData, buildGoodBadData, buildRunningColorPercentages, buildFirstPairPercentages, buildStepPercentages, buildOllCategoryChart, buildPllCategoryChart, buildInspectionData, shouldShowInspectionCharts, buildTypicalCompare, fastestByDay, buildMovingLineChart } from '../Charts/ChartDataBuilders';
+import { buildRunningAverageData, buildRunningStdDevData, buildRunningTpsData, buildRunningInspectionData, buildRunningTurnsData, buildRunningRecognitionExecution, buildHistogramData, buildGoodBadData, buildRunningColorPercentages, buildFirstPairPercentages, buildStepPercentages, buildOllCategoryChart, buildPllCategoryChart, buildInspectionData, shouldShowInspectionCharts, buildTypicalCompare, fastestByDay, buildMovingLineChart, singleSeries } from '../Charts/ChartDataBuilders';
 import { applyPaletteToChartData, SEGMENT_COLORS } from '../Charts/ChartColors';
 import { analyzeStepMoves, computeCaseFailureStats, computeSolveEfficiency } from '../Analysis/MoveAnalysis';
 import { getAufMovesForSolve } from '../Data/CsvParser';
 import { summarizeMistakes } from '../Analysis/MistakeAnalysis';
 import { Const } from '../Models/Constants';
-import { AlgoPracticeRow, CaseStats, ChartDataBundle, FastestSolve, LabelledChart, caseCategory, caseSteps, getStep, MethodName, RecordRow, Solve, StepName, StreakRow } from '../Models/Types';
+import { AlgoPracticeRow, CaseStats, ChartDataBundle, ChartSettings, FastestSolve, LabelledChart, caseCategory, caseSteps, getStep, MethodName, RecordRow, Solve, StepName, StreakRow } from '../Models/Types';
 import { calendarDay, streakWindows } from '../../../shared/statistics/streaks';
 
-export interface WorkerInput {
+export interface WorkerInput extends ChartSettings {
     requestId: number;
     solves: Solve[];
     recordSolves?: Solve[];
-    windowSize: number;
-    pointsPerGraph: number;
     steps: StepName[];
-    goodTime: number;
-    badTime: number;
     methodName: MethodName;
-    use4SegmentTiming: boolean;
     isDark: boolean;
     precision?: 2 | 3;
     chopPercentage?: number;
@@ -92,10 +87,7 @@ export function buildStepAverages(solves: Solve[], steps: StepName[], windowSize
 
 export function buildDailyRecordData(solves: Solve[]) {
     const days = fastestByDay(solves), labels = [...days.keys()].sort();
-    return {
-        labels,
-        datasets: [{ label: 'Fastest Solve Each Day', data: labels.map(day => days.get(day)!.time) }],
-    };
+    return singleSeries(labels, 'Fastest Solve Each Day', labels.map(day => days.get(day)!.time));
 }
 
 // ── Efficiency ───────────────────────────────────────────────────────────────

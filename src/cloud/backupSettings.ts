@@ -34,7 +34,7 @@ const permutation: Check = value => {
   if (!fields({ edges: pieces, corners: pieces })(value) || !object(value)) return false;
   const parity = (value: BackupValue | undefined) => (value as number[]).reduce((sum, piece, i, all) =>
     sum + all.slice(i + 1).filter(next => next < piece).length, 0) % 2;
-  return parity(value.edges) === parity(value.corners);
+  return parity(value['edges']) === parity(value['corners']);
 };
 const splitFields = fields({
   caseId: string, milliseconds: time, dnf: optional(boolean), retry: optional(boolean),
@@ -43,11 +43,11 @@ const splitFields = fields({
   colorFrame: optional(value => typeof value === 'string' && /^(?:[xz](?:2|')?)?(?: ?y(?:2|')?)?$/.test(value)),
   crossColor: optional(color), frontColor: optional(color), permutation: optional(permutation),
 });
-const split: Check = value => splitFields(value) && object(value) && (!value.retry || value.dnf === true) &&
-  ((value.preAuf === undefined) === (value.postAuf === undefined)) &&
-  (value.recognitionMilliseconds === undefined && value.executionMilliseconds === undefined ||
-    typeof value.recognitionMilliseconds === 'number' && typeof value.executionMilliseconds === 'number' &&
-    Math.abs(value.recognitionMilliseconds + value.executionMilliseconds - (value.milliseconds as number)) < .001);
+const split: Check = value => splitFields(value) && object(value) && (!value['retry'] || value['dnf'] === true) &&
+  ((value['preAuf'] === undefined) === (value['postAuf'] === undefined)) &&
+  (value['recognitionMilliseconds'] === undefined && value['executionMilliseconds'] === undefined ||
+    typeof value['recognitionMilliseconds'] === 'number' && typeof value['executionMilliseconds'] === 'number' &&
+    Math.abs(value['recognitionMilliseconds'] + value['executionMilliseconds'] - (value['milliseconds'] as number)) < .001);
 
 const validators = {
   theme: oneOf('light', 'dark', 'aurora', 'disco', 'inferno', '90s'),
@@ -94,7 +94,7 @@ export function validateSettings(value: BackupValue | undefined): Settings {
     if (saved !== null && (typeof saved !== 'string' || !validators[key](saved))) {
       throw new Error(`Invalid ${key} in backup. No local data was changed.`);
     }
-    settings[key] = saved as string | null;
+    settings[key] = saved;
   }
   return settings;
 }

@@ -146,7 +146,7 @@ export default function Trainer() {
           {busy && <div className="trainer-drill-controls">
             {current?.phase === 'running' && <><button type="button" className="btn btn-outline-secondary" onClick={() => { current.retry(performance.now()); render(); }}>Retry case</button>
               <button type="button" className="btn btn-outline-secondary" onClick={() => { current.skip(performance.now()); finishDrill(); render(); }}>Skip case</button></>}
-            <button type="button" className="btn btn-danger" onClick={() => { current!.phase = 'cancelled'; setStatus('Blitz aborted. No result saved.'); render(); }}>Stop drill</button>
+            <button type="button" className="btn btn-danger" onClick={() => { current.phase = 'cancelled'; setStatus('Blitz aborted. No result saved.'); render(); }}>Stop drill</button>
             <InfoTip>Retry records this attempt as DNF and resets the same virtual case. Its elapsed time still counts toward the Blitz total. Skip records a DNF, advances to the next case, and marks the overall Blitz DNF. Neither needs a physical cube reset.</InfoTip>
           </div>}
           {!!previews.length && <div className="trainer-case-queue" aria-label="Current and upcoming cases">

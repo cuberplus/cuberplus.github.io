@@ -30,6 +30,7 @@ try {
     let footerReference;
     for (const route of routes) {
       await page.goto(`${base}${route}`);
+      if (route === '/analyzer/') await expect(page.getByRole('button', { name: 'Data', exact: true })).toBeEnabled({ timeout: 120000 });
       const nav = page.getByRole('navigation', { name: 'CuberPlus', exact: true });
       if (width <= 1100) await page.getByRole('button', { name: /^Menu/ }).click();
       await expect(nav).toBeVisible();
@@ -100,7 +101,7 @@ try {
       await expect(footer).toHaveCount(1);
       expect(await footer.textContent()).toBe(`CuberPlus ${APP_VERSION}`);
       await footer.scrollIntoViewIfNeeded();
-      const footerGeometry = await footer.evaluate(element => {
+      const footerGeometry = () => footer.evaluate(element => {
         const range = document.createRange();
         range.selectNodeContents(element);
         const text = range.getBoundingClientRect();
@@ -113,9 +114,9 @@ try {
           fillsViewport: document.documentElement.scrollHeight >= innerHeight,
         };
       });
-      footerReference ??= footerGeometry;
-      expect(footerGeometry).toEqual(footerReference);
-      expect(footerGeometry).toMatchObject({ center: 0, bottom: 0, padding: '24px', afterContent: true, fillsViewport: true });
+      footerReference ??= await footerGeometry();
+      await expect.poll(footerGeometry).toEqual(footerReference);
+      await expect.poll(footerGeometry).toMatchObject({ center: 0, bottom: 0, padding: '24px', afterContent: true, fillsViewport: true });
       await page.evaluate(() => scrollTo(0, 0));
       console.log(`PASS matching header and Timer palette: ${route} at ${width}px`);
     }

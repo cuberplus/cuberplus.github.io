@@ -1,4 +1,3 @@
-import React from 'react';
 import Navigation, { Footer } from '@cuberplus/navigation';
 import './Style.css';
 import '@cuberplus/navigation/style.css';

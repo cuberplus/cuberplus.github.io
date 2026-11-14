@@ -11,13 +11,14 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import React from 'react';
+import React, { act } from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { FileInput } from '../../smartcubeanalyzer/src/Components/FileInput';
 import { GetDemoData } from '../../smartcubeanalyzer/src/Data/SampleData';
 import { parseCsv } from '../../smartcubeanalyzer/src/Data/CsvParser';
 import type { ChartDataBundle } from '../../smartcubeanalyzer/src/Models/Types';
 import type { WorkerInput } from '../../smartcubeanalyzer/src/Workers/chartWorker';
+import { SettingsProvider } from '@cuberplus/navigation';
 
 /** The only parts of a Chart.js dataset this test inspects. */
 type MockPoint = number | null | { x: number | Date; y: number };
@@ -106,6 +107,9 @@ describe('fetching the demo CSV', () => {
 });
 
 describe('loading the bundled dev stats through the UI', () => {
+    beforeEach(() => localStorage.clear());
+    afterEach(() => localStorage.clear());
+
     test('every row of the demo CSV becomes a solve', () => {
         // The parser must not silently drop rows, e.g. by mis-splitting columns
         // that contain commas inside brackets.
@@ -123,7 +127,7 @@ describe('loading the bundled dev stats through the UI', () => {
         async () => {
             mockChartProps.length = 0;
             mockWorkerResults.length = 0;
-            render(React.createElement(FileInput));
+            render(<SettingsProvider><FileInput /></SettingsProvider>);
 
             await waitFor(() => expect(mockChartProps.length).toBeGreaterThan(0), { timeout: 240_000 });
             fireEvent.click(screen.getByRole('button', { name: 'All', exact: true }));
@@ -133,6 +137,8 @@ describe('loading the bundled dev stats through the UI', () => {
             const [shown, total] = (label.textContent?.match(/\d+/g) ?? []).map(Number);
             expect(total).toBe(EXPECTED_SOLVES);
             expect(shown).toBe(EXPECTED_SHOWN);
+            expect(localStorage.getItem('selected-session')).toBeNull();
+            expect(localStorage.getItem('timer-all-session-history')).toBeNull();
             expect(mockWorkerResults.at(-1)!.input.recordSolves).toHaveLength(EXPECTED_SOLVES);
 
             // The reported failure rendered every chart as a flat line of zeroes,
@@ -158,21 +164,25 @@ describe('loading the bundled dev stats through the UI', () => {
             // Capture values, not references: mistake classification mutates source solves.
             const baseline = snapshot();
             const baselineRecords = mockWorkerResults.at(-1)!.chartData.recordRows;
-            const changeAndRestore = async (change: () => void | Promise<void>, restore: () => void) => {
+            const changeAndRestore = async (change: () => void | Promise<void>, restore: () => void | Promise<void>) => {
                 let requests = mockWorkerResults.length;
                 await change();
-                await waitFor(() => expect(mockWorkerResults.length).toBeGreaterThan(requests));
-                expect(snapshot().charts === baseline.charts).toBe(false);
+                await waitFor(() => {
+                    expect(mockWorkerResults.length).toBeGreaterThan(requests);
+                    expect(snapshot().charts === baseline.charts).toBe(false);
+                });
                 expect(mockWorkerResults.at(-1)!.chartData.recordRows).toEqual(baselineRecords);
                 requests = mockWorkerResults.length;
-                restore();
-                await waitFor(() => expect(mockWorkerResults.length).toBeGreaterThan(requests));
-                const restored = snapshot();
-                expect({
-                    solves: restored.solves === baseline.solves,
-                    charts: restored.charts === baseline.charts,
-                    settings: restored.settings === baseline.settings,
-                }).toEqual({ solves: true, charts: true, settings: true });
+                await restore();
+                await waitFor(() => {
+                    expect(mockWorkerResults.length).toBeGreaterThan(requests);
+                    const restored = snapshot();
+                    expect({
+                        solves: restored.solves === baseline.solves,
+                        charts: restored.charts === baseline.charts,
+                        settings: restored.settings === baseline.settings,
+                    }).toEqual({ solves: true, charts: true, settings: true });
+                });
                 expect(mockWorkerResults[mockWorkerResults.length - 1].input.solves).toHaveLength(EXPECTED_SHOWN);
             };
 
@@ -197,6 +207,12 @@ describe('loading the bundled dev stats through the UI', () => {
             }
             const input = (id: string) => screen.getAllByRole('spinbutton').find(field => field.getAttribute('id') === id)!;
             const toggle = (id: string) => screen.getAllByRole('switch').find(field => field.getAttribute('id') === id)!;
+            const changeNumber = async (id: string, value: string) => {
+                await act(async () => {
+                    fireEvent.change(input(id), { target: { value } });
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                });
+            };
             expect((toggle('chopAverages') as HTMLInputElement).checked).toBe(true);
             expect((input('chopPercentage') as HTMLInputElement).value).toBe('5');
             await changeAndRestore(
@@ -208,30 +224,30 @@ describe('loading the bundled dev stats through the UI', () => {
                 () => fireEvent.click(toggle('chopAverages'))
             );
             await changeAndRestore(
-                () => fireEvent.change(input('chopPercentage'), { target: { value: '10' } }),
-                () => fireEvent.change(input('chopPercentage'), { target: { value: '5' } })
+                () => changeNumber('chopPercentage', '10'),
+                () => changeNumber('chopPercentage', '5')
             );
             await changeAndRestore(
-                () => fireEvent.change(input('slowestSolve'), { target: { value: '15' } }),
-                () => fireEvent.change(input('slowestSolve'), { target: { value: '300' } })
+                () => changeNumber('slowestSolve', '15'),
+                () => changeNumber('slowestSolve', '300')
             );
             await changeAndRestore(
                 async () => {
-                    fireEvent.change(input('fastestSolve'), { target: { value: '300' } });
+                    await changeNumber('fastestSolve', '300');
                     await waitFor(() => expect(screen.getAllByText(/Showing .* solves/).some(label => label.textContent?.includes('Showing 0 /'))).toBe(true));
                 },
-                () => fireEvent.change(input('fastestSolve'), { target: { value: '0' } })
+                () => changeNumber('fastestSolve', '0')
             );
             await changeAndRestore(
-                () => {
+                async () => {
                     fireEvent.click(toggle('autoWindowSize'));
-                    fireEvent.change(input('windowSize'), { target: { value: '100' } });
+                    await changeNumber('windowSize', '100');
                 },
                 () => fireEvent.click(toggle('autoWindowSize'))
             );
             await changeAndRestore(
-                () => fireEvent.change(input('pointsPerGraph'), { target: { value: '25' } }),
-                () => fireEvent.change(input('pointsPerGraph'), { target: { value: '100' } })
+                () => changeNumber('pointsPerGraph', '25'),
+                () => changeNumber('pointsPerGraph', '100')
             );
             await changeAndRestore(
                 () => fireEvent.click(toggle('use4SegmentTiming')),

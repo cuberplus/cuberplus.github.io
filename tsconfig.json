@@ -10,6 +10,13 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "strict": true,
+    "noImplicitReturns": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedSideEffectImports": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
     "module": "esnext",
@@ -22,7 +29,7 @@
     "useUnknownInCatchVariables": true
   },
   "include": [
-    "src", "shared", "timer/src", "smartcubeanalyzer/src", "scrambler/src"
+    "src", "shared", "timer/src", "smartcubeanalyzer/src", "scrambler/src", "scripts", "vite.config.ts"
   ],
   "exclude": ["**/tests/**", "**/__mocks__/**", "**/*.test.*", "**/testHelpers.ts"]
 }

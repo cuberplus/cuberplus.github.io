@@ -26,54 +26,49 @@ const database = (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
   request.onerror = () => reject(request.error ?? new Error('Cannot open local storage.'));
 });
 
-export async function saveSolves(solves: Solve[], derivedOnly: boolean | 'reanalysis' = false): Promise<void> {
+async function withSolves<T>(mode: 'readonly' | 'readwrite', action: (store: IDBObjectStore) => T, failure: string): Promise<T> {
   const db = await database();
   try {
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction('solves', 'readwrite');
-      const store = tx.objectStore('solves');
-      solves.forEach(solve => {
-        if (!derivedOnly) { store.put(solve); return; }
-        const request = store.get(solve.id);
-        request.onsuccess = () => {
-          const current = request.result as Solve | undefined;
-          if (current && analysisKey(current) === solve.analysis?.key) store.put({ ...current, analysis: solve.analysis, cfop: solve.cfop ?? current.cfop,
-            ...(derivedOnly === 'reanalysis' ? { imported: solve.imported } : {}) });
-        };
-      });
-      tx.oncomplete = () => resolve();
-      tx.onabort = () => reject(tx.error ?? new Error('Local save failed.'));
-      tx.onerror = () => reject(tx.error ?? new Error('Local save failed.'));
+    return await new Promise<T>((resolve, reject) => {
+      const tx = db.transaction('solves', mode);
+      tx.onabort = tx.onerror = () => reject(tx.error ?? new Error(failure));
+      try {
+        const result = action(tx.objectStore('solves'));
+        tx.oncomplete = () => resolve(result);
+      } catch (failure) { tx.abort(); reject(failure); }
     });
   } finally { db.close(); }
+}
+export function saveSolves(solves: Solve[], derivedOnly: boolean | 'reanalysis' = false): Promise<void> {
+  return withSolves('readwrite', store => solves.forEach(solve => {
+    if (!derivedOnly) { store.put(solve); return; }
+    const request = store.get(solve.id);
+    request.onsuccess = () => {
+      const current = request.result as Solve | undefined;
+      if (current && analysisKey(current) === solve.analysis?.key) store.put({ ...current, analysis: solve.analysis, cfop: solve.cfop ?? current.cfop,
+        ...(derivedOnly === 'reanalysis' ? { imported: solve.imported } : {}) });
+    };
+  }), 'Local save failed.');
 }
 
-export async function readSolves(batchSize?: number): Promise<Solve[]> {
-  const db = await database();
-  try {
-    return await new Promise<Solve[]>((resolve, reject) => {
-      const tx = db.transaction('solves', 'readonly'), store = tx.objectStore('solves'), solves: Solve[] = [];
-      const next = (after?: string) => {
-        const request = store.getAll(after === undefined ? undefined : IDBKeyRange.lowerBound(after, true), batchSize);
-        request.onsuccess = () => {
-          const items = request.result as Solve[];
-          for (const solve of items) solves.push(solve);
-          if (batchSize && items.length === batchSize) next(items.at(-1)!.id);
-        };
+export function readSolves(batchSize?: number): Promise<Solve[]> {
+  return withSolves('readonly', store => {
+    const solves: Solve[] = [];
+    const next = (after?: string) => {
+      const request = store.getAll(after === undefined ? undefined : IDBKeyRange.lowerBound(after, true), batchSize);
+      request.onsuccess = () => {
+        const items = request.result as Solve[];
+        for (const solve of items) solves.push(solve);
+        if (batchSize && items.length === batchSize) next(items.at(-1)!.id);
       };
-      next();
-      tx.oncomplete = () => resolve(solves);
-      tx.onabort = () => reject(tx.error ?? new Error('Cannot read local solves.'));
-    });
-  } finally { db.close(); }
+    };
+    next();
+    return solves;
+  }, 'Cannot read local solves.');
 }
 export async function readSolveIds(): Promise<string[]> {
-  const db = await database();
-  try { return await new Promise((resolve, reject) => {
-    const request = db.transaction('solves').objectStore('solves').getAllKeys();
-    request.onsuccess = () => resolve(request.result as string[]);
-    request.onerror = () => reject(request.error ?? new Error('Cannot read local solve IDs.'));
-  }); } finally { db.close(); }
+  const request = await withSolves('readonly', store => store.getAllKeys(), 'Cannot read local solve IDs.');
+  return request.result as string[];
 }
 export async function recoverLocalSolves(cube: Cube, current?: (id: string) => boolean): Promise<Solve[]> {
   const solves = await readSolves(100), active = solves.filter(solve => solve.status === 'active' && !current?.(solve.id));
@@ -85,35 +80,19 @@ export async function recoverLocalSolves(cube: Cube, current?: (id: string) => b
 }
 
 export async function deleteSolve(id: string): Promise<void> {
-  const db = await database();
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction('solves', 'readwrite');
-      tx.objectStore('solves').delete(id);
-      tx.oncomplete = () => resolve();
-      tx.onabort = () => reject(tx.error ?? new Error('Cannot delete local solve.'));
-    });
-  } finally { db.close(); }
+  await withSolves('readwrite', store => store.delete(id), 'Cannot delete local solve.');
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('timer-solve-deleted', { detail: id }));
 }
 
 export async function updateSession(ids: string[], name: string | null): Promise<void> {
   if (!ids.length) return;
-  const db = await database();
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction('solves', 'readwrite'), store = tx.objectStore('solves');
-      ids.forEach(id => {
-        if (name === null) { store.delete(id); return; }
-        const request = store.get(id);
-        request.onsuccess = () => {
-          if (request.result) store.put({ ...request.result as Solve, session: name });
-        };
-      });
-      tx.oncomplete = () => resolve();
-      tx.onabort = () => reject(tx.error ?? new Error('Session changes could not be saved.'));
-    });
-  } finally { db.close(); }
+  await withSolves('readwrite', store => ids.forEach(id => {
+    if (name === null) { store.delete(id); return; }
+    const request = store.get(id);
+    request.onsuccess = () => {
+      if (request.result) store.put({ ...request.result as Solve, session: name });
+    };
+  }), 'Session changes could not be saved.');
   if (name === null && typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('timer-solve-deleted', { detail: ids }));
   }
@@ -121,6 +100,7 @@ export async function updateSession(ids: string[], name: string | null): Promise
 
 const finite = (n: number): boolean => typeof n === 'number' && Number.isFinite(n);
 const text = (s: string, max = 1000): boolean => typeof s === 'string' && s.length <= max;
+const solveTextFields = [['id', 100], ['device', 200], ['createdAt', 100], ['scramble', 1000], ['startFacelets', 54], ['reason', 1000]] as const;
 
 // Compact tuples retain the raw data without repeating field names per sample.
 type BackupTurn = [move: string, elapsed: number, hostTime: number, localTimestamp: number | null, cubeTimestamp: number | null, serial?: number];
@@ -157,11 +137,11 @@ export function validateBackupData(value: BackupEnvelope, cube: Cube): Solve[] {
   };
   return solves.map(solve => {
     if (!solve || typeof solve !== 'object' || solve.version !== 1 ||
-        !text(solve.id, 100) || !solve.id || ids.has(solve.id) || !text(solve.session, / - (Acubemy|Cubeast)$/.test(solve.session) ? 110 : 100) ||
+        !solveTextFields.every(([key, max]) => text(solve[key], max)) || !solve.id || ids.has(solve.id) ||
+        !text(solve.session, / - (Acubemy|Cubeast)$/.test(solve.session) ? 110 : 100) ||
         (solve.appVersion !== undefined && !text(solve.appVersion, 100)) ||
-        !text(solve.device, 200) || !text(solve.createdAt, 100) || !Number.isFinite(Date.parse(solve.createdAt)) ||
-        !text(solve.scramble) || (!solve.imported && (!movesOf(solve.scramble).length || movesOf(solve.scramble).some(move => !isMove(move)))) ||
-        !text(solve.startFacelets, 54) || !text(solve.reason) ||
+        !Number.isFinite(Date.parse(solve.createdAt)) ||
+        (!solve.imported && (!movesOf(solve.scramble).length || movesOf(solve.scramble).some(move => !isMove(move)))) ||
         !finite(solve.duration) || solve.duration < 0 ||
         (solve.inspection !== undefined && (!finite(solve.inspection) || solve.inspection < 0)) ||
         (solve.penalty !== undefined && (!finite(solve.penalty) || solve.penalty <= 0)) ||
@@ -332,10 +312,10 @@ export function cubeastCSV(solves: Solve[], cube: Cube): string {
       };
       Object.entries(step).forEach(([field, value]) => { values[`step_${i}_${field}`] = value; });
     });
-    values.steps_skipped = solve.imported ? solve.imported.steps.filter(step => !step.time && !step.turns).length : analysis.ends.filter((end, i) => end === (analysis.ends[i - 1] ?? 0)).length;
+    values['steps_skipped'] = solve.imported ? solve.imported.steps.filter(step => !step.time && !step.turns).length : analysis.ends.filter((end, i) => end === (analysis.ends[i - 1] ?? 0)).length;
     if (!solve.imported) {
-      values.total_recognition_time = analysis.ends.reduce((sum, _, i) => sum + Number(values[`step_${i}_recognition_time`]), 0);
-      values.total_execution_time = analysis.ends.reduce((sum, _, i) => sum + Number(values[`step_${i}_execution_time`]), 0);
+      values['total_recognition_time'] = analysis.ends.reduce((sum, _, i) => sum + Number(values[`step_${i}_recognition_time`]), 0);
+      values['total_execution_time'] = analysis.ends.reduce((sum, _, i) => sum + Number(values[`step_${i}_execution_time`]), 0);
     }
     return cubeastColumns.map(column => csvCell(values[column] ?? '')).join(',');
   });

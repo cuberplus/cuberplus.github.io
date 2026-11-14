@@ -1,5 +1,6 @@
 import { AUF_MOVES, ROTATIONS, getAufMovesForSolve, tokenizeMoves } from "../Data/CsvParser";
 import { AufInefficiency, CaseStats, caseSteps, getStep, MoveAnalysisResult, RedundantPair, Solve, SolveEfficiency, Step, StepName } from "../Models/Types";
+import { memoize } from '../Helpers/memoize';
 
 /**
  * Parses a single move token into its face (including wide-move prefix)
@@ -12,37 +13,30 @@ const MOVE_TOKEN_RE = /^([RLUDFBrludfbMESxyz]w?)(2'|3'?|'|2)?$/;
 const SUFFIX_QUARTER_TURNS: { [suffix: string]: number } = { "": 1, "'": 3, "2": 2, "2'": 2, "3": 3, "3'": 3 };
 
 /** The move vocabulary is tiny and repeats across every solve, so parsed tokens are memoised. */
-const MOVE_TOKEN_CACHE = new Map<string, ParsedToken | null>();
-function parseMoveToken(token: string): ParsedToken | null {
-    const cached = MOVE_TOKEN_CACHE.get(token);
-    if (cached !== undefined) return cached;
+const parseMoveToken = memoize((token: string): ParsedToken | null => {
     const m = token.match(MOVE_TOKEN_RE);
-    const parsed = m ? { face: m[1], quarterTurns: SUFFIX_QUARTER_TURNS[m[2] ?? ""] } : null;
-    MOVE_TOKEN_CACHE.set(token, parsed);
-    return parsed;
-}
+    return m ? { face: m[1], quarterTurns: SUFFIX_QUARTER_TURNS[m[2] ?? ""] } : null;
+});
 
 export type MoveMistake = { kind: 'singleUndo' | 'sequenceUndo' | 'redundantTurns'; auf: boolean; wastedMoves: number };
-const mistakeTokens = new Map<string, { face: string; count: number; turns: number } | null>();
+const mistakeToken = memoize((token: string) => {
+    const match = /^([RLUDFBrludfbMES]w?)(\d+)?(')?$/.exec(token);
+    const count = Number(match?.[2] ?? 1);
+    return match && Number.isFinite(count) ? {
+        face: match[1].endsWith('w') ? match[1][0].toLowerCase() : match[1], count,
+        turns: (count % 4) * (match[3] ? 3 : 1) % 4,
+    } : null;
+});
 /** Maximal contiguous inverse sequences are one episode; rotations/unknown tokens are barriers. */
 export function analyzeMoveMistakes(tokens: string[], auf: Set<string> = AUF_MOVES): MoveMistake[] {
-    const moves = tokens.map(token => {
-        const cached = mistakeTokens.get(token);
-        if (cached !== undefined) return cached;
-        const match = /^([RLUDFBrludfbMES]w?)(\d+)?(')?$/.exec(token);
-        const count = Number(match?.[2] ?? 1);
-        const parsed = match && Number.isFinite(count) ? { face: match[1].endsWith('w') ? match[1][0].toLowerCase() : match[1], count,
-            turns: (count % 4) * (match[3] ? 3 : 1) % 4 } : null;
-        mistakeTokens.set(token, parsed);
-        return parsed;
-    });
+    const moves = tokens.map(mistakeToken);
     const face = auf.values().next().value;
     let prefix = 0, suffix = moves.length - 1;
     while (prefix < moves.length && moves[prefix]?.face === face) prefix++;
     while (suffix >= 0 && moves[suffix]?.face === face) suffix--;
     const inAuf = (left: number, right: number) => right < prefix || left > suffix;
-    const inverse = (left: number, right: number) => moves[left] && moves[right] && moves[left]!.turns > 0
-        && moves[left]!.face === moves[right]!.face && (moves[left]!.turns + moves[right]!.turns) % 4 === 0;
+    const inverse = (left: number, right: number) => moves[left] && moves[right] && moves[left].turns > 0
+        && moves[left].face === moves[right].face && (moves[left].turns + moves[right].turns) % 4 === 0;
     const issues: MoveMistake[] = [];
     let consumed = -1;
     for (let i = 1; i < moves.length; i++) {
@@ -164,15 +158,10 @@ function failedSolveIds(stats: CaseStats): Set<string> {
 }
 
 /** Move strings repeat heavily across solves, so the two turn counts are memoised by step moves. */
-const STEP_TURN_CACHE = new Map<string, { original: number; simplified: number }>();
-function stepTurnCounts(moves: string): { original: number; simplified: number } {
-    let counts = STEP_TURN_CACHE.get(moves);
-    if (!counts) {
-        const { originalTurns, simplifiedTurns } = analyzeStepMoves(moves);
-        STEP_TURN_CACHE.set(moves, counts = { original: originalTurns, simplified: simplifiedTurns });
-    }
-    return counts;
-}
+const stepTurnCounts = memoize((moves: string) => {
+    const { originalTurns, simplifiedTurns } = analyzeStepMoves(moves);
+    return { original: originalTurns, simplified: simplifiedTurns };
+});
 
 export function computeSolveEfficiency(
     solve: Solve,

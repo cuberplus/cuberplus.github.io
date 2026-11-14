@@ -3,11 +3,15 @@ import { cpSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirS
 import { fileURLToPath } from 'node:url';
 import { extname, resolve, sep } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { createRequire } from 'node:module';
 import { defineConfig, loadEnv, transformWithEsbuild } from 'vite';
 import react from '@vitejs/plugin-react';
 import type { Plugin } from 'postcss';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
+const gridStyles = createRequire(import.meta.url).resolve('react-data-grid/lib/styles.css');
+const classicScript = async (file: string) => (await transformWithEsbuild(
+  readFileSync(resolve(root, file), 'utf8'), file, { loader: 'ts', format: 'iife' })).code;
 const scopeStyles: Plugin = {
   postcssPlugin: 'cuberplus-tool-styles',
   Rule(rule) {
@@ -27,8 +31,8 @@ const scopeStyles: Plugin = {
 
 export default defineConfig(({ mode }) => ({
   define: {
-    __GOOGLE_CLIENT_ID__: JSON.stringify(loadEnv(mode, root).VITE_GOOGLE_CLIENT_ID ?? ''),
-    __MICROSOFT_CLIENT_ID__: JSON.stringify(loadEnv(mode, root).VITE_MICROSOFT_CLIENT_ID ?? ''),
+    __GOOGLE_CLIENT_ID__: JSON.stringify(loadEnv(mode, root)['VITE_GOOGLE_CLIENT_ID'] ?? ''),
+    __MICROSOFT_CLIENT_ID__: JSON.stringify(loadEnv(mode, root)['VITE_MICROSOFT_CLIENT_ID'] ?? ''),
   },
   plugins: [react({ exclude: /[/\\](?:Helpers|cube)[/\\]/ }), {
     name: 'cuberplus-pages-and-offline',
@@ -38,6 +42,17 @@ export default defineConfig(({ mode }) => ({
     },
     configureServer(server) {
       server.middlewares.use((request, response, next) => {
+        const pathname = new URL(request.url ?? '/', 'http://localhost').pathname;
+        if (pathname === '/analyzer/react-data-grid.css') {
+          response.setHeader('Content-Type', 'text/css');
+          createReadStream(gridStyles).pipe(response);
+          return;
+        }
+        if (pathname === '/analyzer/theme-init.js') {
+          response.setHeader('Content-Type', 'text/javascript');
+          void classicScript('shared/config/theme-init.ts').then(response.end.bind(response), next);
+          return;
+        }
         const path = new URL(request.url ?? '/', 'http://localhost').pathname.match(/^\/(timer|analyzer|scrambler)\/(.+)$/);
         if (!path || path[2] === 'index.html') return next();
         let decoded: string;
@@ -49,16 +64,18 @@ export default defineConfig(({ mode }) => ({
         createReadStream(file).pipe(response);
       });
     },
+    generateBundle() {
+      // Keep the dependency's cascade layers out of the CSS minifier.
+      this.emitFile({ type: 'asset', fileName: 'analyzer/react-data-grid.css', source: readFileSync(gridStyles) });
+    },
     async closeBundle() {
       const output = resolve(root, 'build'), shell = readFileSync(resolve(output, 'index.html'), 'utf8');
-      for (const app of ['timer', 'smartcubeanalyzer', 'scrambler']) {
-        const target = resolve(output, app === 'smartcubeanalyzer' ? 'analyzer' : app);
-        cpSync(resolve(root, app, 'public'), target, { recursive: true, filter: source => !/(?:manifest[^\\/]*|index\.html)$/.test(source) });
-        writeFileSync(resolve(target, 'index.html'), shell);
-      }
+      for (const app of ['timer', 'smartcubeanalyzer', 'scrambler']) cpSync(resolve(root, app, 'public'),
+        resolve(output, app === 'smartcubeanalyzer' ? 'analyzer' : app), { recursive: true, filter: source => !/(?:manifest[^\\/]*|index\.html)$/.test(source) });
+      writeFileSync(resolve(output, 'analyzer', 'theme-init.js'), await classicScript('shared/config/theme-init.ts'));
       const demos = resolve(output, 'analyzer', 'demo');
       for (const file of readdirSync(demos).filter(file => file.endsWith('.csv'))) writeFileSync(resolve(demos, `${file}.gz`), gzipSync(readFileSync(resolve(demos, file)), { level: 9 }));
-      for (const page of ['database', 'trainer', 'options', 'smartcubeanalyzer']) {
+      for (const page of ['timer', 'analyzer', 'scrambler', 'database', 'trainer', 'options', 'smartcubeanalyzer']) {
         mkdirSync(resolve(output, page), { recursive: true });
         writeFileSync(resolve(output, page, 'index.html'), shell);
       }
@@ -70,8 +87,7 @@ export default defineConfig(({ mode }) => ({
       const precache = ['/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/favicon.ico', '/trainer-preview.svg', '/analyzer/theme-init.js', '/analyzer/react-data-grid.css', ...assets, ...caseImages];
       const version = createHash('sha256');
       for (const file of precache) if (existsSync(resolve(output, `.${file}`))) version.update(readFileSync(resolve(output, `.${file}`)));
-      const { code } = await transformWithEsbuild(readFileSync(resolve(root, 'src', 'pwa', 'service-worker.ts'), 'utf8'), 'service-worker.ts', { loader: 'ts', format: 'iife' });
-      const worker = code.replace('__CACHE_VERSION__', version.digest('hex').slice(0, 16)).replace('__PRECACHE__', JSON.stringify(precache));
+      const worker = (await classicScript('src/pwa/service-worker.ts')).replace('__CACHE_VERSION__', version.digest('hex').slice(0, 16)).replace('__PRECACHE__', JSON.stringify(precache));
       writeFileSync(resolve(output, 'sw.js'), worker);
     },
   }],

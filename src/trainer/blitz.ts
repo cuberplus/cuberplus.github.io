@@ -71,7 +71,7 @@ export function readBlitzSettings(): BlitzSettings {
 }
 export function blitzOrientations(cube: Cube) {
   return ['', 'x', 'x2', "x'", 'z', "z'"].flatMap(tilt => ['', 'y', 'y2', "y'"].map(yaw => {
-    const colorFrame = `${tilt} ${yaw}`.trim(), centers = cube.solved().applyAlg(colorFrame).patternData.CENTERS.pieces;
+    const colorFrame = `${tilt} ${yaw}`.trim(), centers = cube.solved().applyAlg(colorFrame).patternData['CENTERS'].pieces;
     return { colorFrame, crossColor: cubeColors['URFDLB'.indexOf(centerFaces[centers[5]])], frontColor: cubeColors['URFDLB'.indexOf(centerFaces[centers[2]])] };
   }));
 }

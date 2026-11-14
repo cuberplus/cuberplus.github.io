@@ -26,7 +26,7 @@ const pll = new Map(Object.entries({
 export const CASE_IDS = { F2L: [...f2l.values()], OLL: [...oll.values()], PLL: [...pll.values()] };
 const aufs = ['', 'U', 'U2', "U'"], spins = ['', 'y', 'y2', "y'"];
 export function normalized(cube: Cube, pattern: KPattern, rotation: string): KPattern {
-  const turned = pattern.applyAlg(rotation), centers = turned.patternData.CENTERS.pieces;
+  const turned = pattern.applyAlg(rotation), centers = turned.patternData['CENTERS'].pieces;
   // Cube.facelets keeps fixed centers; relabel rotated cubies and restore calibrated centers.
   return cube.parse([...cube.facelets(turned)].map((face, i) => i % 9 === 4 ? 'URFDLB'[Math.floor(i / 9)] :
     'ULFRBD'[centers.indexOf('ULFRBD'.indexOf(face))]).join(''));
@@ -44,15 +44,15 @@ export function recognizeCase(step: number, cube: Cube, cross: number, before: K
       .filter(([start, end]) => !pairSolved(start) && pairSolved(end));
     if (targets.length !== 1) return '';
     const key = aufs.map(auf => {
-      const data = targets[0][0].applyAlg(auf).patternData, corner = data.CORNERS.pieces.indexOf(4), edge = data.EDGES.pieces.indexOf(8);
-      return [corner, data.CORNERS.orientation[corner], edge, data.EDGES.orientation[edge]].join(',');
+      const data = targets[0][0].applyAlg(auf).patternData, corner = data['CORNERS'].pieces.indexOf(4), edge = data['EDGES'].pieces.indexOf(8);
+      return [corner, data['CORNERS'].orientation[corner], edge, data['EDGES'].orientation[edge]].join(',');
     }).sort()[0];
     return f2l.get(key) ?? '';
   }
   if (step === 5) {
     const key = aufs.map(auf => {
       const data = before.applyAlg(auf).patternData;
-      return [...data.CORNERS.orientation.slice(0, 4), ...data.EDGES.orientation.slice(0, 4)].join('');
+      return [...data['CORNERS'].orientation.slice(0, 4), ...data['EDGES'].orientation.slice(0, 4)].join('');
     }).sort()[0];
     return key === '00000000' ? 'Solved' : oll.get(key) ?? '';
   }

@@ -89,7 +89,7 @@ describe('index.html security headers', () => {
     });
 
     test('the theme bootstrap it loads actually exists', () => {
-        const script = readFileSync(join(process.cwd(), "smartcubeanalyzer", "public", "theme-init.js"), 'utf8');
+        const script = readFileSync(join(process.cwd(), 'shared', 'config', 'theme-init.ts'), 'utf8');
         expect(script).toContain('data-bs-theme');
     });
 

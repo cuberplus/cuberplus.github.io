@@ -49,7 +49,7 @@ export function validImported(solve: Solve): boolean {
     (data.endDate === undefined || (text(data.endDate, 100) && Number.isFinite(Date.parse(data.endDate)))) &&
     Object.values(MethodName).includes(data.method) && Object.values(CrossColor).includes(data.crossColor) &&
     text(data.scramble) && data.scramble === solve.scramble && text(data.session, / - (Acubemy|Cubeast)$/.test(data.session) ? 110 : 100) && text(data.firstF2LPair ?? '', 100) &&
-    ['isCorrupt', 'isFullStep', 'isMistake'].every(key => typeof data[key as 'isCorrupt'] === 'boolean') &&
+    (['isCorrupt', 'isFullStep', 'isMistake'] as const).every(key => typeof data[key] === 'boolean') &&
     (data.dnf === undefined || typeof data.dnf === 'boolean') &&
     [data.time, data.tps, data.turns, data.recognitionTime, data.executionTime, data.preAufTime, data.postAufTime].every(number) &&
     (data.inspectionTime === null || number(data.inspectionTime)) &&

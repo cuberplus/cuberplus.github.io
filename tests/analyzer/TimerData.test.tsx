@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
 import React from 'react';
 import { beforeEach, expect, jest, test } from '@jest/globals';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react';
 import { PageVisible, SettingsContext, SettingsProvider } from '@cuberplus/navigation';
 import { FileInput } from '../../smartcubeanalyzer/src/Components/FileInput';
 import { readLocalAnalysis } from '../../timer/src/Analysis/analyzer-data';
@@ -25,6 +25,7 @@ const localData = jest.mocked(readLocalAnalysis);
 const csv = 'id,date,dnf,time,solving_method,solving_time,one_turn_away_two_second_penalty,session_name\r\nnew,2026-01-03 00:00:00 UTC,false,14000,CFOP,12000,true,"Practice, ""Summer"""\r\nold,2026-01-01 00:00:00 UTC,true,,CFOP,,,Other\r\n';
 const own = () => parseCsv(csv, ',').map(solve => ({ ...solve, source: 'timer' as const, rawSource: 'timer' }));
 const file = (name: string, content = csv) => Object.assign(new File([], name), { text: () => Promise.resolve(content) });
+const render = (ui: React.ReactElement) => renderView(ui, { wrapper: SettingsProvider });
 async function ready(ref: React.RefObject<FileInput>, count = 2) {
     await waitFor(() => { expect(ref.current?.state.isParsing).toBe(false); expect(ref.current?.state.solves).toHaveLength(count); });
 }
@@ -33,6 +34,8 @@ function openDataMenu() {
     if (!document.querySelector<HTMLDialogElement>('.analyzer-data-dialog')?.open) fireEvent.click(data);
 }
 beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem('selected-session', 'Practice, "Summer"');
     Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function(this: HTMLDialogElement) { this.open = true; } });
     Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function(this: HTMLDialogElement) { this.open = false; } });
     jest.clearAllMocks(); localData.mockReset().mockResolvedValue(own()); jest.mocked(readSolveIds).mockResolvedValue(['old', 'new']); jest.mocked(GetDemoData).mockResolvedValue(csv);
@@ -45,7 +48,7 @@ test('Analyzer receives the shared solve limit and updates without reloading its
         return <button onClick={() => setSolveLimit(25000)}>Increase recent scope</button>;
     }
     const ref = React.createRef<FileInput>();
-    render(<SettingsProvider><FileInput ref={ref} /><ChangeScope /></SettingsProvider>);
+    render(<><FileInput ref={ref} /><ChangeScope /></>);
     await ready(ref);
     const solves = mockFilterProps.solves;
     expect(mockFilterProps.solveLimit).toBe(10000);
@@ -56,17 +59,16 @@ test('Analyzer receives the shared solve limit and updates without reloading its
     localStorage.removeItem('recent-solve-limit');
 });
 test('Analyzer receives session changes and the all-session option without reloading data', async () => {
-    localStorage.setItem('selected-session', 'Practice');
     localStorage.removeItem('timer-all-session-history');
     function ChangeSession() {
         const { setSession, setAllSessions } = React.useContext(SettingsContext);
         return <><button onClick={() => setSession('Other')}>Other session</button><button onClick={() => setAllSessions(true)}>All sessions</button></>;
     }
     const ref = React.createRef<FileInput>();
-    render(<SettingsProvider><FileInput ref={ref} /><ChangeSession /></SettingsProvider>);
+    render(<><FileInput ref={ref} /><ChangeSession /></>);
     await ready(ref);
     const solves = mockFilterProps.solves;
-    expect(mockFilterProps.sessionScope).toBe('Practice');
+    expect(mockFilterProps.sessionScope).toBe('Practice, "Summer"');
     fireEvent.click(screen.getByRole('button', { name: 'Other session' }));
     expect(mockFilterProps.sessionScope).toBe('Other');
     fireEvent.click(screen.getByRole('button', { name: 'All sessions' }));
@@ -78,16 +80,16 @@ test('Analyzer receives session changes and the all-session option without reloa
 });
 test('increasing a capped dataset scope reloads details with the new limit', async () => {
     localStorage.setItem('recent-solve-limit', '1000');
-    const solves = Array.from({ length: 1005 }, (_, i) => ({ ...own()[0], id: String(i), date: new Date(Date.UTC(2026, 0, 1, 0, 0, i)) }));
+    const solves = Array.from({ length: 1005 }, (_, i) => ({ ...own()[0], session: 'Practice, "Summer"', id: String(i), date: new Date(Date.UTC(2026, 0, 1, 0, 0, i)) }));
     localData.mockResolvedValue(solves);
     function ChangeScope() {
         const { setSolveLimit } = React.useContext(SettingsContext);
         return <button onClick={() => setSolveLimit(0)}>Analyze all solves</button>;
     }
     const ref = React.createRef<FileInput>();
-    render(<SettingsProvider><FileInput ref={ref} /><ChangeScope /></SettingsProvider>);
+    render(<><FileInput ref={ref} /><ChangeScope /></>);
     await ready(ref, 1005);
-    expect(localData).toHaveBeenLastCalledWith(1000, []);
+    expect(localData).toHaveBeenLastCalledWith(1000, ['Practice, "Summer"']);
     act(() => mockFilterProps.onSessionsChange?.(['Other']));
     await waitFor(() => expect(localData).toHaveBeenLastCalledWith(1000, ['Other']));
     await ready(ref, 1005);
@@ -149,7 +151,7 @@ test('opening Analyzer automatically loads local data with provenance, sessions,
     expect(GetDemoData).not.toHaveBeenCalled();
 });
 
-test('an empty database automatically loads Dev Solves, but manual refresh explains the empty database', async () => {
+test('an empty database uses Dev Solves on startup and manual saved-data refresh', async () => {
     localData.mockResolvedValue([]);
     const ref = React.createRef<FileInput>();
     render(<FileInput ref={ref} />);
@@ -158,8 +160,104 @@ test('an empty database automatically loads Dev Solves, but manual refresh expla
     expect(mockFilterProps.source).toBe('Demo: Dev Solves');
     openDataMenu();
     fireEvent.click(screen.getByRole('button', { name: 'My saved solves' }));
-    expect((await screen.findByRole('alert')).textContent).toContain('No saved CuberPlus solves found');
+    await waitFor(() => expect(GetDemoData).toHaveBeenCalledTimes(2));
+    await ready(ref);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(mockFilterProps.sessionScope).toBeUndefined();
     expect(ref.current!.state.solves).toHaveLength(2);
+});
+
+test.each([
+    ['Missing', false, false, 'Demo: Dev Solves'],
+    ['Missing', true, false, 'Shown solves'],
+    ['Missing', true, true, 'Demo: Dev Solves'],
+])('selected session %s, all sessions %s, empty database %s loads %s', async (session, allSessions, empty, source) => {
+    localStorage.setItem('selected-session', session);
+    localStorage.setItem('timer-all-session-history', String(allSessions));
+    if (empty) localData.mockResolvedValue([]);
+    const ref = React.createRef<FileInput>();
+    render(<FileInput ref={ref} />);
+    await ready(ref);
+    expect(mockFilterProps.source).toBe(source);
+    expect(mockFilterProps.sessionScope).toBe(source.startsWith('Demo:') ? undefined : '');
+    expect(GetDemoData).toHaveBeenCalledTimes(source.startsWith('Demo:') ? 1 : 0);
+    expect(ref.current!.state.solves.every(solve => solve.source === (source.startsWith('Demo:') ? 'cubeast' : 'timer'))).toBe(true);
+    expect(localStorage.getItem('selected-session')).toBe(session);
+    expect(localStorage.getItem('timer-all-session-history')).toBe(String(allSessions));
+});
+
+function SessionButtons() {
+    const { setSession, setAllSessions } = React.useContext(SettingsContext);
+    return <><button onClick={() => { setAllSessions(false); setSession('Other'); }}>Populated session</button>
+        <button onClick={() => { setAllSessions(false); setSession('Missing'); }}>Empty session</button>
+        <button onClick={() => setAllSessions(true)}>All saved sessions</button></>;
+}
+
+test('switching empty and populated scopes leaves demo mode and analyzes the real session, not demo filters', async () => {
+    localStorage.setItem('selected-session', 'Missing');
+    const ref = React.createRef<FileInput>();
+    render(<><FileInput ref={ref} /><SessionButtons /></>);
+    await ready(ref);
+    expect(mockFilterProps.source).toBe('Demo: Dev Solves');
+    act(() => mockFilterProps.onSessionsChange?.(['Demo session']));
+    fireEvent.click(screen.getByRole('button', { name: 'Populated session' }));
+    await waitFor(() => expect(mockFilterProps.source).toBe('Shown solves'));
+    await ready(ref);
+    expect(localData).toHaveBeenLastCalledWith(10000, ['Other']);
+    expect(mockFilterProps.sessionScope).toBe('Other');
+    expect(localStorage.getItem('selected-session')).toBe('Other');
+    fireEvent.click(screen.getByRole('button', { name: 'Empty session' }));
+    await waitFor(() => expect(mockFilterProps.source).toBe('Demo: Dev Solves'));
+    await ready(ref);
+    expect(localStorage.getItem('selected-session')).toBe('Missing');
+    fireEvent.click(screen.getByRole('button', { name: 'All saved sessions' }));
+    await waitFor(() => expect(mockFilterProps.source).toBe('Shown solves'));
+    await ready(ref);
+    expect(localData).toHaveBeenLastCalledWith(10000, []);
+    expect(mockFilterProps.sessionScope).toBe('');
+    expect(localStorage.getItem('selected-session')).toBe('Missing');
+});
+
+test('ordinary Analyzer filters do not replace saved data with demo data', async () => {
+    const ref = React.createRef<FileInput>();
+    render(<FileInput ref={ref} />);
+    await ready(ref);
+    const solves = mockFilterProps.solves;
+    act(() => { mockFilterProps.onStepsChange?.([]); mockFilterProps.onSessionsChange?.(['Missing']); });
+    expect(mockFilterProps.solves).toBe(solves);
+    expect(mockFilterProps.source).toBe('Shown solves');
+    expect(GetDemoData).not.toHaveBeenCalled();
+    expect(localStorage.getItem('selected-session')).toBe('Practice, "Summer"');
+});
+
+test.each([false, true])('deleting the last saved solves in scope falls back to demo, all sessions %s', async allSessions => {
+    localStorage.setItem('timer-all-session-history', String(allSessions));
+    const ref = React.createRef<FileInput>();
+    render(<FileInput ref={ref} />);
+    await ready(ref);
+    localData.mockResolvedValue(allSessions ? [] : own().filter(solve => solve.session === 'Other'));
+    act(() => window.dispatchEvent(new CustomEvent('timer-solve-deleted', { detail: allSessions ? ['old', 'new'] : 'new' })));
+    await waitFor(() => expect(mockFilterProps.source).toBe('Demo: Dev Solves'));
+    await ready(ref);
+    expect(GetDemoData).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem('selected-session')).toBe('Practice, "Summer"');
+    expect(localStorage.getItem('timer-all-session-history')).toBe(String(allSessions));
+});
+
+test('a late demo download cannot replace a newly selected populated session', async () => {
+    localStorage.setItem('selected-session', 'Missing');
+    let finish!: (value: string) => void;
+    jest.mocked(GetDemoData).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const ref = React.createRef<FileInput>();
+    render(<><FileInput ref={ref} /><SessionButtons /></>);
+    await waitFor(() => expect(GetDemoData).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Populated session' }));
+    await waitFor(() => expect(mockFilterProps.source).toBe('Shown solves'));
+    await ready(ref);
+    await act(async () => finish(csv));
+    expect(mockFilterProps.source).toBe('Shown solves');
+    expect(ref.current!.state.solves.every(solve => solve.source === 'timer')).toBe(true);
+    expect(localStorage.getItem('selected-session')).toBe('Other');
 });
 
 test('CSV selection loads all files automatically, cancelling preserves stats, and later selections replace them', async () => {
@@ -203,7 +301,7 @@ test('CSV reading disables competing loads and errors preserve the previous stat
 });
 
 test('new solves and returning to the retained page preserve snapshots and warn until explicitly loaded', async () => {
-    const imported = { ...own()[1], id: 'acubemy:new', source: 'acubemy' as const };
+    const imported = { ...own()[0], session: 'Practice, "Summer"', id: 'acubemy:new', source: 'acubemy' as const };
     localData.mockResolvedValueOnce(own()).mockResolvedValue([imported]);
     const ref = React.createRef<FileInput>();
     const view = render(<PageVisible.Provider value={true}><FileInput ref={ref} /></PageVisible.Provider>);
