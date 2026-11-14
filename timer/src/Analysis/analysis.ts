@@ -8,12 +8,12 @@ import { loadCube, SOLVED } from '../Core/puzzle';
 import type { DataProgress } from '../../../shared/workers/dataTasks';
 import { MISTAKES } from '../../../smartcubeanalyzer/src/Analysis/MistakeAnalysis';
 import { CrossColor, MethodName, StepName } from '../../../smartcubeanalyzer/src/Models/Types';
-import { analyzeCFOP, cfopKey, recordingKey } from './cfop';
+import { analyzeCFOP, cfopKey } from './cfop';
 import { completedF2LCross } from '../../../shared/cube/f2l';
 import { COLORS } from '../../../scrambler/src/cube/cube';
 
 export const ANALYSIS_VERSION = 2;
-export const analysisKey = (solve: Solve) => JSON.stringify([solve.crossOverride, solve.status, solve.penalty, solve.duration, solve.session, solve.inspection, solve.createdAt, solve.timingBasis, solve.startFacelets, recordingKey(solve)]);
+export const analysisKey = (solve: Solve) => JSON.stringify([cfopKey(solve), solve.penalty, solve.duration, solve.session, solve.inspection, solve.createdAt, solve.timingBasis]);
 const serialize = ({ date, endDate, ...data }: Analysis): NonNullable<Solve['imported']> => ({ ...data, date: date.toISOString(), endDate: endDate?.toISOString() });
 const restore = (data: NonNullable<Solve['imported']>): Analysis => ({ ...data, date: new Date(data.date), endDate: data.endDate ? new Date(data.endDate) : undefined });
 export function validAnalysis(solve: Solve): boolean {

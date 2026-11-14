@@ -1,5 +1,5 @@
 /** @jest-environment jsdom */
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { ChartPanel } from '../../smartcubeanalyzer/src/Components/ChartPanel';
@@ -18,45 +18,19 @@ function solve(overrides: Partial<FastestSolve>): FastestSolve {
     };
 }
 
-function openSolve(row: FastestSolve): { url: string; target?: string; features?: string } {
-    const calls: Parameters<typeof window.open>[] = [];
-    const original = window.open;
-    window.open = (...args: Parameters<typeof window.open>) => { calls.push(args); return null; };
-    try {
-        ChartPanel.prototype.openSolveSource.call({} as ChartPanel, row);
-    } finally {
-        window.open = original;
-    }
-    expect(calls).toHaveLength(1);
-    return { url: String(calls[0][0]), target: calls[0][1], features: calls[0][2] };
-}
-
-describe('external solve links', () => {
-    test('cubeast links open with noopener so the new tab cannot navigate this one', () => {
-        const { url, features } = openSolve(solve({ id: 'solve-1' }));
-        expect(url).toBe('https://app.cubeast.com/log/solves/solve-1');
-        expect(features).toContain('noopener');
-        expect(features).toContain('noreferrer');
-    });
-
-    test('acubemy links open with noopener so the new tab cannot navigate this one', () => {
-        const { url, features } = openSolve(solve({ source: 'acubemy', rawSourceId: 'share-1' }));
-        expect(url).toBe('https://acubemy.com/shared/share-1');
-        expect(features).toContain('noopener');
-        expect(features).toContain('noreferrer');
-    });
-
-    // Solve ids come from a user-supplied CSV, so they are untrusted input.
-    test('a hostile id from a CSV cannot escape the intended path or origin', () => {
-        const { url } = openSolve(solve({ id: '../../../evil?x=1#y' }));
-        expect(url).toBe('https://app.cubeast.com/log/solves/..%2F..%2F..%2Fevil%3Fx%3D1%23y');
-        expect(new URL(url).origin).toBe('https://app.cubeast.com');
-    });
-
-    test('a javascript: payload in an id stays inert', () => {
-        const { url } = openSolve(solve({ source: 'acubemy', rawSourceId: 'javascript:alert(1)' }));
-        expect(new URL(url).protocol).toBe('https:');
-        expect(url).not.toContain('javascript:');
+describe('local solve replay', () => {
+    test.each([
+        { id: 'solve-1' },
+        { source: 'acubemy' as const, rawSourceId: 'share-1' },
+        { id: '../../../evil?x=1#y' },
+        { source: 'acubemy' as const, id: 'javascript:alert(1)' },
+    ])('all sources and untrusted IDs stay in the native modal: %j', overrides => {
+        const row = solve(overrides), setState = jest.fn(), open = jest.spyOn(window, 'open').mockReturnValue(null);
+        try {
+            ChartPanel.prototype.openSolveSource.call({ setState } as object as ChartPanel, row);
+            expect(setState).toHaveBeenCalledWith({ replayId: row.id });
+            expect(open).not.toHaveBeenCalled();
+        } finally { open.mockRestore(); }
     });
 });
 

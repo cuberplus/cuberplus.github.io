@@ -2,6 +2,7 @@ import { lazy, Suspense, useId, useRef } from 'react';
 import { usePageDialog } from '@cuberplus/navigation';
 import { algorithms } from './algorithms';
 import { caseGroup } from './caseGroups';
+import { caseKeyLabel } from './caseLabels';
 
 const Database = lazy(() => import('./Database'));
 
@@ -9,7 +10,7 @@ export function CaseModal({ caseKey, close }: { caseKey: string; close: () => vo
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const entry = algorithms.find(entry => `${entry.category}-${entry.id}` === caseKey), group = entry ? caseGroup(entry) : '';
-  const title = `${caseKey.replace('-', ' ')}${group ? ` - ${group.replace(/\b[a-z]/g, letter => letter.toUpperCase())}` : ''}`;
+  const title = `${caseKeyLabel(caseKey)}${group ? ` - ${group.replace(/\b[a-z]/g, letter => letter.toUpperCase())}` : ''}`;
   usePageDialog(dialog);
   const dismiss = () => { dialog.current?.close(); close(); };
   return <dialog ref={dialog} className="panel replay-dialog case-dialog" aria-labelledby={titleId}

@@ -3,7 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { jest } from '@jest/globals';
 import { TimerEngine, type Solve } from '../../timer/src/Core/engine';
 import { loadCube, SOLVED, type Cube } from '../../timer/src/Core/puzzle';
-import { analyzeCFOP } from '../../timer/src/Analysis/cfop';
+import { analyzeCFOP, cfopKey } from '../../timer/src/Analysis/cfop';
 import { analysisKey, persistAnalysis, persistReplayAnalysis, reanalyzeAllSolves, reanalyzeSolve, solveAnalysis } from '../../timer/src/Analysis/analysis';
 import { MethodName } from '../../smartcubeanalyzer/src/Models/Types';
 import { backupJSON, deleteSolve, readSolves, saveSolves, validateBackup } from '../../timer/src/Data/storage';
@@ -140,6 +140,35 @@ test('bulk reanalysis recovers cases, preserves source metadata and reports prog
   expect(validateBackup(backupJSON(stored), cube)).toHaveLength(3);
   expect(progress.mock.calls[0][0]).toMatchObject({ processed: 0, total: 3, remainingMs: null });
   expect(progress.mock.calls.at(-1)![0]).toMatchObject({ processed: 3, remainingMs: 0 });
+});
+test.each(['native', 'imported'])('%s reanalysis replaces legacy Other F2L keys with the actual renumbered key', async source => {
+  const algorithm = "R2 U' L U R2 L'";
+  const solve: Solve = {
+    ...sample(), crossOverride: 3, status: 'incomplete', dnfReason: 'solve aborted', duration: 600,
+    scramble: "B2 R2 B' L2 F R2 F' L2 B U2 D' R2 D B2 U'",
+    startFacelets: 'UUUUUUUURFFRRRRLRRFRUFFFFFBDDDDDDRDDLLLLLLFLLBBBBBBBBD',
+    moves: algorithm.split(' ').map((move, i) => ({ move, elapsed: i * 100, hostTime: i * 100, localTimestamp: i * 100, cubeTimestamp: null })),
+  };
+  solveAnalysis(solve, cube);
+  const expected = [...solve.cfop!.cases];
+  expect(expected.flatMap(label => label.split(' + '))).toContain('OF2L-12');
+  const legacy = (label: string) => label.replace(/\bOF2L-12\b/g, 'OF2L-37');
+  solve.cfop!.key = cfopKey(solve).replace(/^\d+:/, '3:');
+  solve.cfop!.cases = expected.map(legacy);
+  solve.analysis!.data.steps = solve.analysis!.data.steps.map(step => ({ ...step, case: legacy(step.case ?? '') }));
+  const oldAnalysisKey = JSON.parse(solve.analysis!.key);
+  oldAnalysisKey[0] = solve.cfop!.key;
+  solve.analysis!.key = JSON.stringify(oldAnalysisKey);
+  if (source === 'imported') solve.imported = { ...solve.analysis!.data, source: 'cubeast' };
+  expect(analyzeCFOP(solve, cube).cases).toEqual(expected);
+  await saveSolves([solve]);
+  expect(await reanalyzeAllSolves(jest.fn())).toMatchObject({ analyzed: 1, failed: 0 });
+  const [updated] = await readSolves();
+  expect(updated.cfop!.cases).toEqual(expected);
+  expect(updated.analysis!.data.steps.flatMap(step => (step.case ?? '').split(' + '))).toContain('OF2L-12');
+  if (source === 'imported')
+    expect(updated.imported!.steps.flatMap(step => (step.case ?? '').split(' + '))).toContain('OF2L-12');
+  expect(updated.moves).toEqual(solve.moves);
 });
 test('reanalysis persistence retains later edits, deleted rows and unrelated metadata', async () => {
   const solve = sample(), updated = reanalyzeSolve(solve, cube, undefined);

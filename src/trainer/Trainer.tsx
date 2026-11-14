@@ -1,7 +1,6 @@
 import { memo, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import Navigation, { Footer, PageLocation, PageVisible, usePageDialog } from '@cuberplus/navigation';
-import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
-import { cubeConnection, useCubeConnection } from '../../shared/cube/connection';
+import { cubeConnection, useCubeConnection, type CubeEvent } from '../../shared/cube/connection';
 import { CubeConnectionMenu } from '../../shared/Components/CubeConnection';
 import { PageOptionsButton } from '../../shared/Components/PageOptionsButton';
 import { CubeView } from '../../timer/src/Components/CubeView';
@@ -64,7 +63,11 @@ export default function Trainer() {
     if (drill.current?.phase !== 'complete') return;
     const run = drill.current.result(); setResult(run); persist(run); drill.current = null;
   }
-  function receive(event: SmartCubeEvent) {
+  function receive(event: CubeEvent) {
+    if (event.type === 'CALIBRATE') {
+      if (drill.current) drill.current.phase = 'cancelled';
+      setStatus('Cube recalibrated. Start a new drill.'); render(); return;
+    }
     if (!mounted.current || (event.type !== 'MOVE' && event.type !== 'DISCONNECT')) return;
     if (event.type === 'DISCONNECT') {
       setStatus('Cube disconnected.');

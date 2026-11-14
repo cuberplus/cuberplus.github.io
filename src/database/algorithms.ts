@@ -3,12 +3,15 @@ import type { Cube } from '../../timer/src/Core/puzzle';
 import { locations } from '../../shared/cube/cubeLocations';
 import alternatives from './alternatives.json';
 import otherF2l from './otherF2l.json';
+import f2lSolutions from './f2lSolutions.json';
 
 export type Category = 'F2L' | 'AF2L' | 'OF2L' | 'OLL' | 'PLL';
-export interface AlgorithmCase { category: Category; id: string; algorithm: string; options: string[]; setup?: string; pair?: number }
+export interface AlgorithmCase { category: Category; id: string; algorithm: string; options: string[]; setup?: string; pair?: number; featured?: string[] }
 type CaseDefinition = Omit<AlgorithmCase, 'options'>;
 export interface IllustratedCase extends AlgorithmCase { facelets: string; visibleStickers: number[] }
 export const categories: Category[] = ['F2L', 'AF2L', 'OF2L', 'OLL', 'PLL'];
+export const databaseCaseKey = (category: string, id: string) => /^(?:F2L|AF2L|OF2L)-/.test(id) ? id : `${category}-${id}`;
+export const databaseCaseKeys = (category: string, id: string) => id.split(' + ').map(label => databaseCaseKey(category, label));
 // Highest community-voted algorithms in SpeedCubeDB's default (front-right F2L) view, November 4, 2026.
 const f2l = [
   "U R U' R'",
@@ -193,13 +196,21 @@ const advancedF2l: [string, string, string, number][] = [
   ["42", "R U' R' U2 L' U2 L U2 L' U L", "L U L2' U L2' U2' L' U R U2' R'", 5],
 ];
 const pairEdges = [8, 9, 11, 10];
-export const algorithms: AlgorithmCase[] = [
+export const baseAlgorithms: AlgorithmCase[] = [
   ...f2l.map((algorithm, i): CaseDefinition => ({ category: 'F2L', id: String(i + 1), algorithm })),
   ...advancedF2l.map(([id, algorithm, setup, pair]): CaseDefinition => ({ category: 'AF2L', id, algorithm, setup, pair })),
   ...otherF2l.cases.map((entry): CaseDefinition => ({ ...entry, category: 'OF2L' })),
   ...oll.map((algorithm, i): CaseDefinition => ({ category: 'OLL', id: String(i + 1), algorithm })),
   ...Object.entries(pll).map(([id, algorithm]): CaseDefinition => ({ category: 'PLL', id, algorithm })),
-].map(entry => ({ ...entry, options: [entry.algorithm, ...(alternatives[`${entry.category}-${entry.id}` as keyof typeof alternatives] ?? [])] }));
+].map(entry => ({ ...entry, options: entry.category === 'OF2L' ? otherF2l.cases.find(saved => saved.id === entry.id)!.options :
+  [entry.algorithm, ...(alternatives[`${entry.category}-${entry.id}` as keyof typeof alternatives] ?? [])] }));
+const generatedCases = f2lSolutions.cases as Record<string, { featured: string[]; options: string[]; optimalLength: number }>;
+export const algorithmAliases = f2lSolutions.aliases as Record<string, string>;
+export const algorithms: AlgorithmCase[] = baseAlgorithms.map(entry => {
+  const generated = generatedCases[`${entry.category}-${entry.id}`];
+  return generated ? { ...entry, featured: generated.featured, options: generated.options } :
+    entry.category === 'OF2L' ? { ...entry, featured: entry.options } : entry;
+});
 
 export function casePattern(cube: Cube, algorithm: string): KPattern {
   const transform = cube.puzzle.algToTransformation(algorithm);

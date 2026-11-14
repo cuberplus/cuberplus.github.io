@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { algorithms, type AlgorithmCase } from './algorithms';
+import { algorithms, algorithmAliases, type AlgorithmCase } from './algorithms';
 import { getAlgorithms, CATALOG_CHANGED } from './customAlgorithms';
 
 export const FAVORITES_KEY = 'cuberplus-database-favorites';
@@ -9,13 +9,16 @@ export const UNLEARN_KEY = 'cuberplus-unlearn-algorithms';
 export type FavoriteCategories = { F2L: boolean; OLL: boolean; PLL: boolean };
 type Preferences = { favorites?: Set<string>; unlearn?: Set<string>; enabled?: boolean; categories?: FavoriteCategories };
 const changed = 'cuberplus-algorithm-preferences';
-export const favoriteId = (entry: Pick<AlgorithmCase, 'category' | 'id'>, algorithm: string) =>
-  `${entry.category}-${entry.id}:${algorithm}`;
+export const favoriteId = (entry: Pick<AlgorithmCase, 'category' | 'id'>, algorithm: string) => {
+  const id = `${entry.category}-${entry.id}:${algorithm}`;
+  return algorithmAliases?.[id] ?? id;
+};
 export function readFavorites(key = FAVORITES_KEY): Set<string> {
   try {
     const validFavorites = new Set(getAlgorithms().flatMap(entry => entry.options.map(algorithm => favoriteId(entry, algorithm))));
     const saved = JSON.parse(localStorage.getItem(key) ?? '[]') as string[] | null;
-    return new Set((Array.isArray(saved) ? saved : []).filter(id => typeof id === 'string').flatMap(id => {
+    return new Set((Array.isArray(saved) ? saved : []).filter(id => typeof id === 'string').flatMap(savedId => {
+      const id = algorithmAliases?.[savedId] ?? savedId;
       const legacy = algorithms.find(entry => `${entry.category}-${entry.id}` === id);
       return legacy ? [favoriteId(legacy, legacy.algorithm)] : validFavorites.has(id) ? [id] : [];
     }));

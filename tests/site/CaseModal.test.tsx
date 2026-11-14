@@ -8,11 +8,11 @@ beforeAll(() => {
   Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function(this: HTMLDialogElement) { this.open = false; } });
 });
 afterEach(cleanup);
-
 test.each([
   ['F2L-1', 'F2L 1 - Oriented Edge'],
   ['F2L-2', 'F2L 2 - Unoriented Edge'],
   ['F2L-13', 'F2L 13 - Unoriented Edge'],
+  ['OF2L-12', 'OF2L 12 - Oriented Edge'],
   ['OLL-1', 'OLL 1 - Dot'],
   ['PLL-T', 'PLL T - Adjacent Corners'],
 ])('the %s modal labels its heading and dialog with the case category', async (caseKey, title) => {

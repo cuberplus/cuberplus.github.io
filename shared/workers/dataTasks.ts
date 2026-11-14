@@ -39,9 +39,9 @@ export async function runDataTask(task: DataTask, progress: (value: DataProgress
   }
   if (task.type === 'reanalyze') return (await import('../../timer/src/Analysis/analysis')).reanalyzeAllSolves(progress);
   if (task.type === 'import') return (await import('../../timer/src/Data/csvImport')).importSolveCSVs(task.files);
-  const solves = task.type === 'parse' ? parseCsv(task.csv, ',') : await (await import('../../timer/src/Analysis/analyzer-data')).readLocalAnalysis(task.solveLimit, task.sessions);
+  const solves = task.type === 'parse' ? parseCsv(task.csv, ',', true) : await (await import('../../timer/src/Analysis/analyzer-data')).readLocalAnalysis(task.solveLimit, task.sessions);
   solves.sort((a, b) => a.date.getTime() - b.date.getTime());
   const recent = latestSolves(solves.filter(solve => !task.sessions?.length || task.sessions.includes(solve.session || 'Default')), task.solveLimit ?? 0, solve => solve.date.getTime()), selected = new Set(recent);
   if (task.type === 'parse') markMistakes(recent, CalculateWindowSize(recent.length));
-  return { solves: solves.map(solve => selected.has(solve) ? solve : { ...solve, steps: solve.steps.map(step => ({ ...step, moves: '' })), recording: undefined, mistakes: undefined }) };
+  return { solves: solves.map(solve => selected.has(solve) || task.type === 'parse' ? solve : { ...solve, steps: solve.steps.map(step => ({ ...step, moves: '' })), recording: undefined, mistakes: undefined }) };
 }

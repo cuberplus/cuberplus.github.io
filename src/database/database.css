@@ -20,6 +20,8 @@
 .case-dialog .database-property { border: 0; }
 .case-dialog .database-property > summary { display: none; }
 .database-case { display: flex; align-items: center; gap: 24px; padding: 16px 0; border-top: 1px solid var(--cp-border); }
+.database-case--f2l { display: grid; grid-template-columns: 174px minmax(0, 1fr); }
+.database-case--f2l > .database-case-image { justify-self: center; }
 @keyframes database-case-flash {
   50% { background-color: color-mix(in srgb, var(--cp-accent) 12%, transparent); }
 }
@@ -27,6 +29,7 @@
   .database-case--linked { animation: database-case-flash .8s ease-in-out 2; }
 }
 .database-case-image { width: 120px; height: 120px; flex: 0 0 120px; }
+.database-case-image--mirrored { width: 174px; height: 155px; flex-basis: 174px; object-fit: contain; }
 .database-algorithms { flex: 1; min-width: 0; }
 .database-algorithm { position: relative; padding: 8px 92px 8px 0; min-height: 44px; }
 .database-algorithm--custom { padding-right: 136px; }
@@ -48,7 +51,9 @@
   .database-category-image .database-case-image { width: 48px; height: 48px; flex-basis: 48px; }
   .database-group-content { padding: 0 12px 12px; }
   .database-case { gap: 12px; }
+  .database-case--f2l { grid-template-columns: 136px minmax(0, 1fr); }
   .database-case-image { width: 90px; height: 90px; flex-basis: 90px; }
+  .database-case-image--mirrored { width: 136px; height: 121px; flex-basis: 136px; }
   .database-algorithm p { font-size: .95rem; word-spacing: normal; }
   .database-algorithm--custom { padding: 44px 0 8px; }
 }

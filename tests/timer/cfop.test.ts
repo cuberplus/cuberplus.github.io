@@ -2,9 +2,10 @@ import type { Solve } from '../../timer/src/Core/engine';
 import { KPattern, KTransformation } from 'cubing/kpuzzle';
 import { analyzeCFOP, cfopFrame, cfopRotation, cfopTiming, elapsedAt, f2lPair } from '../../timer/src/Analysis/cfop';
 import { firstF2LPair } from '../../shared/cube/f2l';
-import { recognizeCase } from '../../timer/src/Analysis/cases';
+import { normalized, recognizeCase } from '../../timer/src/Analysis/cases';
 import { Cube, inverse, loadCube, SOLVED } from '../../timer/src/Core/puzzle';
 import { caseStates } from './fixtures/cfop-cases';
+import { algorithms, databaseCaseKeys } from '../../src/database/algorithms';
 
 let cube: Cube;
 beforeAll(async () => { cube = await loadCube(); });
@@ -14,6 +15,17 @@ const EXTRACT = ["R U R'", "F U F'", "L U L'", "B U B'"];
 const scramble = [PLL, OLL, ...EXTRACT, 'D'].join(' ');
 const undo = (alg: string) => alg.split(/\s+/).reverse().map(inverse).join(' ');
 const solution = ['D', ...[...EXTRACT].reverse(), OLL, PLL].map(undo);
+test('cubie normalization agrees with sticker relabeling in every cube orientation', () => {
+  for (const tilt of ['', 'x', 'x2', "x'", 'z', "z'"]) for (const spin of ['', 'y', 'y2', "y'"]) {
+    for (const setup of [scramble, "r U M' F2 x R", "S U2 L D' z'"]) {
+      const pattern = cube.solved().applyAlg(setup), rotation = `${tilt} ${spin}`;
+      const turned = pattern.applyAlg(rotation), centers = turned.patternData.CENTERS.pieces;
+      const expected = cube.parse([...cube.facelets(turned)].map((face, i) => i % 9 === 4 ? 'URFDLB'[Math.floor(i / 9)] :
+        'ULFRBD'[centers.indexOf('ULFRBD'.indexOf(face))]).join(''));
+      expect(normalized(cube, pattern, rotation).patternData).toEqual(expected.patternData);
+    }
+  }
+});
 test('cached move transformations match native moves and still reject invalid notation', () => {
   const pattern = cube.solved().applyAlg("R U2 F'");
   for (const move of [...'URFDLB'].flatMap(face => [face, `${face}2`, `${face}'`])) {
@@ -225,14 +237,17 @@ test('an F2L case is recognized for the actual newly solved pair, including alte
   expect(analyzeCFOP(solve, cube).cases[4]).toBe('1');
 });
 
-test('nonstandard trapped pairs and simultaneous multi-pair solutions are not guessed', () => {
-  expect(recognizeCase(4, cube, 3, cube.solved().applyAlg("R U R' F U F'"), cube.solved())).toBe('');
+test('trapped pairs use the catalog and simultaneous completions expose all matching cases', () => {
+  const simultaneous = recognizeCase(4, cube, 3, cube.solved().applyAlg("R U R' F U F'"), cube.solved());
+  expect(simultaneous).toContain(' + ');
+  for (const key of databaseCaseKeys('F2L', simultaneous)) expect(algorithms.some(entry => `${entry.category}-${entry.id}` === key)).toBe(true);
   const data = structuredClone(cube.solved().patternData);
   [data.CORNERS.pieces[4], data.CORNERS.pieces[5]] = [5, 4];
   [data.EDGES.pieces[8], data.EDGES.pieces[9]] = [9, 8];
   const before = new KPattern(cube.puzzle, data);
   const extraction = EXTRACT.find(alg => !pairs(cube.facelets(cube.solved().applyAlg(alg)))[1])!;
-  expect(recognizeCase(4, cube, 3, before, cube.solved().applyAlg(extraction))).toBe('');
+  const trapped = recognizeCase(4, cube, 3, before, cube.solved().applyAlg(extraction));
+  expect(trapped).toMatch(/^(AF2L|OF2L)-/);
 });
 
 test('step clocks use validated fitted device time without altering the raw recording', () => {

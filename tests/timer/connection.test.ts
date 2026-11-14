@@ -5,13 +5,45 @@ import type { SmartCubeConnection, SmartCubeEvent } from 'smartcube-web-bluetoot
 let receive: (event: SmartCubeEvent) => void;
 const connect = jest.fn<(mac: string, event: (event: SmartCubeEvent) => void, ready: (connection: SmartCubeConnection) => void, status: (message: string) => void, name?: string) => Promise<void>>();
 const disconnect = jest.fn<() => Promise<void>>().mockResolvedValue();
-await jest.unstable_mockModule('../../timer/src/Bluetooth/bluetooth', () => ({ BluetoothCube: class { connect = connect; disconnect = disconnect; } }));
+const calibrate = jest.fn<() => Promise<void>>().mockResolvedValue(), refresh = jest.fn<() => Promise<void>>().mockResolvedValue();
+await jest.unstable_mockModule('../../timer/src/Bluetooth/bluetooth', () => ({ BluetoothCube: class { connect = connect; disconnect = disconnect; calibrate = calibrate; refresh = refresh; } }));
 const { CubeConnection } = await import('../../shared/cube/connection');
 const device = { deviceName: 'GAN Test', deviceMAC: 'AA:BB:CC:DD:EE:FF' } as SmartCubeConnection;
 beforeEach(() => {
-  localStorage.clear(); disconnect.mockClear();
+  localStorage.clear(); disconnect.mockClear(); calibrate.mockClear(); refresh.mockClear();
   connect.mockReset().mockImplementation(async (_mac, event, ready) => { receive = event; ready(device); });
   Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => 'cube-id' });
+});
+const turn = (move: string, serial?: number): SmartCubeEvent => ({ type: 'MOVE', timestamp: 0, move, serial, face: 1, direction: move.endsWith("'") ? 1 : 0, localTimestamp: 0, cubeTimestamp: null });
+test('the exact recalibration gesture aborts listeners before resetting and declaring solved', async () => {
+  const service = new CubeConnection(), events = jest.fn();
+  service.onEvent(events); await service.connect();
+  for (const move of ['R', "R'", 'U', 'R', "R'", 'R', "R'"]) receive(turn(move));
+  expect(calibrate).not.toHaveBeenCalled();
+  receive(turn('R')); receive(turn("R'"));
+  expect(calibrate).toHaveBeenCalledTimes(1);
+  expect(events).toHaveBeenLastCalledWith({ type: 'CALIBRATE', stage: 'start' });
+  await Promise.resolve();
+  expect(events).toHaveBeenLastCalledWith({ type: 'CALIBRATE', stage: 'complete' });
+  expect(service.getSnapshot().status).toBe('Cube recalibrated as solved.');
+});
+test('duplicate packets cannot complete the gesture and gaps reset its prefix', async () => {
+  const service = new CubeConnection(); await service.connect();
+  receive(turn('R', 1)); receive(turn("R'", 2)); receive(turn('R', 1)); receive(turn("R'", 2));
+  receive(turn('R', 3)); receive(turn("R'", 4)); receive(turn("R'", 4));
+  expect(calibrate).not.toHaveBeenCalled();
+  receive(turn('R', 7)); receive(turn("R'", 8));
+  expect(calibrate).not.toHaveBeenCalled();
+});
+test('manual state reading and calibration share the hardware path and report reset failures', async () => {
+  const service = new CubeConnection(), listener = jest.fn();
+  service.onEvent(listener); await service.connect(); await service.readState();
+  expect(refresh).toHaveBeenCalledTimes(1);
+  calibrate.mockRejectedValueOnce(new Error('Reset failed'));
+  await expect(service.calibrate()).rejects.toThrow('Reset failed');
+  expect(listener).toHaveBeenCalledWith({ type: 'CALIBRATE', stage: 'start' });
+  expect(listener).not.toHaveBeenCalledWith({ type: 'CALIBRATE', stage: 'complete' });
+  expect(service.getSnapshot()).toMatchObject({ calibrating: false, error: 'Reset failed' });
 });
 test('one connection broadcasts events to Timer and Trainer without reopening Bluetooth', async () => {
   const service = new CubeConnection(), timer = jest.fn(), trainer = jest.fn();

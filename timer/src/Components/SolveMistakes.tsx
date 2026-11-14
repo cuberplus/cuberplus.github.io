@@ -12,6 +12,7 @@ import { CFOP_STEPS } from '../Analysis/cfop';
 import { solveFeedback } from '../../../shared/workers/dataClient';
 import { mistakeTrainingKey, potentialGain } from '../Analysis/mistakeSummary';
 import { PracticeDialog } from '../../../src/trainer/PracticeDialog';
+import { caseKeyLabel } from '../../../src/database/caseLabels';
 
 const emptyHistory: Solve[] = [];
 export function SolveMistakes({ solve, cube, history = emptyHistory, brief = false }: { solve: Solve; cube: Cube; history?: Solve[]; brief?: boolean }) {
@@ -24,7 +25,7 @@ export function SolveMistakes({ solve, cube, history = emptyHistory, brief = fal
   const practiceButton = (key: string, label: string) => <button type="button" className="btn btn-link p-0 border-0 text-start align-baseline" style={{ font: 'inherit' }} onClick={() => setPractice(key)}>{label}</button>;
   const analysis = result?.solve === solve ? result.analysis : null;
   const nonFavorites = result?.solve === solve ? result.nonFavorites : [], unlearned = result?.solve === solve ? result.unlearned : [];
-  const favoriteLabel = (use: typeof nonFavorites[number]) => `${CFOP_STEPS[use.step]}: Non-favorite algorithm (${use.caseKey.replace('-', ' ')})`;
+  const favoriteLabel = (use: typeof nonFavorites[number]) => `${CFOP_STEPS[use.step]}: Non-favorite algorithm (${caseKeyLabel(use.caseKey)})`;
   useEffect(() => {
     if (!visible || solve.status !== 'complete') return;
     let active = true;
@@ -47,7 +48,7 @@ export function SolveMistakes({ solve, cube, history = emptyHistory, brief = fal
       entry.options.filter(algorithm => !unlearn.has(`${entry.category}-${entry.id}:${algorithm}`)))
     : [...favorites].filter(id => use.caseKeys.some(key => id.startsWith(`${key}:`))).map(id => id.slice(id.indexOf(':') + 1)));
   const algorithmCosts = [
-    ...unlearned.map(use => ({ use, seconds: cost(use, true), label: `${CFOP_STEPS[use.step]}: Unlearn algorithm (${use.caseKey.replace('-', ' ')})` })),
+    ...unlearned.map(use => ({ use, seconds: cost(use, true), label: `${CFOP_STEPS[use.step]}: Unlearn algorithm (${caseKeyLabel(use.caseKey)})` })),
     ...nonFavorites.map(use => ({ use, seconds: cost(use), label: favoriteLabel(use) })),
   ];
   const worst = [...algorithmCosts.map(item => ({ ...item, caseKey: item.use.caseKey })),
@@ -61,7 +62,7 @@ export function SolveMistakes({ solve, cube, history = emptyHistory, brief = fal
       ? brief ? <><strong>Worst mistake: </strong>{worst.caseKey ? practiceButton(worst.caseKey, worst.label) : worst.label} ({loss(worst.seconds)})</>
         : <><strong>Potential time gain: </strong>~{totalGain.toFixed(2)}s <InfoTip>Only the largest estimated loss per step is counted, excluding unusually slow solve. The estimate is capped at the solve time. Estimates use excess recognition time, wasted moves at your recorded execution speed, or time above your rolling baseline. Algorithm preferences use potential move savings, not an assumed speed advantage.</InfoTip></> : 'No clear mistakes detected.'}</p>
     {!brief && !!(unlearned.length || nonFavorites.length || mistakes.length) && <ul>
-      {unlearned.map(use => <li key={`unlearn-${use.step}`}><strong>{practiceButton(use.caseKey, `${CFOP_STEPS[use.step]}: Unlearn algorithm (${use.caseKey.replace('-', ' ')})`)}</strong> ({loss(cost(use, true))})</li>)}
+      {unlearned.map(use => <li key={`unlearn-${use.step}`}><strong>{practiceButton(use.caseKey, `${CFOP_STEPS[use.step]}: Unlearn algorithm (${caseKeyLabel(use.caseKey)})`)}</strong> ({loss(cost(use, true))})</li>)}
       {nonFavorites.map(use => <li key={`favorite-${use.step}`}><strong>{practiceButton(use.caseKey, favoriteLabel(use))}</strong>{' '}
         ({loss(cost(use))}) <a href={`/database/#${use.caseKey}`} target="_blank" rel="noopener noreferrer">Choose favorites</a>
       </li>)}

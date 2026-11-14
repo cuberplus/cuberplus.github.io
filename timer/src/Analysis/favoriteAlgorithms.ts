@@ -1,4 +1,4 @@
-import { casePattern, type AlgorithmCase } from '../../../src/database/algorithms';
+import { casePattern, databaseCaseKeys, type AlgorithmCase } from '../../../src/database/algorithms';
 import caseImages from '../../../src/database/caseImages.json';
 import { getAlgorithms, readCustomAlgorithms, saveCustomAlgorithms } from '../../../src/database/customAlgorithms';
 import { favoriteId, type FavoriteCategories } from '../../../src/database/favorites';
@@ -29,17 +29,25 @@ export function usedAlgorithms(solve: Solve, cube: Cube): AlgorithmUse[] {
   const result: AlgorithmUse[] = [], frame = cfopFrame(cube, cross);
   const states = [cube.parse(solve.startFacelets)];
   for (const { move } of solve.moves) states.push(cube.applyMove(states.at(-1)!, move));
+  const frames = new Map<string, Map<number, KPattern>>();
+  const stateAt = (index: number, yaw = '') => {
+    let oriented = frames.get(yaw);
+    if (!oriented) frames.set(yaw, oriented = new Map<number, KPattern>());
+    let state = oriented.get(index);
+    if (!state) { state = normalized(cube, states[index], `${crossRotation(cross)} ${yaw}`); oriented.set(index, state); }
+    return state;
+  };
   let cursor = ends[0] ?? 0;
   for (let step = 1; step < ends.length; step++) {
     const from = cursor, to = ends[step];
     if (to > from) {
       if (step < 5) {
-        const candidates = advancedCases(cube, normalized(cube, states[from], crossRotation(cross)));
+        const candidates = advancedCases(cube, stateAt(from));
         const possible = candidates.flatMap(({ entry, yaw }) => {
           const uses = [];
-          const start = normalized(cube, states[from], `${crossRotation(cross)} ${yaw}`);
+          const start = stateAt(from, yaw);
           for (let endIndex = from + 1; endIndex <= ends[4]; endIndex++) {
-            const end = normalized(cube, states[endIndex], `${crossRotation(cross)} ${yaw}`);
+            const end = stateAt(endIndex, yaw);
             if (!pairSolved(end, entry.pair!)) continue;
             if ([4, 5, 6, 7].some(i => !solved(end, 'EDGES', i))) continue;
             if ([4, 5, 6, 7].some(i => pairSolved(start, i) && !pairSolved(end, i))) continue;
@@ -51,7 +59,15 @@ export function usedAlgorithms(solve: Solve, cube: Cube): AlgorithmUse[] {
           }
           return uses;
         });
-        const selected = possible.find(use => use.matches.length) ?? possible[0];
+        const standardId = from === (ends[step - 1] ?? 0) ? cases[step] : recognizeCase(step, cube, cross, states[from], states[to]);
+        const standard = algorithms.find(entry => entry.category === 'F2L' && entry.id === standardId);
+        if (standard) {
+          const algorithm = solve.moves.slice(from, to).map(item => frame(item.move)).join(' '), signature = matcher.signature(algorithm);
+          possible.unshift({ endIndex: to, caseKey: `F2L-${standard.id}`, signature, algorithm,
+            matches: standard.options.filter(option => matcher.signature(option) === signature).map(option => favoriteId(standard, option)) });
+        }
+        const selected = possible.find(use => use.caseKey.startsWith('AF2L-') && use.matches.length)
+          ?? possible.find(use => use.matches.length) ?? possible[0];
         if (selected) {
           const aliases = possible.filter(use => use.endIndex === selected.endIndex);
           result.push({ step, caseKey: selected.caseKey, signature: selected.signature, algorithm: selected.algorithm,
@@ -62,13 +78,14 @@ export function usedAlgorithms(solve: Solve, cube: Cube): AlgorithmUse[] {
         }
       }
       const recognized = (from === (ends[step - 1] ?? 0) ? cases[step] : undefined) ?? recognizeCase(step, cube, cross, states[from], states[to]);
-      const caseKey = recognized && recognized !== 'Solved' ? `${step < 5 ? 'F2L' : step === 5 ? 'OLL' : 'PLL'}-${recognized}` : '';
+      const caseKeys = recognized && recognized !== 'Solved' ? databaseCaseKeys(step < 5 ? 'F2L' : step === 5 ? 'OLL' : 'PLL', recognized) : [];
+      const caseKey = caseKeys[0];
       if (caseKey) {
         const algorithm = solve.moves.slice(from, to).map(item => frame(item.move)).join(' '), signature = matcher.signature(algorithm);
         const entry = algorithms.find(entry => `${entry.category}-${entry.id}` === caseKey);
         const matches = entry?.options.filter(algorithm => matcher.signature(algorithm) === signature)
           .map(algorithm => favoriteId(entry, algorithm)) ?? [];
-        result.push({ step, caseKey, caseKeys: [caseKey], signature, matches, algorithm });
+        result.push({ step, caseKey, caseKeys, signature, matches, algorithm });
       }
       cursor = to;
     }
@@ -80,17 +97,36 @@ const solved = (pattern: KPattern, orbit: string, index: number) =>
   pattern.patternData[orbit].pieces[index] === index && !pattern.patternData[orbit].orientation[index];
 const pairSolved = (pattern: KPattern, corner: number) =>
   solved(pattern, 'CORNERS', corner) && solved(pattern, 'EDGES', [8, 9, 11, 10][corner - 4]);
+let indexedCatalog: AlgorithmCase[] = [];
+const pairKey = (pattern: KPattern, pair: number) => {
+  const { CORNERS: corners, EDGES: edges } = pattern.patternData;
+  const corner = corners.pieces.indexOf(pair), edge = edges.pieces.indexOf([8, 9, 11, 10][pair - 4]);
+  return `${pair}:${corner}:${corners.orientation[corner]}:${edge}:${edges.orientation[edge]}`;
+};
+const solvedSlots = (pattern: KPattern) => [4, 5, 6, 7].reduce((mask, pair) => mask | (pairSolved(pattern, pair) ? 1 << (pair - 4) : 0), 0);
+let advancedIndex = new Map<string, { entry: AlgorithmCase; required: number }[]>();
 function advancedCases(cube: Cube, before: KPattern) {
-  const images = getAlgorithms().filter(entry => entry.pair !== undefined).map(entry => ({
-    ...entry, ...caseImages[`${entry.category}-${entry.id}` as keyof typeof caseImages],
-  }));
-  const candidates: { entry: typeof images[number]; yaw: string }[] = [];
+  const catalog = getAlgorithms();
+  if (catalog !== indexedCatalog) {
+    advancedIndex = new Map();
+    for (const entry of catalog.filter(entry => entry.pair !== undefined)) {
+      const start = cube.parse(caseImages[`${entry.category}-${entry.id}` as keyof typeof caseImages].facelets), required = solvedSlots(start);
+      for (const auf of ['', 'U', 'U2', "U'"]) {
+        const key = pairKey(auf ? cube.applyMove(start, auf) : start, entry.pair!);
+        const bucket = advancedIndex.get(key) ?? [];
+        if (!bucket.some(candidate => candidate.entry === entry)) bucket.push({ entry, required });
+        advancedIndex.set(key, bucket);
+      }
+    }
+    indexedCatalog = catalog;
+  }
+  const candidates: { entry: AlgorithmCase; yaw: string }[] = [], seen = new Set<string>();
   for (const yaw of ['', 'y', 'y2', "y'"]) {
-    const oriented = normalized(cube, before, yaw);
-    for (const auf of ['', 'U', 'U2', "U'"]) {
-      const start = cube.facelets(oriented.applyAlg(auf));
-      for (const entry of images) if (entry.visibleStickers.every(index => start[index] === entry.facelets[index]) &&
-        !candidates.some(candidate => candidate.entry === entry && candidate.yaw === yaw)) candidates.push({ entry, yaw });
+    const start = yaw ? normalized(cube, before, yaw) : before, occupied = solvedSlots(start);
+    if ([4, 5, 6, 7].some(pair => !solved(start, 'EDGES', pair))) continue;
+    for (const pair of [4, 5, 6, 7]) for (const { entry, required } of advancedIndex.get(pairKey(start, pair)) ?? []) {
+      const key = `${entry.category}-${entry.id}:${yaw}`;
+      if ((occupied & required) === occupied && !seen.has(key)) { seen.add(key); candidates.push({ entry, yaw }); }
     }
   }
   return candidates;

@@ -39,6 +39,7 @@ export default function Options() {
       <MyCubes />
       <ImportOptions />
       <CloudOptions />
+      <section className="settings-section"><h3>Community</h3><a href="https://discord.gg/ft7tmsSWs" target="_blank" rel="noopener noreferrer">Join the CuberPlus Discord server</a></section>
       {error && <p role="alert">{error}</p>}
     </section></main>
     <Footer />

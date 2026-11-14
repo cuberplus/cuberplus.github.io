@@ -1,8 +1,7 @@
 import { useContext, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react';
 import Navigation, { Footer, PageLocation, PageVisible, SettingsContext, usePageDialog } from '@cuberplus/navigation';
-import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
-import { cubeConnection, useCubeConnection } from '../../shared/cube/connection';
-import { CubeButton, CubePicker } from '../../shared/Components/CubeConnection';
+import { cubeConnection, useCubeConnection, type CubeEvent } from '../../shared/cube/connection';
+import { CubeButton, CubePicker, CubeStateControls } from '../../shared/Components/CubeConnection';
 import { PageOptionsButton } from '../../shared/Components/PageOptionsButton';
 import { TimerEngine, inspectionPenalty, solveTime, type Solve } from './Core/engine';
 import { inverse, loadCube, movesOf, simplifyMoves, SOLVED, type Cube } from './Core/puzzle';
@@ -149,7 +148,7 @@ export default function App() {
   const preparing = useRef(false);
   const resynchronizing = useRef(false);
   const calibrating = useRef(false);
-  const queued = useRef<{ event: SmartCubeEvent; hostTime: number }[]>([]);
+  const queued = useRef<{ event: CubeEvent; hostTime: number }[]>([]);
   const mounted = useRef(true);
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -439,8 +438,14 @@ export default function App() {
 
   function cancelPreparation() { generation.current++; scrambleAbort.current?.abort(); preparing.current = false; queued.current = []; setBusy(false); setStatus(''); }
 
-  function receive(event: SmartCubeEvent, hostTime = performance.now()) {
+  function receive(event: CubeEvent, hostTime = performance.now()) {
     const timer = engine.current; if (!timer || (event.type === 'FACELETS' && (event.source === 'moves' || calibrating.current))) return;
+    if (event.type === 'CALIBRATE') {
+      cancelPreparation(); finishRetry();
+      if (event.stage === 'start') timer.fail('Solve aborted by cube recalibration.', false, 'solve aborted');
+      else { timer.synchronize(SOLVED); void prepareScramble(); }
+      return;
+    }
     const turn = event.type === 'MOVE' ? { move: event.move, hostTime, localTimestamp: event.localTimestamp, cubeTimestamp: event.cubeTimestamp, serial: event.serial } : null;
     try {
       if (preparing.current && (event.type === 'MOVE' || event.type === 'FACELETS')) {
@@ -487,6 +492,7 @@ export default function App() {
 
   async function calibrate() {
     const timer = engine.current; if (!timer || calibrating.current) return; setError('');
+    if (bluetooth.current.connection) { await cubeConnection.calibrate().catch((failure: Error) => setError(errorText(failure))); return; }
     cancelPreparation(); const token = generation.current;
     calibrating.current = true; setBusy(true);
     try {
@@ -641,10 +647,7 @@ export default function App() {
           <button type="button" hidden className="btn btn-outline-secondary" disabled={!cube || busy || connecting} onClick={startDemo}>Try simulated cube</button></>}
         {(sharedCube.battery ?? battery) !== null && <span className="badge text-bg-secondary">{sharedCube.battery ?? battery}% battery</span>}
       </div>
-      {connected ? <div className="d-grid gap-2 mt-3">
-        <button type="button" className="btn btn-outline-secondary" disabled={busy || solving} onClick={() => { setupDialog.current?.close(); void resynchronize(); }}>Read cube state</button>
-        <button type="button" className="btn btn-outline-secondary" disabled={busy || solving} onClick={() => { setupDialog.current?.close(); calibrate(); }}>Cube is physically solved - calibrate</button>
-      </div> : <div className="mt-3"><label className="d-block">Bluetooth MAC (only if needed)<input className="form-control mt-2" placeholder="AA:BB:CC:DD:EE:FF" value={mac} disabled={connecting} onChange={event => setMac(event.target.value)} /></label><MacAddressHelp /></div>}
+      {connected ? <CubeStateControls busy={busy || calibrating.current || sharedCube.calibrating} read={() => { setupDialog.current?.close(); cancelPreparation(); void resynchronize(); }} calibrate={() => { setupDialog.current?.close(); void calibrate(); }} /> : <div className="mt-3"><label className="d-block">Bluetooth MAC (only if needed)<input className="form-control mt-2" placeholder="AA:BB:CC:DD:EE:FF" value={mac} disabled={connecting} onChange={event => setMac(event.target.value)} /></label><MacAddressHelp /></div>}
       </form>
       {error && <p role="alert" className="text-danger mt-3 mb-0">{error}</p>}
     </dialog>

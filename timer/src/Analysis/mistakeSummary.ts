@@ -1,6 +1,7 @@
 import { rankedMistakes, type Mistake } from '../../../smartcubeanalyzer/src/Analysis/MistakeAnalysis';
 import { StepName, type Solve } from '../../../smartcubeanalyzer/src/Models/Types';
 import { findTrainingCase } from '../../../src/trainer/cases';
+import { databaseCaseKeys } from '../../../src/database/algorithms';
 
 const kindStep: Partial<Record<Mistake['kind'], StepName>> = {
   crossMoves: StepName.Cross, f2lMoves: StepName.F2L, f2lPause: StepName.F2L,
@@ -13,7 +14,8 @@ export function mistakeTrainingKey(solve: Solve, mistake: Mistake, observed: { s
   const candidates = solve.steps.filter(item => step === StepName.F2L ? item.name.startsWith('F2L') : item.name === step);
   for (const selected of candidates.sort((a, b) => b.recognitionTime - a.recognitionTime)) {
     const category = selected.name.startsWith('F2L') ? 'F2L' : selected.name;
-    const key = observed.find(use => use.step === selected.name)?.caseKey ?? `${category}-${selected.case}`;
+    const key = observed.find(use => use.step === selected.name)?.caseKey ?? databaseCaseKeys(category, selected.case).find(key => findTrainingCase(key));
+    if (!key) continue;
     if (findTrainingCase(key)) return key;
   }
   return null;

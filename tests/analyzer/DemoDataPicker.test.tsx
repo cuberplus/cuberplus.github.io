@@ -95,7 +95,8 @@ describe('the demo data picker', () => {
         expect(help.closest('details')?.open).toBe(false);
         fireEvent.click(help);
         expect(help.closest('details')?.open).toBe(true);
-        expect(screen.getByRole('link', { name: /^Export solves as CSV/ }).getAttribute('href')).toBe('https://app.cubeast.com/log/solves');
+        expect(screen.getByRole('img', { name: 'Cubeast export solves as CSV' })).not.toBeNull();
+        expect(dialog.querySelector('a[href*="cubeast"],a[href*="acubemy"]')).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: 'Close data' }));
         expect(dialog.open).toBe(false);
     });

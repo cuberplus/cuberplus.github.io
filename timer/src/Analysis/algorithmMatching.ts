@@ -39,17 +39,19 @@ export class AlgorithmMatcher {
     }
     const moves: string[] = [];
     let index = 0;
-    for (const node of new Alg(algorithm).experimentalExpand()) {
-      if (!(node instanceof Move)) continue;
-      const notation = node.toString();
+    const expanded = /^\s*(?:(?:[URFDLB]w?|[urfdlbMESxyz])(?:2'?|')?(?:\s+|$))*$/.test(algorithm)
+      ? algorithm.trim().split(/\s+/) : new Alg(algorithm).experimentalExpand();
+    for (const node of expanded) {
+      if (typeof node !== 'string' && !(node instanceof Move)) continue;
+      const notation = typeof node === 'string' ? node : node.toString();
       let factor = this.factors.get(notation);
       if (!factor) {
-        const pattern = this.cube.solved().applyMove(node), centers = pattern.patternData['CENTERS'].pieces;
+        const pattern = this.cube.solved().applyMove(notation), centers = pattern.patternData['CENTERS'].pieces;
         const frame = this.rotations.find(rotation => rotation.transformationData['CENTERS'].permutation.every((piece, i) => piece === centers[i]))!;
         const outer = this.decompositions.get(stateKey(pattern.applyTransformation(frame.invert())));
         if (outer) this.factors.set(notation, factor = { moves: outer, rotation: frame });
       }
-      if (!factor) throw new Error(`Unsupported algorithm move: ${node.toString()}`);
+      if (!factor) throw new Error(`Unsupported algorithm move: ${notation}`);
       const centers = this.cube.solved().applyTransformation(rotation).patternData['CENTERS'].pieces;
       const outer = factor.moves.map(move => faces[centers[faces.indexOf(move[0])]] + move.slice(1));
       moves.push(...outer);

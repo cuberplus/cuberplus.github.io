@@ -152,8 +152,8 @@ test('calibration waits for hardware reset and scramble preparation without reac
   await click('Connect cube');
   let reset!: () => void;
   calibrate.mockImplementation(() => new Promise(resolve => { reset = resolve; }));
-  await click('Cube is physically solved - calibrate');
-  const button = () => Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Cube is physically solved - calibrate')!;
+  await click("Recalibrate as solved ((R R') x3)");
+  const button = () => Array.from(container.querySelectorAll('button')).find(element => element.textContent === "Recalibrate as solved ((R R') x3)")!;
   expect(button().disabled).toBe(true);
   await act(async () => emit({ type: 'FACELETS', timestamp: 0, facelets: SOLVED }));
   expect(generate).toHaveBeenCalledTimes(1);
@@ -166,7 +166,7 @@ test('calibration waits for hardware reset and scramble preparation without reac
 test('failed calibration shows the hardware error without preparing a new scramble', async () => {
   await click('Connect cube');
   calibrate.mockRejectedValue(new Error('Cube reset failed'));
-  await click('Cube is physically solved - calibrate');
+  await click("Recalibrate as solved ((R R') x3)");
   expect(container.textContent).toContain('Cube reset failed');
   expect(generate).toHaveBeenCalledTimes(1);
 });
@@ -174,7 +174,7 @@ test('disconnecting during calibration prevents a late reset from starting anoth
   await click('Connect cube');
   let reset!: () => void;
   calibrate.mockImplementation(() => new Promise(resolve => { reset = resolve; }));
-  await click('Cube is physically solved - calibrate');
+  await click("Recalibrate as solved ((R R') x3)");
   await click('Disconnect');
   await act(async () => reset());
   expect(generate).toHaveBeenCalledTimes(1);
@@ -1460,7 +1460,7 @@ test('scramble leads the timer card while cube-state controls stay in Bluetooth 
   await click('Bluetooth cube setup');
   const setup = container.querySelector<HTMLDialogElement>('dialog[aria-labelledby="cube-setup-title"]')!;
   expect(setup.open).toBe(true);
-  for (const label of ['Read cube state', 'Cube is physically solved - calibrate']) {
+  for (const label of ['Read cube state', "Recalibrate as solved ((R R') x3)"]) {
     const button = Array.from(setup.querySelectorAll('button')).find(button => button.textContent === label)!;
     expect(button).toBeDefined();
     expect(panel.contains(button)).toBe(false);

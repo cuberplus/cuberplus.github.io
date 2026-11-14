@@ -7,6 +7,7 @@ import CaseImage, { CategoryImage, usePreloadCaseImages } from './CaseImage';
 import { caseGroup, compareCases } from './caseGroups';
 import { favoriteId, useAlgorithmPreferences } from './favorites';
 import { formatAlgorithm } from './formatAlgorithm';
+import { caseKeyLabel, caseLabel, caseNumber } from './caseLabels';
 import { AlgorithmNotification, DiscoverAlgorithms, type AlgorithmNotice } from './DiscoverAlgorithms';
 import './database.css';
 
@@ -37,7 +38,7 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
     (!selectedCategory || (selectedCategory === 'F2L' ? entry.category.endsWith('F2L') : entry.category === selectedCategory)) &&
     (!pllCase || entry.category === 'PLL' && entry.id.toLowerCase().startsWith(pllCase)) &&
     (!favoritesOnly || entry.options.some(algorithm => favorites.has(favoriteId(entry, algorithm)))) &&
-    query.every(token => `${categoryName(entry.category)} ${entry.category} ${entry.id} ${entry.category === 'PLL' ? 'perm permutation' : ''} ${caseGroup(entry)} ${entry.options.join(' ')}`.toLowerCase().includes(token)));
+    query.every(token => `${categoryName(entry.category)} ${caseLabel(entry)} ${entry.category === 'PLL' ? 'perm permutation' : ''} ${caseGroup(entry)} ${entry.options.join(' ')}`.toLowerCase().includes(token)));
   useEffect(() => {
     const refresh = () => setCatalog(getAlgorithms());
     window.addEventListener(CATALOG_CHANGED, refresh); window.addEventListener('storage', refresh);
@@ -73,6 +74,39 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
       if (unlearn.has(id)) setUnlearn(new Set([...unlearn].filter(saved => saved !== id)));
       setMessage('Algorithm deleted.');
     } catch { setMessage('Algorithm could not be deleted.'); }
+  }
+  function removeCustomAlgorithms() {
+    if (busy || !window.confirm('Remove all custom algorithms? Built-in algorithms will be kept. This cannot be undone.')) return;
+    try {
+      const removed = new Set(Object.entries(readCustomAlgorithms()).flatMap(([key, options]) =>
+        options.filter(algorithm => !algorithms.find(entry => `${entry.category}-${entry.id}` === key)?.options.includes(algorithm)).map(algorithm => `${key}:${algorithm}`)));
+      saveCustomAlgorithms({});
+      setFavorites(new Set([...favorites].filter(id => !removed.has(id))));
+      setUnlearn(new Set([...unlearn].filter(id => !removed.has(id))));
+      setMessage('All custom algorithms removed.');
+    } catch { setMessage('Custom algorithms could not be removed.'); }
+  }
+  async function revalidateCustomAlgorithms() {
+    if (busy) return;
+    setBusy(true); setMessage('');
+    try {
+      const [{ loadCube }, { validateUserAlgorithm }] = await Promise.all([
+        import('../../timer/src/Core/puzzle'), import('../../timer/src/Analysis/favoriteAlgorithms'),
+      ]);
+      const cube = await loadCube(), failures: string[] = [];
+      let total = 0;
+      for (const [key, options] of Object.entries(readCustomAlgorithms())) {
+        const entry = algorithms.find(entry => `${entry.category}-${entry.id}` === key);
+        for (const algorithm of options) {
+          total++;
+          try { if (!entry) throw new Error('Case no longer exists.'); validateUserAlgorithm(entry, algorithm, cube); }
+          catch { failures.push(`${entry ? caseKeyLabel(key).replace(' ', '-') : key}: ${algorithm}`); }
+        }
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      setMessage(failures.length ? `${total - failures.length} of ${total} custom algorithms valid. Failed: ${failures.join('; ')}. No algorithms were removed.` : `All ${total} custom algorithms validated against the engine.`);
+    } catch (failure) { setMessage(failure instanceof Error ? failure.message : 'Validation failed.'); }
+    finally { setBusy(false); }
   }
   async function addAlgorithm() {
     if (busy) return;
@@ -111,7 +145,11 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
         <summary>Algorithm tools</summary>
         <div className="database-tool-groups">
         <section><h3 className="h6">Your algorithms</h3>
-          <button type="button" className="btn btn-primary btn-sm" aria-expanded={adding} onClick={() => setAdding(value => !value)}>Add your own algorithm</button>
+          <div className="d-flex flex-wrap gap-2">
+          <button type="button" className="btn btn-primary btn-sm" disabled={busy} aria-expanded={adding} onClick={() => setAdding(value => !value)}>Add your own algorithm</button>
+          <button type="button" className="btn btn-outline-secondary btn-sm" disabled={busy || !Object.values(customAlgorithms).some(options => options.length)} onClick={() => void revalidateCustomAlgorithms()}>Re-validate all custom algorithms</button>
+          <button type="button" className="btn btn-outline-danger btn-sm" disabled={busy || !Object.values(customAlgorithms).some(options => options.length)} onClick={removeCustomAlgorithms}>Remove all custom algorithms</button>
+          </div>
         </section>
         <section><h3 className="h6">From your solves</h3>
           <div className="d-flex flex-wrap gap-2"><DiscoverAlgorithms notify={setNotice} /><DiscoverAlgorithms learn notify={setNotice} /></div>
@@ -131,7 +169,8 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
           const next = event.target.value as Category; setCategory(next); setCaseId(catalog.find(entry => entry.category === next)!.id);
         }}>{categories.map(category => <option key={category} value={category}>{categoryName(category)}</option>)}</select></label>
         <label className="mt-2">Case<select className="form-select" value={caseId} onChange={event => setCaseId(event.target.value)}>
-          {catalog.filter(entry => entry.category === category).map(entry => <option key={entry.id}>{entry.id}</option>)}
+          {catalog.filter(entry => entry.category === category).sort((a, b) => category === 'OF2L' ? compareCases(a, b) : 0)
+            .map(entry => <option key={entry.id} value={entry.id}>{caseNumber(entry)}</option>)}
         </select></label>
         <label className="mt-2">Algorithm<input className="form-control" required maxLength={1000} value={algorithm} onChange={event => setAlgorithm(event.target.value)} /></label>
         <button className="btn btn-primary mt-3" disabled={busy}>{busy ? 'Adding...' : 'Add algorithm'}</button>
@@ -169,37 +208,41 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
             const builtInOptions = algorithms.find(base => base.category === category && base.id === entry.id)!.options;
             const options = entry.options.map((algorithm, index) => ({ algorithm, index }))
               .filter(({ algorithm }) => !favoritesOnly || favorites.has(favoriteId(entry, algorithm)))
-              .sort((a, b) => Number(favorites.has(favoriteId(entry, b.algorithm))) - Number(favorites.has(favoriteId(entry, a.algorithm))));
-            return <article className={`database-case${linked === key ? ' database-case--linked' : ''}`} id={key} key={key} aria-label={`${category} ${entry.id}`}>
+              .sort((a, b) => {
+                const rank = (index: number) => entry.featured?.includes(entry.options[index]) ? entry.featured.indexOf(entry.options[index]) : 3;
+                return rank(a.index) - rank(b.index) || Number(favorites.has(favoriteId(entry, b.algorithm))) - Number(favorites.has(favoriteId(entry, a.algorithm)));
+              });
+            const label = caseLabel(entry);
+            return <article className={`database-case${category.endsWith('F2L') ? ' database-case--f2l' : ''}${linked === key ? ' database-case--linked' : ''}`} id={key} key={key} aria-label={label}>
               {entry.facelets ? <CaseImage {...entry} /> : <div className="database-case-image" />}
               <div className="database-algorithms">
-                <h3>{categoryName(category)} {entry.id}</h3>
+                <h3>{categoryName(category)} {caseNumber(entry)}</h3>
                 {options.slice(0, expandedCases.has(key) ? undefined : 3).map(({ algorithm, index }) => {
-                  const id = favoriteId(entry, algorithm), favorite = favorites.has(id);
+                  const id = favoriteId(entry, algorithm), favorite = favorites.has(id), featured = entry.featured?.indexOf(algorithm) ?? -1;
                   const custom = customAlgorithms[key]?.includes(algorithm) && !builtInOptions.includes(algorithm);
                   return <div className={`database-algorithm${custom ? ' database-algorithm--custom' : ''}`} key={algorithm}>
                     <button className="database-star" type="button" aria-pressed={favorite}
-                      aria-label={`${favorite ? 'Unfavorite' : 'Favorite'} ${category} ${entry.id} algorithm ${index + 1}`}
+                      aria-label={`${favorite ? 'Unfavorite' : 'Favorite'} ${label} algorithm ${index + 1}`}
                       onClick={() => toggleFavorite(id)} title={favorite ? 'Remove favorite' : 'Mark as favorite'}>
                       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z" /></svg>
                     </button>
                     {custom && <button className="database-delete" type="button"
-                      aria-label={`Delete ${category} ${entry.id} algorithm ${index + 1}`} title="Delete your algorithm"
+                      aria-label={`Delete ${label} algorithm ${index + 1}`} title="Delete your algorithm"
                       onClick={() => deleteAlgorithm(key, algorithm)}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7" /></svg>
                     </button>}
                     <button className="database-unlearn" type="button" aria-pressed={unlearn.has(id)}
-                      aria-label={`${unlearn.has(id) ? 'Keep' : 'Unlearn'} ${category} ${entry.id} algorithm ${index + 1}`}
+                      aria-label={`${unlearn.has(id) ? 'Keep' : 'Unlearn'} ${label} algorithm ${index + 1}`}
                       title={unlearn.has(id) ? 'Stop marking this algorithm as a mistake' : 'Unlearn alg: mark its use as a mistake'}
                       onClick={() => { const next = new Set(unlearn); if (next.has(id)) next.delete(id); else next.add(id); setUnlearn(next); }}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="m6 18 12-12" /></svg>
                     </button>
-                    <p>{formatAlgorithm(algorithm)}</p>
+                    <p>{featured >= 0 && <span className="badge text-bg-secondary me-2">{['Shortest', 'R/U preferred', 'Alternative'][featured]}</span>}{formatAlgorithm(algorithm)}</p>
                   </div>;
                 })}
                 {options.length > 3 && <button type="button" className="btn btn-outline-secondary btn-sm mt-2"
                   aria-expanded={expandedCases.has(key)}
-                  aria-label={`${expandedCases.has(key) ? 'Show fewer' : 'Show all'} ${category} ${entry.id} algorithms`}
+                  aria-label={`${expandedCases.has(key) ? 'Show fewer' : 'Show all'} ${label} algorithms`}
                   onClick={() => setExpandedCases(previous => {
                     const next = new Set(previous); if (next.has(key)) next.delete(key); else next.add(key); return next;
                   })}>

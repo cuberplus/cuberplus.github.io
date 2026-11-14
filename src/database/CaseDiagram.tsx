@@ -1,13 +1,9 @@
 import { FACES, HEX } from '../../scrambler/src/cube/cube';
-import type { Category, IllustratedCase } from './algorithms';
+import { algorithms, type Category, type IllustratedCase } from './algorithms';
+import { diagramViewBox, floatingFaces, projectFace } from './caseDiagramGeometry';
+import { caseLabel } from './caseLabels';
 
 const WHITE_CROSS_COLORS = [HEX[3], HEX[4], HEX[2], HEX[0], HEX[1], HEX[5]];
-
-function project(face: number, col: number, row: number): string {
-  const u = col * 2 / 3 - 1, v = row * 2 / 3 - 1;
-  const [x, y, z] = face === 0 ? [u, 1, v] : face === 1 ? [1, -v, -u] : [u, -v, 1];
-  return `${55 + 27 * (x - z)},${55 + 13.5 * (x + z) - 27 * y}`;
-}
 
 export function CategoryImage({ category, example }: { category: Category; example?: IllustratedCase }) {
   const facelets = example?.facelets ?? FACES.map(face => face.repeat(9)).join('');
@@ -18,21 +14,26 @@ export function CategoryImage({ category, example }: { category: Category; examp
   </span>;
 }
 
-export default function CaseDiagram({ category, id, facelets, visibleStickers, palette = WHITE_CROSS_COLORS, topColor = palette[0], showPLL = false }: Omit<IllustratedCase, 'options'> & { palette?: string[]; topColor?: string; showPLL?: boolean }) {
+export default function CaseDiagram({ category, id, pair, facelets, visibleStickers, palette = WHITE_CROSS_COLORS, topColor = palette[0], showPLL = false }: Omit<IllustratedCase, 'options'> & { palette?: string[]; topColor?: string; showPLL?: boolean }) {
   const f2l = category.endsWith('F2L');
+  const faces = f2l && id ? floatingFaces(facelets, pair ?? algorithms.find(entry => entry.category === category && entry.id === id)?.pair) : [];
+  const mirrors = faces.length > 0;
+  const label = caseLabel({ category, id });
   const color = (index: number) => f2l && !visibleStickers.includes(index) ? '#697384' :
     category === 'OLL' && !showPLL ? (facelets[index] === 'U' ? topColor : '#697384') :
       palette['URFDLB'.indexOf(facelets[index])];
-  return <svg className="database-case-image" viewBox="0 0 110 110" role="img" aria-label={`${category} ${id} case`}>
-    <title>{`${category} ${id} starting position${category === 'OLL' && !showPLL ? ': top-face stickers highlighted, other stickers gray' : ''}`}</title>
-    {f2l ? [0, 2, 1].map(face => <g key={face}>
+  return <svg className={`database-case-image${mirrors ? ' database-case-image--mirrored' : ''}`} viewBox={diagramViewBox(faces)} role="img" aria-label={`${label} case`}
+    aria-description={mirrors ? 'Floating mirrored faces reveal target F2L stickers hidden on the cube.' : undefined}>
+    <title>{`${label} starting position${category === 'OLL' && !showPLL ? ': top-face stickers highlighted, other stickers gray' : ''}`}</title>
+    {f2l ? [...faces, 0, 2, 1].map(face => <g key={face}
+      data-mirrored-face={face >= 3 ? FACES[face] : undefined} data-visible-face={face < 3 ? FACES[face] : undefined}>
       {Array.from({ length: 9 }, (_, i) => {
         const col = i % 3, row = Math.floor(i / 3), index = face * 9 + i;
         return <polygon key={i} data-facelet={index}
           points={[[col, row], [col + 1, row], [col + 1, row + 1], [col, row + 1]]
-            .map(([x, y]) => project(face, x, y)).join(' ')}
+            .map(([x, y]) => projectFace(face, x, y, face >= 3).join(',')).join(' ')}
           fill={color(index)} stroke="#243c35" strokeWidth="1" strokeLinejoin="round">
-          <title>{`${FACES[face]} ${row + 1},${col + 1}`}</title>
+          <title>{`${FACES[face]} ${row + 1},${col + 1}${face >= 3 ? ' (mirrored)' : ''}`}</title>
         </polygon>;
       })}
     </g>) : <>

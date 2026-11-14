@@ -8,9 +8,8 @@ let saved: string | null = null, catalog = algorithms;
 export function readCustomAlgorithms(): CustomAlgorithms {
   try {
     const value = JSON.parse(localStorage.getItem(CUSTOM_ALGORITHMS_KEY) ?? '{}') as CustomAlgorithms | null;
-    return Object.fromEntries(algorithms.flatMap(entry => {
-      const key = `${entry.category}-${entry.id}`, options = value?.[key];
-      return Array.isArray(options) ? [[key, [...new Set(options.filter(alg =>
+    return Object.fromEntries(Object.entries(value ?? {}).flatMap(([key, options]) => {
+      return /^(F2L|AF2L|OF2L|OLL|PLL)-[A-Za-z0-9]+$/.test(key) && Array.isArray(options) ? [[key, [...new Set(options.filter(alg =>
         typeof alg === 'string' && alg.trim().length > 0 && alg.length <= 1000))]]] : [];
     }));
   } catch { return {}; }

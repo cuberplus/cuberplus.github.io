@@ -10,6 +10,7 @@ import { inverse, loadCube } from '../../timer/src/Core/puzzle';
 import { analyzeCFOP, cfopFrame, CFOP_STEPS } from '../../timer/src/Analysis/cfop';
 import { algorithms } from '../../src/database/algorithms';
 import { favoriteId, FAVORITES_KEY, MISTAKES_KEY, CATEGORIES_KEY, UNLEARN_KEY } from '../../src/database/favorites';
+import { solveAnalysis } from '../../timer/src/Analysis/analysis';
 import { waitFor } from '@testing-library/react';
 await jest.unstable_mockModule('../../timer/src/Bluetooth/bluetooth', () => ({ BluetoothCube: class {} }));
 const { cubeConnection } = await import('../../shared/cube/connection');
@@ -17,6 +18,7 @@ await jest.unstable_mockModule('../../timer/src/Components/CubeView', () => ({
   CubeView: ({ facelets, cross, rotation, seekVersion, playback }: { facelets: string; cross: number | null; rotation: string; seekVersion: number; playback: boolean }) => createElement('div', { 'data-facelets': facelets, 'data-cross': cross, 'data-rotation': rotation, 'data-seek-version': seekVersion, 'data-playback': playback, 'aria-label': 'Replay cube' }),
 }));
 const { Replay } = await import('../../timer/src/Components/Replay');
+const { default: AnalyzerReplay } = await import('../../timer/src/Components/analyzer-replay');
 const { SolveMistakes } = await import('../../timer/src/Components/SolveMistakes');
 const { importSolveCSVs } = await import('../../timer/src/Data/csvImport');
 const cube = await loadCube();
@@ -169,6 +171,22 @@ test('Analyzer read-only replay has no manual edit controls', async () => {
   await draw(recording('R', "R'"));
   expect(container.querySelector('[aria-pressed]')).toBeNull();
   expect(container.querySelector<HTMLAnchorElement>('a')!.getAttribute('href')).toBe('/timer/?retry=replay-fixture');
+});
+test('temporary CSV replays retain reanalysis, cross selection and mistake feedback without saving or exposing penalties', async () => {
+  const solve = recording(pll.split(' ').reverse().map(inverse).join(' '), `U U' ${pll}`);
+  const preview = { ...solveAnalysis(solve, cube), source: 'cubeast' as const,
+    recording: { solution: solve.moves.map(move => `${move.move}[${move.elapsed}]`).join(' ') } };
+  await act(async () => root.render(createElement(AnalyzerReplay, { id: preview.id, preview, close })));
+  await waitFor(() => expect(container.querySelector('[aria-label="Base cross color"]')).not.toBeNull());
+  await feedbackReady();
+  expect(container.querySelector('[aria-label="Solve mistakes"]')!.textContent).toContain('Single-move undo');
+  for (const text of ['+2', 'DNF', 'Delete', 'Retry']) expect(Array.from(container.querySelectorAll('button,a')).some(button => button.textContent === text)).toBe(false);
+  const select = container.querySelector<HTMLSelectElement>('[aria-label="Base cross color"]')!;
+  await act(async () => { select.value = '0'; select.dispatchEvent(new Event('change', { bubbles: true })); });
+  expect(select.value).toBe('0');
+  await click('Re-run analysis');
+  await feedbackReady();
+  expect(await readSolves()).toEqual([]);
 });
 
 test('retry closes replay and passes the original solve without modifying its recording', async () => {

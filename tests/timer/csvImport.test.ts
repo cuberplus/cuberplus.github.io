@@ -2,7 +2,7 @@
 import { jest } from '@jest/globals';
 import { IDBFactory } from 'fake-indexeddb';
 import { deserialize, serialize } from 'node:v8';
-import { importSolveCSVs, importedAnalysis } from '../../timer/src/Data/csvImport';
+import { importSolveCSVs, importedAnalysis, previewSolve } from '../../timer/src/Data/csvImport';
 import { backupJSON, cubeastCSV, readSolves, saveSolves, turns, validateBackup } from '../../timer/src/Data/storage';
 import { readLocalAnalysis } from '../../timer/src/Analysis/analyzer-data';
 import { loadCube, SOLVED } from '../../timer/src/Core/puzzle';
@@ -23,6 +23,17 @@ const native: Solve = {
 beforeEach(() => {
   Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: new IDBFactory() });
   Object.defineProperty(globalThis, 'structuredClone', { configurable: true, value: <T>(value: T): T => deserialize(serialize(value)) as T });
+});
+test.each(['cfop-small.csv', 'acubemy.csv'])('temporary %s solves rebuild native replay without writing to storage', async name => {
+  const data = parseCsv(readFileSync(join(process.cwd(), 'smartcubeanalyzer', 'public', 'demo', name), 'utf8').split(/\r?\n/).slice(0, 33).join('\n'), ',', true);
+  const original = JSON.stringify(data);
+  const previews = data.map(solve => previewSolve(solve, cube));
+  const recorded = previews.find(solve => solve.moves.length > 0)!;
+  expect(recorded).toBeDefined();
+  expect(cube.isSolved(cube.parse(recorded.startFacelets).applyAlg(recorded.moves.map(turn => turn.move).join(' ')))).toBe(true);
+  expect(recorded.duration).toBeGreaterThan(0);
+  expect(JSON.stringify(data)).toBe(original);
+  expect(await readSolves()).toEqual([]);
 });
 
 test('local analysis prepares the selected session recent solves even when other sessions are newer', async () => {

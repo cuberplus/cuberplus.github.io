@@ -1,5 +1,7 @@
-import type { KPattern } from 'cubing/kpuzzle';
+import type { KPattern, KTransformation } from 'cubing/kpuzzle';
 import { crossRotation, type Cube } from '../Core/puzzle';
+import { algorithms } from '../../../src/database/algorithms';
+import caseImages from '../../../src/database/caseImages.json';
 
 // Canonical states from SpeedCubeDB's 3x3 OLL, PLL, and F2L catalogs; no algorithm matching.
 const numbered = (keys: string) => new Map(keys.split(' ').map((key, i) => [key, String(i + 1)]));
@@ -25,16 +27,50 @@ const pll = new Map(Object.entries({
 }));
 export const CASE_IDS = { F2L: [...f2l.values()], OLL: [...oll.values()], PLL: [...pll.values()] };
 const aufs = ['', 'U', 'U2', "U'"], spins = ['', 'y', 'y2', "y'"];
+const colorFrames = new WeakMap<Cube, Map<string, KTransformation>>();
 export function normalized(cube: Cube, pattern: KPattern, rotation: string): KPattern {
-  const turned = pattern.applyAlg(rotation), centers = turned.patternData['CENTERS'].pieces;
-  // Cube.facelets keeps fixed centers; relabel rotated cubies and restore calibrated centers.
-  return cube.parse([...cube.facelets(turned)].map((face, i) => i % 9 === 4 ? 'URFDLB'[Math.floor(i / 9)] :
-    'ULFRBD'[centers.indexOf('ULFRBD'.indexOf(face))]).join(''));
+  let frames = colorFrames.get(cube);
+  if (!frames) {
+    frames = new Map();
+    for (const tilt of ['', 'x', 'x2', "x'", 'z', "z'"]) for (const spin of spins) {
+      const frame = cube.puzzle.algToTransformation(`${tilt} ${spin}`);
+      frames.set(frame.toKPattern().patternData['CENTERS'].pieces.join(','), frame.invert());
+    }
+    colorFrames.set(cube, frames);
+  }
+  let turned = pattern;
+  for (const move of rotation.split(/\s+/).filter(Boolean)) turned = cube.applyMove(turned, move);
+  // Left multiplication relabels cubie identities; right multiplication rotates their positions.
+  const aligned = frames.get(turned.patternData['CENTERS'].pieces.join(','))!
+    .applyTransformation(turned.experimentalToTransformation()!).toKPattern();
+  aligned.patternData['CENTERS'] = cube.solved().patternData['CENTERS'];
+  return aligned;
 }
 const pairSolved = (pattern: KPattern) => ['CORNERS', 'EDGES'].every((orbit, i) => {
   const slot = i ? 8 : 4, data = pattern.patternData[orbit];
   return data.pieces[slot] === slot && data.orientation[slot] === 0;
 });
+const pairKey = (pattern: KPattern) => {
+  const { CORNERS: c, EDGES: e } = pattern.patternData, corner = c.pieces.indexOf(4), edge = e.pieces.indexOf(8);
+  return [corner, c.orientation[corner], edge, e.orientation[edge]].join(',');
+};
+const pairedCatalog = new WeakMap<Cube, Map<string, string>>();
+function pairedCase(cube: Cube, pattern: KPattern): string {
+  let catalog = pairedCatalog.get(cube);
+  if (!catalog) {
+    catalog = new Map(); pairedCatalog.set(cube, catalog);
+    for (const entry of algorithms.filter(entry => entry.category === 'AF2L' || entry.category === 'OF2L')) {
+      const start = cube.parse(caseImages[`${entry.category}-${entry.id}` as keyof typeof caseImages].facelets);
+      const yaw = spins.find(spin => cube.solved().applyAlg(spin).patternData['CORNERS'].pieces[4] === entry.pair)!;
+      const aligned = normalized(cube, start, yaw);
+      for (const auf of aufs) {
+        const key = pairKey(auf ? cube.applyMove(aligned, auf) : aligned);
+        if (!catalog.has(key)) catalog.set(key, `${entry.category}-${entry.id}`);
+      }
+    }
+  }
+  return catalog.get(pairKey(pattern)) ?? '';
+}
 export function recognizeCase(step: number, cube: Cube, cross: number, before: KPattern, after: KPattern): string {
   if (!step) return '';
   before = normalized(cube, before, crossRotation(cross));
@@ -42,16 +78,16 @@ export function recognizeCase(step: number, cube: Cube, cross: number, before: K
     after = normalized(cube, after, crossRotation(cross));
     const targets = spins.map(spin => [normalized(cube, before, spin), normalized(cube, after, spin)])
       .filter(([start, end]) => !pairSolved(start) && pairSolved(end));
-    if (targets.length !== 1) return '';
-    const key = aufs.map(auf => {
-      const data = targets[0][0].applyAlg(auf).patternData, corner = data['CORNERS'].pieces.indexOf(4), edge = data['EDGES'].pieces.indexOf(8);
-      return [corner, data['CORNERS'].orientation[corner], edge, data['EDGES'].orientation[edge]].join(',');
-    }).sort()[0];
-    return f2l.get(key) ?? '';
+    const labels = targets.map(([start]) => {
+      const key = aufs.map(auf => pairKey(auf ? cube.applyMove(start, auf) : start)).sort()[0];
+      return f2l.get(key) ?? pairedCase(cube, start);
+    });
+    if (!labels.length || labels.some(label => !label)) return '';
+    return labels.length === 1 ? labels[0] : [...new Set(labels.map(label => label.includes('-') ? label : `F2L-${label}`))].join(' + ');
   }
   if (step === 5) {
     const key = aufs.map(auf => {
-      const data = before.applyAlg(auf).patternData;
+      const data = (auf ? cube.applyMove(before, auf) : before).patternData;
       return [...data['CORNERS'].orientation.slice(0, 4), ...data['EDGES'].orientation.slice(0, 4)].join('');
     }).sort()[0];
     return key === '00000000' ? 'Solved' : oll.get(key) ?? '';

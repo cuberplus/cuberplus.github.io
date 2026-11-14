@@ -31,14 +31,23 @@ export function CubePicker({ disabled = false, change }: { disabled?: boolean; c
   </select> : null;
 }
 export function CubeConnectionControls() {
-  const { connection, connecting, battery, error } = useCubeConnection();
+  const { connection, connecting, calibrating, battery, error, status } = useCubeConnection();
   return <div className="cuberplus-header-controls">
     <CubePicker disabled={!!connection || connecting} />
     {connection ? <button className="btn btn-outline-secondary" title={`Connected: ${connection.deviceName}`} onClick={() => void cubeConnection.disconnect().catch(() => {})}>Disconnect</button> :
       <button className="btn btn-primary" disabled={connecting || !navigator.bluetooth || !window.isSecureContext}
         onClick={() => void cubeConnection.connect().catch(() => {})}>{connecting ? 'Connecting...' : 'Connect cube'}</button>}
     {battery !== null && <span className="badge text-bg-secondary">{battery}% battery</span>}
+    {connection && <CubeStateControls busy={calibrating} read={() => void cubeConnection.readState().catch(() => {})} calibrate={() => void cubeConnection.calibrate().catch(() => {})} />}
+    {connection && status && <span role="status" className="small">{status}</span>}
     {error && <span role="alert" className="text-danger small">{error}</span>}
+  </div>;
+}
+export function CubeStateControls({ busy, read, calibrate }: { busy: boolean; read: () => void; calibrate: () => void }) {
+  return <div className="d-flex flex-wrap gap-2 align-items-center mt-3">
+    <button type="button" className="btn btn-outline-secondary" disabled={busy} onClick={read}>Read cube state</button>
+    <span><button type="button" className="btn btn-outline-secondary" disabled={busy} onClick={calibrate}>Recalibrate as solved ((R R') x3)</button>
+      <InfoTip>With the cube physically solved in its calibrated orientation, perform R R' R R' R R' (three R / R' pairs), or choose Recalibrate as solved. This declares the current position solved and aborts any active solve. Read cube state requests the cube's current physical state without declaring it solved.</InfoTip></span>
   </div>;
 }
 export function MyCubes() {

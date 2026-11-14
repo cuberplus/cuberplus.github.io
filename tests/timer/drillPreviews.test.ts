@@ -4,6 +4,7 @@ import { webcrypto } from 'node:crypto';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server.node';
 import { algorithms, casePattern, categories, type Category } from '../../src/database/algorithms';
+import { caseLabel } from '../../src/database/caseLabels';
 import { Blitz, blitzPattern, defaultBlitzSettings } from '../../src/trainer/blitz';
 import { BlitzCaseImage } from '../../src/trainer/BlitzCaseImage';
 import { DrillCaseImage } from '../../src/trainer/DrillCaseImage';
@@ -25,10 +26,11 @@ function expectedFills(category: Category, facelets: string, frame: string, hide
 function image(markup: string, category: Category, id: string) {
   const container = document.createElement('div');
   container.innerHTML = markup;
-  expect(container.querySelector('svg')?.getAttribute('aria-label')).toBe(`${category} ${id} case`);
-  expect(container.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 110 110');
-  expect(container.querySelector('title')?.textContent).toContain(`${category} ${id} starting position`);
-  return Array.from(container.querySelectorAll('rect, polygon'), sticker => sticker.getAttribute('fill'));
+  expect(container.querySelector('svg')?.getAttribute('aria-label')).toBe(`${caseLabel({ category, id })} case`);
+  if (!category.endsWith('F2L')) expect(container.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 110 110');
+  expect(container.querySelector('title')?.textContent).toContain(`${caseLabel({ category, id })} starting position`);
+  return Array.from(container.querySelectorAll(category.endsWith('F2L') ? '[data-visible-face] polygon' : 'rect, polygon'),
+    sticker => sticker.getAttribute('fill'));
 }
 test.each(['OLL', 'PLL'] as const)('%s Blitz previews use each queued AUF and color frame, including randomized OLL permutation', kind => {
   let seed = 193, draws = 0;

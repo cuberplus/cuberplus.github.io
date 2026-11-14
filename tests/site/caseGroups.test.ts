@@ -3,6 +3,7 @@ import { caseGroup, compareCases } from '../../src/database/caseGroups';
 import images from '../../src/database/caseImages.json';
 import { locations } from '../../shared/cube/cubeLocations';
 import { EDGES, EDGE_MOVES, FACES, MOVES } from '../../scrambler/src/cube/cube';
+import { caseKeyLabel, caseLabel, caseNumber } from '../../src/database/caseLabels';
 
 const entry = (category: string, id: string) => algorithms.find(item => item.category === category && item.id === id)!;
 test('OLL groups follow edge orientation rather than case number', () => {
@@ -26,6 +27,17 @@ test.each(['F2L', 'AF2L', 'OF2L'])('%s groups target edge orientation consistent
   expect(caseGroup(entry('F2L', '2'))).toBe('Unoriented edge');
   expect(caseGroup(entry('F2L', '3'))).toBe('Unoriented edge');
   expect(caseGroup(entry('F2L', '13'))).toBe('Unoriented edge');
+});
+test('Other F2L keys match consecutive displayed numbers in database order', () => {
+  const entries = algorithms.filter(entry => entry.category === 'OF2L').sort(compareCases);
+  const numbers = Array.from({ length: 75 }, (_, i) => String(i + 1));
+  expect(entries.map(item => item.id)).toEqual(numbers);
+  expect(entries.map(caseNumber)).toEqual(numbers);
+  for (const item of entries) {
+    expect(caseLabel(item)).toBe(`OF2L ${item.id}`);
+    expect(caseKeyLabel(`F2L-4 + OF2L-${item.id}`)).toBe(`F2L 4 + OF2L ${item.id}`);
+  }
+  expect(caseNumber(entry('F2L', '17'))).toBe('17');
 });
 test('every standard and advanced F2L category agrees with independent RULD edge reachability', () => {
   const moves = MOVES.flatMap((move, i) => /^[RULD]/.test(move) ? [i] : []);

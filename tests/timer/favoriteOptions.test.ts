@@ -3,8 +3,8 @@ import { jest } from '@jest/globals';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { FavoriteOptions } from '../../timer/src/Components/FavoriteOptions';
-import { algorithms, casePattern } from '../../src/database/algorithms';
-import { favoriteId, FAVORITES_KEY, CATEGORIES_KEY, MISTAKES_KEY } from '../../src/database/favorites';
+import { algorithms, algorithmAliases, casePattern } from '../../src/database/algorithms';
+import { favoriteId, readFavorites, FAVORITES_KEY, UNLEARN_KEY, CATEGORIES_KEY, MISTAKES_KEY } from '../../src/database/favorites';
 import { loadCube } from '../../timer/src/Core/puzzle';
 import { algorithmMatcher } from '../../timer/src/Analysis/algorithmMatching';
 import type { Solve } from '../../timer/src/Core/engine';
@@ -25,6 +25,23 @@ const controls = () => Array.from(container.querySelectorAll<HTMLInputElement>('
 const discoverButton = () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Automatically find favorites')!;
 const render = (history: Solve[] = []) => act(async () => root.render(createElement(FavoriteOptions, { cube, history })));
 
+test('deduplicated variants and current Other F2L keys resolve to retained algorithms', () => {
+  const oldVariant = Object.keys(algorithmAliases).find(id => id.startsWith('F2L-') && id.includes(':') && algorithmAliases[id] !== id)!;
+  expect(oldVariant).toBeDefined();
+  const saved = [oldVariant, 'OF2L-12', 'F2L-1'];
+  const expected = new Set(saved.map(id => algorithmAliases[id]));
+  for (const key of [FAVORITES_KEY, UNLEARN_KEY]) {
+    localStorage.setItem(key, JSON.stringify(saved));
+    expect(readFavorites(key)).toEqual(expected);
+    expect(JSON.parse(localStorage.getItem(key)!)).toEqual(saved);
+  }
+  const valid = new Set(algorithms.flatMap(entry => entry.options.map(algorithm => `${entry.category}-${entry.id}:${algorithm}`)));
+  for (const id of Object.values(algorithmAliases)) expect(valid.has(id)).toBe(true);
+  for (const entry of algorithms.filter(entry => entry.category === 'OF2L')) {
+    const key = `OF2L-${entry.id}`;
+    expect(algorithmAliases[key].split(':')[0]).toBe(key);
+  }
+});
 test('three independent sub-options default on and retain choices across main toggles and remounts', async () => {
   await render();
   expect(controls()).toHaveLength(4);

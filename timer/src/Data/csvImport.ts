@@ -33,6 +33,19 @@ function rebuildRecording(solve: Solve, recording: AnalyzedSolve['recording'], c
 }
 
 export const sourceLabel = (solve: Solve): string => solve.imported?.source === 'cubeast' ? 'Cubeast (imported)' : solve.imported?.source === 'acubemy' ? 'Acubemy (imported)' : 'CuberPlus';
+export function previewSolve(data: AnalyzedSolve, cube: Cube): Solve {
+  const { date, endDate, recording, ...analysis } = data;
+  const solve: Solve = {
+    version: 1, id: data.id, session: data.session, createdAt: date.toISOString(),
+    device: data.source, scramble: data.scramble, startFacelets: SOLVED, duration: data.time * 1000,
+    inspection: data.inspectionTime === null ? undefined : data.inspectionTime * 1000,
+    status: data.dnf ? 'incomplete' : 'complete', dnfReason: data.dnf ? 'manual' : undefined,
+    reason: '', timingBasis: 'host', moves: [],
+    imported: { ...analysis, date: date.toISOString(), endDate: endDate?.toISOString() },
+  };
+  rebuildRecording(solve, recording, cube, (pattern, moves) => moves.reduce((state, move) => cube.applyMove(state, move), pattern));
+  return solve;
+}
 export function importedAnalysis(solve: Solve): AnalyzedSolve {
   const data = solve.imported!;
   return { ...data, id: solve.id, date: new Date(solve.createdAt), endDate: data.endDate ? new Date(data.endDate) : undefined,

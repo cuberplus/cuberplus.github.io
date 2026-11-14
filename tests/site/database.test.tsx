@@ -3,6 +3,7 @@ import Database from '../../src/database/Database';
 import { loadCube } from '../../timer/src/Core/puzzle';
 import { discoverFavorites } from '../../timer/src/Analysis/favoriteAlgorithms';
 import { algorithms } from '../../src/database/algorithms';
+import { readCustomAlgorithms, saveCustomAlgorithms } from '../../src/database/customAlgorithms';
 
 jest.mock('../../timer/src/Core/puzzle', () => ({ loadCube: jest.fn().mockResolvedValue({}) }));
 jest.mock('../../timer/src/Data/storage', () => ({ readSolves: jest.fn().mockResolvedValue([]) }));
@@ -87,6 +88,47 @@ test('Un-Favorite All respects cancellation and preserves custom algorithms and 
     expect(JSON.parse(localStorage.getItem('cuberplus-custom-algorithms')!)).toEqual(custom);
     expect(JSON.parse(localStorage.getItem('cuberplus-unlearn-algorithms')!)).toEqual(unlearn);
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Un-Favorite All' }).disabled).toBe(true);
+  } finally { confirm.mockRestore(); }
+});
+test('bulk custom deletion respects cancellation and removes only custom preference references', () => {
+  const custom = { 'F2L-1': ['custom', "R U R'"], 'OLL-1': ['another'] };
+  const builtIn = "F2L-1:R U R'";
+  localStorage.setItem('cuberplus-custom-algorithms', JSON.stringify(custom));
+  localStorage.setItem('cuberplus-database-favorites', JSON.stringify([builtIn, 'F2L-1:custom']));
+  localStorage.setItem('cuberplus-unlearn-algorithms', JSON.stringify([builtIn, 'OLL-1:another']));
+  const confirm = jest.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+  try {
+    render(<Database />); openTools();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove all custom algorithms' }));
+    expect(JSON.parse(localStorage.getItem('cuberplus-custom-algorithms')!)).toEqual(custom);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove all custom algorithms' }));
+    expect(JSON.parse(localStorage.getItem('cuberplus-custom-algorithms')!)).toEqual({});
+    expect(JSON.parse(localStorage.getItem('cuberplus-database-favorites')!)).toEqual([builtIn]);
+    expect(JSON.parse(localStorage.getItem('cuberplus-unlearn-algorithms')!)).toEqual([builtIn]);
+    expect(screen.getByText('All custom algorithms removed.')).toBeDefined();
+  } finally { confirm.mockRestore(); }
+});
+test.each([['good', 'All 1 custom algorithms validated'], ['bad', 'Failed: F2L-1: bad']])('bulk engine validation reports %s without altering saved algorithms', async (algorithm, message) => {
+  const custom = JSON.stringify({ 'F2L-1': [algorithm] });
+  localStorage.setItem('cuberplus-custom-algorithms', custom);
+  render(<Database />); openTools();
+  fireEvent.click(screen.getByRole('button', { name: 'Re-validate all custom algorithms' }));
+  expect(await screen.findByText(text => text.includes(message))).toBeDefined();
+  expect(loadCube).toHaveBeenCalledTimes(1);
+  expect(localStorage.getItem('cuberplus-custom-algorithms')).toBe(custom);
+});
+test('custom algorithms for deduplicated cases survive saves and remain available for validation and removal', async () => {
+  const custom = { 'OF2L-36': ['legacy'] };
+  localStorage.setItem('cuberplus-custom-algorithms', JSON.stringify(custom));
+  render(<Database />); openTools();
+  fireEvent.click(screen.getByRole('button', { name: 'Re-validate all custom algorithms' }));
+  expect(await screen.findByText(text => text.includes('Failed: OF2L-36: legacy'))).toBeDefined();
+  await act(async () => saveCustomAlgorithms({ ...readCustomAlgorithms(), 'F2L-1': ['new'] }));
+  expect(JSON.parse(localStorage.getItem('cuberplus-custom-algorithms')!)).toEqual({ ...custom, 'F2L-1': ['new'] });
+  const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
+  try {
+    fireEvent.click(screen.getByRole('button', { name: 'Remove all custom algorithms' }));
+    expect(localStorage.getItem('cuberplus-custom-algorithms')).toBe('{}');
   } finally { confirm.mockRestore(); }
 });
 test('an embedded case shows only that case and ignores page hashes without scrolling the parent', async () => {
@@ -183,6 +225,26 @@ test('starred algorithms move first and remain visible when collapsed and after 
   expect(reloaded.querySelector('.database-algorithm p')!.textContent).toBe('R2 U R2');
   fireEvent.click(within(reloaded).getByRole('button', { name: 'Unfavorite F2L 1 algorithm 4' }));
   expect(Array.from(reloaded.querySelectorAll('.database-algorithm p'), node => node.textContent)).toEqual(["R U R'", "R U2 R'", "R U' R'"]);
+});
+test('featured choices stay first and keep their badges when an extra algorithm is favorited', async () => {
+  const entry = algorithms.find(entry => entry.category === 'F2L')!;
+  entry.featured = entry.options.slice(0, 3);
+  localStorage.setItem('cuberplus-custom-algorithms', '{}');
+  localStorage.setItem('cuberplus-database-favorites', JSON.stringify(['F2L-1:R2 U R2']));
+  try {
+    render(<Database />);
+    const group = await openGroup();
+    const badges = () => Array.from(group.querySelectorAll('.database-algorithm .badge'), node => node.textContent);
+    expect(badges()).toEqual(['Shortest', 'R/U preferred', 'Alternative']);
+    expect(within(group).queryByText('R2 U R2')).toBeNull();
+    fireEvent.click(within(group).getByRole('button', { name: 'Show all F2L 1 algorithms' }));
+    expect(badges()).toEqual(['Shortest', 'R/U preferred', 'Alternative']);
+    expect(group.querySelectorAll('.database-algorithm')[3].textContent).toBe('R2 U R2');
+    expect(within(group).getByRole('button', { name: 'Unfavorite F2L 1 algorithm 4' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'favorite F2L-1' } });
+    expect(group.querySelectorAll('.database-algorithm')).toHaveLength(1);
+    expect(badges()).toEqual([]);
+  } finally { delete entry.featured; }
 });
 test('favorites and unlearn flags persist and can be toggled independently', async () => {
   const view = render(<Database />); await openGroup();

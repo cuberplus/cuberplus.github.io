@@ -21,7 +21,7 @@ export function recordingKey(solve: Solve): string {
   return `${solve.moves.length}:${hash >>> 0}`;
 }
 const cache = new WeakMap<Solve, { key: string; active: boolean; override?: number; pattern: KPattern; boundary: KPattern | null; processed: number; cross: number | null; ends: number[]; cases: string[]; pairs: (number | null)[]; seen: Set<number> }>();
-export const cfopKey = (solve: Solve) => `${solve.status}:${solve.crossOverride}:${solve.startFacelets}:${recordingKey(solve)}`;
+export const cfopKey = (solve: Solve) => `4:${solve.status}:${solve.crossOverride}:${solve.startFacelets}:${recordingKey(solve)}`;
 export function analyzeCFOP(solve: Solve, cube: Cube) {
   const key = cfopKey(solve);
   if (solve.status !== 'active' && solve.cfop?.version === 1 && solve.cfop.key === key) {

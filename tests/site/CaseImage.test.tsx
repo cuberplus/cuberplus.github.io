@@ -1,6 +1,8 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import CaseImage, { CategoryImage } from '../../src/database/CaseDiagram';
 import { applyMoves, FACES, HEX, inverseMoves, parseAlgorithm, ROTATIONS, solvedCube, stickers } from '../../scrambler/src/cube/cube';
+import { algorithms } from '../../src/database/algorithms';
+import { caseLabel } from '../../src/database/caseLabels';
 
 afterEach(cleanup);
 
@@ -13,8 +15,8 @@ function renderF2L(algorithm: string, category: 'F2L' | 'AF2L' | 'OF2L' = 'F2L')
     if (i >= 48 || i < 24 && Math.floor(i / 2) >= 4 && Math.floor(i / 2) <= 8 ||
       i >= 24 && i < 48 && Math.floor((i - 24) / 3) === 4) visibleStickers.push(index);
   });
-  render(<CaseImage category={category} id="1" algorithm={algorithm} facelets={facelets.join('')} visibleStickers={visibleStickers} />);
-  const image = screen.getByRole('img', { name: `${category} 1 case` });
+  render(<CaseImage category={category} id="1" pair={4} algorithm={algorithm} facelets={facelets.join('')} visibleStickers={visibleStickers} />);
+  const image = screen.getByRole('img', { name: `${caseLabel({ category, id: '1' })} case` });
   const tile = (index: number) => image.querySelector(`[data-facelet="${index}"]`)!;
   const vertices = (index: number) => tile(index).getAttribute('points')!.split(' ');
   return { image, tile, vertices, facelets, visibleStickers };
@@ -33,7 +35,7 @@ test('F2L stickers meet at the correct physical edges and front-right corner', (
 
 test.each(['AF2L', 'OF2L'] as const)('%s uses the projected cube and masks unused stickers rather than showing a full-color top view', category => {
   const { image, tile } = renderF2L("U R U' R'", category);
-  expect(image.querySelectorAll('polygon')).toHaveLength(27);
+  expect(image.querySelectorAll('[data-visible-face] polygon')).toHaveLength(27);
   expect(tile(0).getAttribute('fill')).toBe('#697384');
   expect(tile(4).getAttribute('fill')).toBe(HEX[3]);
 });
@@ -41,11 +43,29 @@ test.each(['AF2L', 'OF2L'] as const)('%s uses the projected cube and masks unuse
 test.each(["U R U' R'", "F R' F' R", "R U R'", "R U' R' U R U' R'"])('F2L diagram colors only centers, cross and target pair for %s', algorithm => {
   const { image, tile, facelets, visibleStickers } = renderF2L(algorithm);
   const whiteCrossRotation = ROTATIONS.find(rotation => rotation.faces[0] === 3 && rotation.faces[2] === 2)!;
-  expect(image.querySelectorAll('polygon')).toHaveLength(27);
+  expect(image.querySelectorAll('[data-visible-face] polygon')).toHaveLength(27);
   for (let index = 0; index < 27; index++) {
     expect(tile(index).getAttribute('fill')).toBe(visibleStickers.includes(index) ?
       HEX[whiteCrossRotation.faces[FACES.indexOf(facelets[index] as typeof FACES[number])]] : '#697384');
   }
+});
+test.each(['F2L', 'AF2L', 'OF2L'] as const)('%s floats full hidden faces with actual colors and mirrored perspective', category => {
+  const { image, tile, facelets, visibleStickers, vertices } = renderF2L(algorithms.find(entry => entry.category === 'OF2L' && entry.id === '12')!.algorithm, category);
+  expect(image.getAttribute('aria-description')).toContain('Floating mirrored faces');
+  expect(Array.from(image.querySelectorAll('[data-mirrored-face]'), face => face.getAttribute('data-mirrored-face'))).toEqual(['L', 'B', 'D']);
+  const palette = [HEX[3], HEX[4], HEX[2], HEX[0], HEX[1], HEX[5]];
+  for (let index = 27; index < 54; index++) {
+    expect(tile(index).getAttribute('fill')).toBe(visibleStickers.includes(index) ? palette[FACES.indexOf(facelets[index] as typeof FACES[number])] : '#697384');
+    if (index % 3 < 2 && index >= 36) expect(Number(vertices(index)[0].split(',')[0])).toBeGreaterThan(Number(vertices(index + 1)[0].split(',')[0]));
+  }
+  for (const face of image.querySelectorAll('[data-mirrored-face]')) expect(face.querySelectorAll('polygon')).toHaveLength(9);
+});
+test('cross pieces and hidden centers alone do not enable any floating face', () => {
+  const { image, visibleStickers } = renderF2L("U R U' R'");
+  expect(visibleStickers.some(index => index >= 27)).toBe(true);
+  expect(image.querySelectorAll('[data-mirrored-face]')).toHaveLength(0);
+  expect(image.getAttribute('viewBox')).toBe('0 0 110 110');
+  expect(image.hasAttribute('aria-description')).toBe(false);
 });
 
 test('OLL uses yellow for top-face stickers on both the top face and side ring', () => {

@@ -241,11 +241,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
     }
 
     openSolveSource(row: Pick<FastestSolve, 'id' | 'source' | 'rawSourceId'>) {
-        if (row.source === 'timer' || row.id.startsWith(`${row.source}:`)) { this.setState({ replayId: row.id }); return; }
-        const url = row.source === 'acubemy' && row.rawSourceId
-            ? "https://acubemy.com/shared/" + encodeURIComponent(row.rawSourceId)
-            : "https://app.cubeast.com/log/solves/" + encodeURIComponent(row.id);
-        window.open(url, '_blank', 'noopener,noreferrer');
+        this.setState({ replayId: row.id });
     }
 
     selectSolves(solves: Solve[], percentage = 0, title?: string) {
@@ -390,7 +386,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
                 {this.state.section === 'Cases' && !category && <div className="alert alert-info">Choose the F2L, OLL or PLL preset for individual case statistics.</div>}
                 <Row className="g-3">{charts.filter(chart => this.state.section === 'All charts' || SECTIONS[this.state.section ?? 'Overview'].includes(String(chart.key)))}</Row>
                 {this.state.average && <AverageModal {...this.state.average} close={() => this.setState({ average: undefined })} view={solve => this.openSolveSource(solve)} />}
-                {this.state.replayId && <React.Suspense fallback={<Spinner role="status" animation="border" />}><TimerReplay key={this.state.replayId} id={this.state.replayId} close={() => this.setState({ replayId: undefined })} /></React.Suspense>}
+                {this.state.replayId && <React.Suspense fallback={<Spinner role="status" animation="border" />}><TimerReplay key={this.state.replayId} id={this.state.replayId} preview={(this.props.recordSolves ?? this.props.solves).find(solve => solve.id === this.state.replayId)} close={() => this.setState({ replayId: undefined })} /></React.Suspense>}
                 {this.state.caseKey && <CaseModal caseKey={this.state.caseKey} close={() => this.setState({ caseKey: undefined })} />}
             </div>
         );

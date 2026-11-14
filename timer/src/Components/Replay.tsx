@@ -11,11 +11,12 @@ import { SolveTimeline } from './SolveTimeline';
 import { CaseModal } from '../../../src/database/CaseModal';
 import { sourceLabel } from '../Data/csvImport';
 import { InfoTip } from '../../../shared/Components/InfoTip';
-import { algorithms } from '../../../src/database/algorithms';
+import { algorithms, databaseCaseKey, databaseCaseKeys } from '../../../src/database/algorithms';
+import { caseKeyLabel } from '../../../src/database/caseLabels';
 import { persistReplayAnalysis, reanalyzeSolve } from '../Analysis/analysis';
 import '../CSS/Replay.css';
 
-export function Replay({ cube, solve, history, close, change, remove, retry, retryDisabled = false, precision = 2, saveError }: { cube: Cube; solve: Solve; history?: Solve[]; close: () => void; change?: (solve: Solve) => void; remove?: (solve: Solve) => Promise<void>; retry?: (solve: Solve) => void; retryDisabled?: boolean; precision?: 2 | 3; saveError?: string }) {
+export function Replay({ cube, solve, history, close, change, remove, retry, retryDisabled = false, readOnly = false, precision = 2, saveError }: { cube: Cube; solve: Solve; history?: Solve[]; close: () => void; change?: (solve: Solve) => void; remove?: (solve: Solve) => Promise<void>; retry?: (solve: Solve) => void; retryDisabled?: boolean; readOnly?: boolean; precision?: 2 | 3; saveError?: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [position, setPosition] = useState(0);
   const [cursor, setCursor] = useState(0);
@@ -34,7 +35,7 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
   const moves = useMemo(() => solve.moves.map(turn => turn.move), [solve]);
   const timestamps = useMemo(() => solve.moves.map((_, i) => elapsedAt(solve, i + 1)), [solve]);
   const { cross, ends, cases, pairs } = useMemo(() => analyzeCFOP(solve, cube), [solve, cube]);
-  useEffect(() => { void persistReplayAnalysis(solve, cube).catch(() => {}); }, [solve, cube]);
+  useEffect(() => { if (!readOnly) void persistReplayAnalysis(solve, cube).catch(() => {}); }, [solve, cube, readOnly]);
   const rotation = useMemo(() => cfopRotation(cube, cross, pairs[0]), [cube, cross, pairs]);
   const visible = usePageDialog(dialog);
   const hasReplay = !solve.imported || solve.moves.length > 0;
@@ -68,12 +69,15 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
         if (previous?.notation === notation) { previous.end = i + 1; previous.amount += amount; }
         else groups.push({ notation, start: i, end: i + 1, amount });
       }
-      const caseName = solve.imported?.steps[step]?.case ?? cases[step], caseSet = name === 'PLL' ? 'PLL' : name === 'OLL' ? 'OLL' : 'F2L';
+      const caseName = (step > 0 && step < 5 && solve.moves.length ? cases[step] : '') || (solve.imported?.steps[step]?.case ?? cases[step]);
+      const caseSet = name === 'PLL' ? 'PLL' : name === 'OLL' ? 'OLL' : 'F2L', key = databaseCaseKey(caseSet, caseName ?? '');
+      const caseKeys = (name === 'PLL' || name === 'OLL' || name.startsWith('F2L Slot')) ?
+        databaseCaseKeys(caseSet, caseName ?? '').filter(key => algorithms.some(entry => `${entry.category}-${entry.id}` === key)) : [];
       return {
         name: name.replace('Slot', 'Pair'),
         pair: step > 0 && step < 5 ? f2lPair(pairs[step - 1], cross) : '',
-        case: !caseName ? '' : caseName === 'Solved' ? 'Solved' : caseSet === 'PLL' ? `${caseName} perm` : `${caseSet} ${caseName}`,
-        caseKey: (name === 'PLL' || name === 'OLL' || name.startsWith('F2L Slot')) && algorithms.some(entry => entry.category === caseSet && entry.id === caseName) ? `${caseSet}-${caseName}` : '',
+        case: !caseName ? '' : caseName === 'Solved' ? 'Solved' : caseSet === 'PLL' ? `${caseName} perm` : caseKeyLabel(key),
+        caseKey: caseKeys.length === 1 ? caseKeys[0] : '', caseKeys,
         importedMoves: solve.imported?.steps[step]?.moves,
         empty: step > ends.length ? 'Not reached' : ends[step] === undefined ? 'No moves recorded' : 'Skipped',
         groups: groups.map(group => ({ ...group, move: group.notation[0] + ['4', '', '2', "'"][(group.amount % 4 + 4) % 4] })),
@@ -119,7 +123,7 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
     {saveError && <p className="alert alert-danger" role="alert">{saveError}</p>}
     <div className="replay-scramble">
       <div><h3 className="h6 mb-1">Scramble</h3><p className="scramble mb-0">{movesOf(solve.scramble).join(' ')}</p></div>
-      {hasReplay && (retry
+      {hasReplay && !readOnly && (retry
         ? <button className="btn btn-outline-primary" disabled={deleting || retryDisabled} onClick={() => { dismiss(); retry(solve); }}>Retry</button>
         : <a className={`btn btn-outline-primary${deleting ? ' disabled' : ''}`} aria-disabled={deleting || undefined} tabIndex={deleting ? -1 : undefined} href={`/timer/?retry=${encodeURIComponent(solve.id)}`} onClick={event => { if (deleting) event.preventDefault(); else dismiss(); }}>Retry</a>)}
     </div>
@@ -141,8 +145,8 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
     <div className="move-timeline" role="group" aria-label="Solution steps">{steps.map((step, index) => <div key={`${index}-${step.name}`} role="group" aria-label={`${step.name} solution`} className="mb-2">
       <div className="d-flex align-items-baseline gap-2">
         <h3 className="replay-step-name">{step.caseKey ? <button type="button" className="replay-case-link" aria-label={`${step.name}: open ${step.case} case`} onClick={() => { setPlaying(false); setCaseKey(step.caseKey); }}>{step.name}</button> : step.name}</h3>
-        {step.case && (step.caseKey
-          ? <button className="badge text-bg-secondary border-0" aria-label={`${step.name} case`} onClick={() => { setPlaying(false); setCaseKey(step.caseKey); }}>{step.case}</button>
+        {step.case && (step.caseKeys.length
+          ? step.caseKeys.map(key => <button key={key} className="badge text-bg-secondary border-0" aria-label={`${step.name}${step.caseKeys.length > 1 ? ` ${caseKeyLabel(key)}` : ''} case`} onClick={() => { setPlaying(false); setCaseKey(key); }}>{step.caseKeys.length === 1 ? step.case : caseKeyLabel(key)}</button>)
           : <span className="badge text-bg-secondary" aria-label={`${step.name} case`}>{step.case}</span>)}
         {step.pair && <span role="img" aria-label={`${step.pair.replace('/', ' / ')} pair`} title={step.pair.replace('/', ' / ')}>{pairEmojis(step.pair)}</span>}
       </div>
@@ -174,7 +178,7 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
     {analysisError && <p role="alert" className="alert alert-warning">{analysisError}</p>}
     {caseKey && <CaseModal caseKey={caseKey} close={() => setCaseKey('')} />}
     <div className="replay-actions" role="group" aria-label="Solve penalties and deletion">
-      {change && <>
+      {change && !readOnly && <>
         <button className={`btn ${getPenaltyReasons(solve).includes('manual') ? 'btn-warning' : 'btn-outline-warning'}`}
           aria-pressed={getPenaltyReasons(solve).includes('manual')} disabled={deleting || (solve.status !== 'complete' && solve.dnfReason !== 'manual')}
           onClick={() => change(setPenalty({ ...solve }, 'manual', !getPenaltyReasons(solve).includes('manual')))}>+2</button>
@@ -182,7 +186,7 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
           aria-pressed={solve.dnfReason === 'manual'} disabled={deleting || (solve.status !== 'complete' && solve.dnfReason !== 'manual')}
           onClick={() => change({ ...solve, status: solve.dnfReason === 'manual' ? 'complete' : 'incomplete', dnfReason: solve.dnfReason === 'manual' ? undefined : 'manual' })}>DNF</button>
       </>}
-      <button className="btn btn-outline-danger" disabled={deleting} onClick={removeSolve}>{deleting ? 'Deleting...' : 'Delete'}</button>
+      {!readOnly && <button className="btn btn-outline-danger" disabled={deleting} onClick={removeSolve}>{deleting ? 'Deleting...' : 'Delete'}</button>}
     </div>
     <div className="replay-disclosure-row replay-recording"><details className="replay-disclosure"><summary>Recording details</summary>
     <div className="d-grid gap-2 small text-secondary text-break mt-3">

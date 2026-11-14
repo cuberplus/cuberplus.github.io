@@ -2,7 +2,7 @@ import { AlgorithmMatcher, cubeRotations } from '../../timer/src/Analysis/algori
 import { loadCube } from '../../timer/src/Core/puzzle';
 
 const cube = await loadCube(), matcher = new AlgorithmMatcher(cube);
-test.each(["R U R'", " R2' \n U' R ", "y R U R'", "x R U M' r Fw S E' x'", "M2 U M2 U2 M2 U M2",
+test.each(["R U R'", " R2' \n U' R ", "y R U R'", "x R U M' r Fw S E' x'", "M2 U M2 U2 M2 U M2", "[R U R', D]", "(r U M' Fw')2",
   ...['R', 'U', 'F', 'D', 'L', 'B', 'r', 'u', 'f', 'd', 'l', 'b', 'M', 'E', 'S', 'x', 'y', 'z']
     .flatMap(move => ['', '2', "'"].map(suffix => move + suffix))])('%s expands to the same physical turns and final frame', algorithm => {
   const { moves, rotation } = matcher.outerMoves(algorithm);
@@ -16,6 +16,15 @@ test('ordinary-turn normalization preserves callback indices and half-turn direc
   expect(matcher.outerMoves(" R2' \n U' R ", (move, index) => observed.push([move, index])).moves)
     .toEqual(['R2', "U'", 'R']);
   expect(observed).toEqual([['R2', 0], ["U'", 1], ['R', 2]]);
+});
+test('cached mixed-notation tokens preserve callbacks and frames without reparsing algorithms', () => {
+  const algorithm = "x Rw U M2' S E' z'", observed: [string, number][] = [];
+  const first = matcher.outerMoves(algorithm, (move, index) => observed.push([move, index]));
+  const repeated: [string, number][] = [];
+  const second = matcher.outerMoves(algorithm, (move, index) => repeated.push([move, index]));
+  expect(second.moves).toEqual(first.moves);
+  expect(second.rotation.transformationData).toEqual(first.rotation.transformationData);
+  expect(repeated).toEqual(observed);
 });
 test('ordinary-turn fast path does not accept an invalid combined move token', () => {
   expect(() => matcher.outerMoves("RUR'")).toThrow('Invalid move');

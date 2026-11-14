@@ -31,7 +31,8 @@ test('database retains every recognized case and includes all advanced F2L varia
   for (const entry of algorithms) {
     expect(entry.options.length).toBeGreaterThanOrEqual(entry.category === 'OF2L' ? 1 : 2);
     expect(new Set(entry.options).size).toBe(entry.options.length);
-    expect(entry.options[0]).toBe(entry.algorithm);
+    if (entry.featured) expect(entry.options.slice(0, 3)).toEqual(entry.featured);
+    else expect(entry.options[0]).toBe(entry.algorithm);
   }
   expect(algorithms.filter(entry => entry.category === 'AF2L').map(entry => entry.id))
     .toEqual(Array.from({ length: 42 }, (_, i) => i < 12 ? [String(i + 1), `${i + 1}a`] : [String(i + 1)]).flat());
@@ -107,7 +108,7 @@ test('built-in full-cube solver independently verifies every illustrated setup',
         i >= 24 && i < 48 && corners.has(Math.floor((i - 24) / 3))) visibleStickers.push(index);
     });
     expect(rendered.join('')).toBe(facelets);
-    if (entry.category !== 'AF2L') expect(cube.isSolved(cube.parse(rendered.join('')).applyAlg(entry.algorithm))).toBe(true);
+    if (entry.pair === undefined) expect(cube.isSolved(cube.parse(rendered.join('')).applyAlg(entry.algorithm))).toBe(true);
     if (entry.category === 'F2L' || entry.category === 'AF2L') {
       expect([...entry.visibleStickers].sort((a, b) => a - b)).toEqual(visibleStickers.sort((a, b) => a - b));
     }

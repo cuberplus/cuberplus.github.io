@@ -5,12 +5,14 @@ import { loadCube } from '../Core/puzzle';
 import type { Cube } from '../Core/puzzle';
 import type { Solve } from '../Core/engine';
 import { SettingsContext, usePageDialog } from '@cuberplus/navigation';
+import type { Solve as AnalyzedSolve } from '../../../smartcubeanalyzer/src/Models/Types';
+import { previewSolve } from '../Data/csvImport';
 
-export default function AnalyzerReplay({ id, close }: { id: string; close: () => void }) {
+export default function AnalyzerReplay({ id, preview, close }: { id: string; preview?: AnalyzedSolve; close: () => void }) {
   const { precision } = useContext(SettingsContext);
   const dialog = useRef<HTMLDialogElement>(null);
   const opener = useRef(document.activeElement);
-  const [data, setData] = useState<{ solve: Solve; cube: Cube; history: Solve[] } | null>(null);
+  const [data, setData] = useState<{ solve: Solve; cube: Cube; history: Solve[]; readOnly: boolean } | null>(null);
   const [error, setError] = useState('');
   useEffect(() => () => {
     const element = opener.current;
@@ -22,13 +24,14 @@ export default function AnalyzerReplay({ id, close }: { id: string; close: () =>
     let cancelled = false;
     Promise.all([readSolves(), loadCube()]).then(([solves, cube]) => {
       const solve = solves.find(solve => solve.id === id && solve.status !== 'active');
-      if (!solve) throw new Error('This solve is no longer saved in Timer.');
-      if (!cancelled) setData({ solve, cube, history: solves });
+      if (!solve && !preview) throw new Error('This solve is no longer saved in Timer.');
+      if (!cancelled) setData({ solve: solve ?? previewSolve(preview!, cube), cube, history: solves, readOnly: !solve });
     }).catch(error => { if (!cancelled) setError(error instanceof Error ? error.message : 'Unable to load this solve.'); });
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, preview]);
   const change = (solve: Solve) => {
     setError('');
+    if (data?.readOnly) { setData({ ...data, solve }); return; }
     void saveSolves([solve]).then(() => {
       setData(current => current ? { ...current, solve, history: current.history.map(item => item.id === solve.id ? solve : item) } : null);
       window.dispatchEvent(new Event('timer-solves-changed'));

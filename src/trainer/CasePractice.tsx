@@ -6,6 +6,7 @@ import { CubeView } from '../../timer/src/Components/CubeView';
 import { cubeConnection, useCubeConnection } from '../../shared/cube/connection';
 import { InfoTip } from '../../shared/Components/InfoTip';
 import { categories, type AlgorithmCase } from '../database/algorithms';
+import { caseKeyLabel, caseLabel, caseNumber } from '../database/caseLabels';
 import { getAlgorithms } from '../database/customAlgorithms';
 import CaseImage from '../database/CaseImage';
 import { DrillCaseImage } from './DrillCaseImage';
@@ -56,7 +57,7 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
     const unsubscribe = cubeConnection.onEvent(event => {
       const current = drill.current;
       if (!current) return;
-      if (event.type === 'DISCONNECT') { current.phase = 'cancelled'; setError('Cube disconnected. Reconnect and start again.'); render(); }
+      if (event.type === 'DISCONNECT' || event.type === 'CALIBRATE') { current.phase = 'cancelled'; setError(event.type === 'DISCONNECT' ? 'Cube disconnected. Reconnect and start again.' : 'Cube recalibrated. Start a new drill.'); render(); }
       if (event.type !== 'MOVE' || !active.current) return;
       const attempt = current.move(cfopFrame(current.cube, current.colorFrame)(event.move), performance.now());
       record(attempt);
@@ -82,7 +83,7 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
         if (mode !== 'single' || !selected || fixedCase) { back(); return; }
         drill.current = null; setSelected(''); setPendingStart(false); setError('');
       }}>Back</button>
-      <h2 ref={heading} tabIndex={-1} className="mb-0">{mode === 'single' ? entry ? `${entry.category} ${entry.id} drill` : 'Single-case drill' : 'Make your own drill'} <InfoTip>Smart-cube turns control the displayed virtual case. Do not scramble or reset your physical cube between cases. Recognition runs until your first turn; execution ends when the case is solved. Practice repeats until you stop, saving each completed attempt.</InfoTip></h2>
+      <h2 ref={heading} tabIndex={-1} className="mb-0">{mode === 'single' ? entry ? `${caseLabel(entry)} drill` : 'Single-case drill' : 'Make your own drill'} <InfoTip>Smart-cube turns control the displayed virtual case. Do not scramble or reset your physical cube between cases. Recognition runs until your first turn; execution ends when the case is solved. Practice repeats until you stop, saving each completed attempt.</InfoTip></h2>
     </div>
     <fieldset hidden={running || mode === 'single' && !!entry} disabled={running} className={running || mode === 'single' && entry ? '' : 'd-grid gap-3 mb-3'}>
       <legend className="visually-hidden">Choose practice cases</legend>
@@ -118,7 +119,7 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
         <InfoTip>Retry records a DNF attempt and resets this virtual case. Skip records a DNF attempt and loads the next case. Keep turning your physical cube without resetting it.</InfoTip>
       </div>}
       {shown && <>
-        {settings.caseNames && <h3>{shown.category} {shown.id}</h3>}
+        {settings.caseNames && <h3>{caseLabel(shown)}</h3>}
         <CubeView cube={cube!} facelets={cube!.facelets(current!.pattern)} moves={current!.moves} cross={3} colorFrame={current!.colorFrame} height={230}
           hidePLL={shown.category === 'OLL' && settings.hidePLL} />
         {settings.solutionAlgorithms !== false && <SolutionProgress cube={cube!} start={current!.initialPattern} pattern={current!.pattern} algorithm={current!.solution} />}
@@ -126,7 +127,7 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
           {current!.queue.slice(1, 4).map((item, index) => <div key={index} data-pre-auf={item.preAuf} data-post-auf={item.postAuf} data-color-frame={item.colorFrame}>
             <p>Next {index + 1}</p><DrillCaseImage cube={cube!} category={item.category} id={item.id} pattern={item.pattern}
               colorFrame={item.colorFrame} hidePLL={item.category === 'OLL' && settings.hidePLL} />
-            {settings.caseNames && <strong>{item.category} {item.id}</strong>}</div>)}
+            {settings.caseNames && <strong>{caseLabel(item)}</strong>}</div>)}
         </div>}
       </>}
       {!running && entry && <><CaseImage category={entry.category} id={entry.id} />
@@ -149,7 +150,7 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
     {!!history.length && <section className="mt-4"><h3>Practice timings ({history.length})</h3>
       <div className="table-responsive"><table className="table"><caption className="visually-hidden">Completed practice attempts</caption>
         <thead><tr>{['Case', 'Recognition', 'Execution', 'Result', 'Date'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
-        <tbody>{history.map(attempt => <tr key={attempt.id}><td>{attempt.caseKey.replace('-', ' ')}</td><td>{seconds(attempt.recognitionMilliseconds)}</td>
+        <tbody>{history.map(attempt => <tr key={attempt.id}><td>{caseKeyLabel(attempt.caseKey)}</td><td>{seconds(attempt.recognitionMilliseconds)}</td>
           <td>{seconds(attempt.executionMilliseconds)}</td><td>{attempt.dnf ? 'DNF' : seconds(attempt.recognitionMilliseconds + attempt.executionMilliseconds)}</td>
           <td><time dateTime={attempt.date} title={new Date(attempt.date).toLocaleString()}>{relativeTime(attempt.date)}</time></td></tr>)}</tbody>
       </table></div>
@@ -161,15 +162,16 @@ function CasePicker({ selected, single = false, change }: { selected: string[]; 
   return <fieldset className="trainer-picker"><legend className="h6">{single ? 'Case' : 'Cases'}</legend>
     {categories.map(category => <details className="mb-3" key={category}>
       <summary>{category} cases ({selected.filter(key => key.startsWith(`${category}-`)).length} selected)</summary>
-      <div className="trainer-case-picker">{getAlgorithms().filter(item => item.category === category).map(item => {
+      <div className="trainer-case-picker">{getAlgorithms().filter(item => item.category === category)
+        .sort((a, b) => category === 'OF2L' ? Number(caseNumber(a)) - Number(caseNumber(b)) : 0).map(item => {
         const key = caseKey(item);
-        if (single) return <button key={key} type="button" className="trainer-case-choice trainer-case-card" aria-label={`Practice ${item.category} ${item.id}`} onClick={() => change(key)}>
-          <CaseImage category={item.category} id={item.id} /><strong>{item.category} {item.id}</strong>
+        if (single) return <button key={key} type="button" className="trainer-case-choice trainer-case-card" aria-label={`Practice ${caseLabel(item)}`} onClick={() => change(key)}>
+          <CaseImage category={item.category} id={item.id} /><strong>{caseLabel(item)}</strong>
         </button>;
         return <label key={key} htmlFor={`${name}-${key}`} className="trainer-case-choice">
-          <input id={`${name}-${key}`} type="checkbox" name={name} value={key} aria-label={`${item.category} ${item.id}`}
+          <input id={`${name}-${key}`} type="checkbox" name={name} value={key} aria-label={caseLabel(item)}
             checked={selected.includes(key)} onChange={() => change(key)} />
-          <span className="trainer-case-card"><CaseImage category={item.category} id={item.id} /><strong>{item.category} {item.id}</strong>
+          <span className="trainer-case-card"><CaseImage category={item.category} id={item.id} /><strong>{caseLabel(item)}</strong>
             <svg className="trainer-case-check" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="22" /><path d="m12 24 8 8 16-17" /></svg>
           </span>
         </label>;
