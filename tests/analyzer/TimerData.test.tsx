@@ -21,6 +21,7 @@ jest.mock('../../smartcubeanalyzer/src/Components/FilterPanel', () => {
     return { FilterPanel: forwardRef((props: FilterPanelProps, _ref) => { mockFilterProps = props; return createElement('div', null, props.presets); }) };
 });
 
+const { FilterPanel: RealFilterPanel } = jest.requireActual<typeof import('../../smartcubeanalyzer/src/Components/FilterPanel')>('../../smartcubeanalyzer/src/Components/FilterPanel');
 const localData = jest.mocked(readLocalAnalysis);
 const csv = 'id,date,dnf,time,solving_method,solving_time,one_turn_away_two_second_penalty,session_name\r\nnew,2026-01-03 00:00:00 UTC,false,14000,CFOP,12000,true,"Practice, ""Summer"""\r\nold,2026-01-01 00:00:00 UTC,true,,CFOP,,,Other\r\n';
 const own = () => parseCsv(csv, ',').map(solve => ({ ...solve, source: 'timer' as const, rawSource: 'timer' }));
@@ -313,6 +314,34 @@ test('CSV reading disables competing loads and errors preserve the previous stat
     expect((await screen.findByRole('alert')).textContent).toContain('File could not be read');
     expect(ref.current!.state.solves).toHaveLength(2);
     expect(input.disabled).toBe(false);
+});
+
+test.each([1, 2])('uploading %s CSV files selects every uploaded session without changing saved scope', async count => {
+    const ref = React.createRef<FileInput>();
+    render(<FileInput ref={ref} />);
+    await ready(ref);
+    const panel = new RealFilterPanel(mockFilterProps);
+    let filters = RealFilterPanel.getDerivedStateFromProps(mockFilterProps, panel.state);
+    expect(filters.recordSolves.map(solve => solve.session)).toEqual(['Practice, "Summer"']);
+    const uploaded = csv.replace('"Practice, ""Summer"""', 'Uploaded').replace('Other', 'Another upload');
+    const files = Array.from({ length: count }, (_, i) => file(`upload-${i}.csv`, uploaded.replace('new,', `new-${i},`)));
+    fireEvent.change(screen.getByLabelText('CSV files'), { target: { files } });
+    await ready(ref, count * 2);
+    expect(mockFilterProps.sessionScope).toBeUndefined();
+    filters = RealFilterPanel.getDerivedStateFromProps(mockFilterProps, filters);
+    expect([...filters.filters.sessions].sort()).toEqual(['Another upload', 'Uploaded']);
+    expect(filters.filteredSolves).toHaveLength(count * 2);
+    expect(filters.recordSolves).toHaveLength(count * 2);
+    expect(localStorage.getItem('selected-session')).toBe('Practice, "Summer"');
+    expect(localStorage.getItem('timer-all-session-history')).toBeNull();
+    act(() => mockFilterProps.onSessionsChange?.(['Uploaded'], false));
+    openDataMenu();
+    fireEvent.click(screen.getByRole('button', { name: 'My saved solves' }));
+    await ready(ref);
+    expect(mockFilterProps.sessionScope).toBe('Practice, "Summer"');
+    expect(localData).toHaveBeenLastCalledWith(10000, ['Practice, "Summer"']);
+    filters = RealFilterPanel.getDerivedStateFromProps(mockFilterProps, filters);
+    expect(filters.recordSolves.map(solve => solve.session)).toEqual(['Practice, "Summer"']);
 });
 
 test('new solves and returning to the retained page preserve snapshots and warn until explicitly loaded', async () => {

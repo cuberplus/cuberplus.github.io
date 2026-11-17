@@ -124,7 +124,7 @@ export class FileInput extends React.Component<Record<string, never>, FileInputS
 
     showFileData(files: File[]) {
         if (!files.length) return;
-        this.setState({ csvFileNames: files.map(file => file.name).join(', ') });
+        this.sessions = []; this.setState({ csvFileNames: files.map(file => file.name).join(', ') });
         void this.loadData(requestId => Promise.all(files.map(async file => {
             const csv = await file.text();
             return requestId === this.requestId ? this.read({ type: 'parse', csv }) : [];
@@ -140,7 +140,7 @@ export class FileInput extends React.Component<Record<string, never>, FileInputS
     }
 
     showTimerData() {
-        let demo = false;
+        let demo = false; if (this.state.source === 'Temporary CSV preview') this.sessions = this.sessionScope ? [this.sessionScope] : [];
         void this.loadData(async requestId => {
             const solves = demo ? [] : await this.read({ type: 'local' });
             if (requestId !== this.requestId) return [];
@@ -181,7 +181,7 @@ export class FileInput extends React.Component<Record<string, never>, FileInputS
                     {this.state.loadError && <Alert variant="warning">{this.state.loadError}</Alert>}
                     <SettingsContext.Consumer>{({ solveLimit, session, allSessions }) => <><ScopeSync limit={solveLimit} session={allSessions ? '' : session} change={this.changeScope} /><FilterPanel
                         ref={this.filterPanelRef}
-                        solves={this.state.solves} solveLimit={solveLimit} sessionScope={this.state.source?.startsWith('Demo:') ? undefined : allSessions ? '' : session} onSessionsChange={this.changeSessions}
+                        solves={this.state.solves} solveLimit={solveLimit} sessionScope={this.state.source?.startsWith('Demo:') || this.state.source === 'Temporary CSV preview' ? undefined : allSessions ? '' : session} onSessionsChange={this.changeSessions}
                         preparedSolves={this.preparedSolves}
                         suggestedMethod={this.state.suggestedMethod}
                         suggestedSessions={this.state.suggestedSessions}

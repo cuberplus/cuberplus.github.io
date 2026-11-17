@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 import { createRef } from 'react';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { FilterPanel } from '../../smartcubeanalyzer/src/Components/FilterPanel';
 import { makeSolves } from './testUtils';
 import { StepName } from '../../smartcubeanalyzer/src/Models/Types';
@@ -10,6 +10,24 @@ beforeAll(() => Object.defineProperty(window, 'matchMedia', { configurable: true
   matches: false, addListener: jest.fn(), removeListener: jest.fn(), addEventListener: jest.fn(), removeEventListener: jest.fn(),
 }) }));
 afterEach(() => { cleanup(); jest.useRealTimers(); });
+test('the demo badge warns on hover and keyboard focus, but saved and uploaded solves do not', async () => {
+  const solves = makeSolves(12), view = render(<FilterPanel solves={solves} source="Demo: Dev Solves" />);
+  const warning = screen.getByRole('button', { name: 'These are not your solves. This is demo data.' });
+  expect(warning.textContent).toBe('\u26a0');
+  expect(warning.closest('.analysis-demo')?.nextElementSibling?.textContent).toContain('/ 12 solves');
+  fireEvent.mouseEnter(warning);
+  expect((await screen.findByRole('tooltip')).textContent).toBe('These are not your solves. This is demo data.');
+  fireEvent.keyDown(document, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+  fireEvent.focus(warning);
+  expect((await screen.findByRole('tooltip')).textContent).toBe('These are not your solves. This is demo data.');
+  for (const source of ['Shown solves', 'Temporary CSV preview']) {
+    view.rerender(<FilterPanel solves={solves} source={source} />);
+    expect(screen.queryByRole('button', { name: 'These are not your solves. This is demo data.' })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+  }
+});
+
 test('step selection reports actual presets, manual changes, and reset without losing the recent scope', () => {
   const ref = createRef<FilterPanel>(), changed = jest.fn();
   const solves = makeSolves(12), view = render(<FilterPanel ref={ref} solves={solves} onStepsChange={changed} />);
