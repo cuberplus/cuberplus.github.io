@@ -32,6 +32,7 @@ details[open] > .visuals-summary::after { transform: rotate(225deg); }
 .scramble-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 0.75rem; font-family: var(--bs-font-sans-serif); font-size: 0.875rem; line-height: 1.4; }
 .scramble-placeholder .btn { flex-shrink: 0; }
 .timer-value { font-size: clamp(4rem, 10vw, 7rem); line-height: 1.15; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.04em; }
+.timer-value.inspection-readiness { font-size: clamp(1.75rem, 4vw, 3rem); }
 .timer-display .solve-penalty { font-size: clamp(1rem, 3vw, 1.75rem); }
 .pb-notifications { position: fixed; top: 1rem; right: 1rem; z-index: 1100; display: flex; flex-direction: column; gap: 0.75rem; max-width: calc(100vw - 2rem); max-height: calc(100dvh - 2rem); overflow-y: auto; padding: 0.25rem; pointer-events: none; }
 .pb-celebration { position: relative; flex-shrink: 0; width: 100%; border: 1px solid #b695ef; border-radius: 14px; background: var(--cp-panel); box-shadow: 0 0 24px #b695ef40; pointer-events: auto; }

@@ -9,7 +9,7 @@ export interface Turn {
   localTimestamp: number | null; cubeTimestamp: number | null;
 }
 export interface RecordedTurn extends Turn { elapsed: number }
-export type PenaltyReason = 'over-turn' | 'inspection' | 'manual';
+export type PenaltyReason = 'over-turn' | 'inspection' | 'Under-inspected' | 'manual';
 export interface Solve {
   version: 1; appVersion?: string; id: string; session: string; createdAt: string; device: string;
   scramble: string; startFacelets: string; duration: number;
@@ -67,6 +67,8 @@ export class TimerEngine {
   active: Solve | null = null; result: Solve | null = null;
   overTurnPenaltyEnabled = true;
   inspectionPenaltyEnabled = false;
+  minimumInspection = 0;
+  canStart = () => true;
   lastSerial: number | undefined;
   private checkpoints: KPattern[] = []; private partial: string[] = [];
   private guidanceStart = 0; private partialAllowed = false;
@@ -150,6 +152,7 @@ export class TimerEngine {
     if (facelets !== this.facelets) this.fail('Cube state differs from recorded moves. Resynchronize before continuing.');
   }
   turn(turn: Turn): void {
+    if (this.phase === 'ready' && !this.canStart()) return;
     if (!isMove(turn.move)) { this.fail('Unsupported face turn received.'); return; }
     if (this.phase === 'synchronizing') { this.fail('Cube turned before synchronization finished. Read its state again.'); return; }
     if (this.phase === 'disconnected' || this.phase === 'recovery') return;
@@ -173,6 +176,7 @@ export class TimerEngine {
       const penalty = this.inspectionPenaltyEnabled ? inspectionPenalty(this.active.inspection!) : 0;
       if (penalty === 'DNF') this.active.dnfReason = 'inspection';
       else if (penalty) setPenalty(this.active, 'inspection');
+      if (this.active.inspection! < this.minimumInspection * 1000) setPenalty(this.active, 'Under-inspected');
       this.inspectionStarted = null;
       this.phase = 'solving';
     }

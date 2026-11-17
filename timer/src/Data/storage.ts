@@ -156,7 +156,7 @@ export function validateBackupData(value: BackupEnvelope, cube: Cube): Solve[] {
         (solve.crossOverride !== undefined && (!Number.isInteger(solve.crossOverride) || solve.crossOverride < 0 || solve.crossOverride > 5)) ||
         !Array.isArray(solve.moves)) throw new Error('Invalid solve record in backup.');
     const reasons = getPenaltyReasons(solve);
-    if (reasons.some(reason => !['over-turn', 'inspection', 'manual'].includes(reason)) || new Set(reasons).size !== reasons.length ||
+    if (reasons.some(reason => !['over-turn', 'inspection', 'Under-inspected', 'manual'].includes(reason)) || new Set(reasons).size !== reasons.length ||
         reasons.length * 2000 !== (solve.penalty ?? 0)) throw new Error('Invalid solve record in backup.');
     ids.add(solve.id);
     // Older backups may contain caches; derive them lazily from the preserved recording/source.
@@ -270,7 +270,7 @@ export const formatTime = (milliseconds: number, precision: 2 | 3 = 2): string =
 const cubeastColumns = 'id,date,dnf,time,solving_method,device_name,device_model,device_color_scheme,user,one_turn_away_two_second_penalty,inspection_two_second_penalty,inspection_time,timer_time,missing_turn,solution,timer,description,session_name,session_ruleset,scramble,scramble_provider,ruleset,share_views,share_likes,share_comments,analysis_version,solution_rotation,pickup_time,putdown_time,solving_time,slice_turns,face_turns,quarter_turns,turns_per_second,total_recognition_time,total_execution_time,turns_after_solution,steps_skipped'.split(',').concat(
   Array.from({ length: 9 }, (_, i) => 'name,moves,recorded_moves,skipped,has_turns,time,recognition_time,execution_time,cumulative_time,slice_turns,face_turns,quarter_turns,turns_per_second'.split(',').map(field => `step_${i}_${field}`)).flat(),
   Array.from({ length: 9 }, (_, i) => `step_${i}_case`),
-  'first_f2l_pair', 'manual_two_second_penalty', 'penalty_reason', 'dnf_reason', 'cuberplus_version', 'solve_end_date', 'cuberplus_source',
+  'first_f2l_pair', 'manual_two_second_penalty', 'under_inspected_two_second_penalty', 'penalty_reason', 'dnf_reason', 'cuberplus_version', 'solve_end_date', 'cuberplus_source',
 );
 const csvCell = (value: string | number | boolean): string => /[",\r\n]/.test(String(value)) ? `"${String(value).replace(/"/g, '""')}"` : String(value);
 export function cubeastCSV(solves: Solve[], cube: Cube): string {
@@ -283,6 +283,7 @@ export function cubeastCSV(solves: Solve[], cube: Cube): string {
       dnf: solve.status !== 'complete', time: solve.status === 'complete' ? Math.round(solveTime(solve)) : '', timer_time: duration, solving_time: duration,
       one_turn_away_two_second_penalty: penalties.includes('over-turn'), inspection_two_second_penalty: penalties.includes('inspection'),
       manual_two_second_penalty: penalties.includes('manual'), penalty_reason: penalties.join(', '), dnf_reason: solve.status === 'incomplete' ? getDnfReason(solve) : '',
+      under_inspected_two_second_penalty: penalties.includes('Under-inspected'),
       inspection_time: solve.inspection === undefined ? '' : Math.round(solve.inspection),
       device_name: solve.device, session_name: solve.session, scramble: solve.scramble, scramble_provider: 'random_state',
       first_f2l_pair: f2lPair(analysis.pairs[0], analysis.cross),

@@ -30,7 +30,25 @@ export class CloudHttpError extends Error {
       `Cloud request failed (${status}). Your local data has not been removed.`);
   }
 }
-let googleToken: { value: string; expires: number } | null = null;
+const googleTokenKey = 'cuberplus-google-token', googleGrantKey = 'cuberplus-google-authorized';
+function savedGoogleToken(): { value: string; expires: number } | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(googleTokenKey) ?? 'null') as { value: string; expires: number } | null;
+    return saved && typeof saved.value === 'string' && saved.value && Number.isFinite(saved.expires) &&
+      saved.expires > Date.now() ? saved : null;
+  } catch { return null; }
+}
+let googleToken = savedGoogleToken();
+function saveGoogleToken(token: typeof googleToken): void {
+  googleToken = token;
+  try {
+    if (token) localStorage.setItem(googleTokenKey, JSON.stringify(token));
+    else localStorage.removeItem(googleTokenKey);
+  } catch { /* Keep sign-in usable in memory if browser storage is unavailable. */ }
+}
+function googleAuthorized(): boolean {
+  try { return localStorage.getItem(googleGrantKey) === 'true'; } catch { return false; }
+}
 let googleScript: Promise<GoogleOAuth> | null = null;
 let msal: Promise<PublicClientApplication> | null = null;
 let microsoftReady: PublicClientApplication | null = null;
@@ -60,9 +78,13 @@ async function microsoft(): Promise<PublicClientApplication> {
   if (!msal) msal = import('@azure/msal-browser').then(async ({ PublicClientApplication }) => {
     const app = new PublicClientApplication({
       auth: { clientId: clientIds.microsoft, authority: 'https://login.microsoftonline.com/common', redirectUri: `${location.origin}/auth-callback.html` },
-      cache: { cacheLocation: 'sessionStorage' },
+      cache: { cacheLocation: 'localStorage' },
     });
     await app.initialize();
+    if (!app.getActiveAccount()) {
+      const accounts = app.getAllAccounts();
+      if (accounts.length === 1) app.setActiveAccount(accounts[0]);
+    }
     microsoftReady = app;
     return app;
   }).catch((failure: Error) => { msal = null; throw failure; });
@@ -84,20 +106,25 @@ export async function connectProvider(provider: Provider): Promise<void> {
           if (!response.access_token || !response.scope?.split(' ').includes(googleScope)) {
             reject(new Error('Google Drive permission was not granted. Please reconnect and allow app-data access.')); return;
           }
-          googleToken = { value: response.access_token, expires: Date.now() + Math.max(0, (Number(response.expires_in) || 0) - 60) * 1000 };
+          saveGoogleToken({ value: response.access_token, expires: Date.now() + Math.max(0, (Number(response.expires_in) || 0) - 60) * 1000 });
+          try { localStorage.setItem(googleGrantKey, 'true'); } catch { /* Reconnection still works without a saved grant. */ }
           resolve();
         },
         error_callback: () => reject(new Error('Sign-in was cancelled or the popup was blocked. Please try again.')),
-      }).requestAccessToken({ prompt: 'select_account' });
+      }).requestAccessToken({ prompt: googleAuthorized() ? '' : 'select_account' });
     });
   } else {
     const app = await microsoft();
-    const response = await app.acquireTokenPopup({ scopes: microsoftScopes, prompt: 'select_account' });
+    const account = app.getActiveAccount();
+    const response = await app.acquireTokenPopup({ scopes: microsoftScopes, ...(account ? { account } : { prompt: 'select_account' }) });
     app.setActiveAccount(response.account);
   }
 }
 export async function disconnectProvider(provider: Provider): Promise<void> {
-  if (provider === 'google') googleToken = null;
+  if (provider === 'google') {
+    saveGoogleToken(null);
+    try { localStorage.removeItem(googleGrantKey); } catch { /* The in-memory token was still discarded. */ }
+  }
   else if (msal) {
     const app = await msal;
     const account = app.getActiveAccount();
@@ -105,22 +132,26 @@ export async function disconnectProvider(provider: Provider): Promise<void> {
     app.setActiveAccount(null);
   }
 }
-async function accessToken(provider: Provider): Promise<string> {
+async function accessToken(provider: Provider, forceRefresh = false): Promise<string> {
   if (!isConfigured(provider)) throw new Error(`${providerNames[provider]} is not configured by this site's owner yet.`);
   if (provider === 'google') {
     if (isConnected('google')) return googleToken!.value;
   } else {
     const app = await microsoft(), account = app.getActiveAccount();
     if (account) {
-      try { return (await app.acquireTokenSilent({ scopes: microsoftScopes, account })).accessToken; }
+      try { return (await app.acquireTokenSilent({ scopes: microsoftScopes, account, forceRefresh })).accessToken; }
       catch { /* Automatic backups must never open a sign-in popup. */ }
     }
   }
   throw new Error('Cloud sign-in expired or disconnected. Reconnect in Options; your backup is still pending.');
 }
 async function authorized(provider: Provider, url: string, init: RequestInit = {}): Promise<Response> {
-  const response = await fetch(url, { ...init, cache: 'no-store', headers: { ...init.headers, Authorization: `Bearer ${await accessToken(provider)}` } });
-  if (response.status === 401 && provider === 'google') googleToken = null;
+  const request = async (forceRefresh = false) => fetch(url, { ...init, cache: 'no-store', headers: { ...init.headers, Authorization: `Bearer ${await accessToken(provider, forceRefresh)}` } });
+  let response = await request();
+  if (response.status === 401) {
+    if (provider === 'google') saveGoogleToken(null);
+    else response = await request(true);
+  }
   return response;
 }
 const checked = (response: Response): Response => { if (!response.ok) throw new CloudHttpError(response.status); return response; };

@@ -1,4 +1,5 @@
 import type { Settings } from '../../src/cloud/backupSettings';
+import { breakDefaults } from '../../timer/src/Core/breakReminder';
 
 const trainer = { upcomingCases: false, caseNames: false, solutionAlgorithms: false, randomPreAuf: false, randomPostAuf: true, hidePLL: true, crossColor: 'White', frontColor: 'Blue' };
 export const userSettings: Settings = {
@@ -7,6 +8,9 @@ export const userSettings: Settings = {
   'timer-last-cube-mac': '12:34:56:78:9A:BC',
   'recent-solve-limit': '2500',
   'timer-inspection': 'true',
+  'timer-inspection-readiness': 'true',
+  'timer-minimum-inspection': '5',
+  'timer-break-settings': JSON.stringify({ ...breakDefaults, enabled: true }),
   'timer-over-turn-penalty': 'true',
   'timer-show-every-long-pb': 'true',
   'timer-hide-distracting-visuals': '{"timer":true,"cube":false,"progressBar":true}',
@@ -36,6 +40,9 @@ export const userSettings: Settings = {
   'cuberplus-selected-cube': 'cube-1',
 };
 export const excludedSettings = {
+  'cuberplus-google-token': '{"value":"synthetic-token","expires":9999999999999}',
+  'cuberplus-google-authorized': 'remembered-google-grant',
+  'timer-break-active': '{"until":9999999999999,"solveId":"slow","reason":"Slow solve"}',
   'msal.token': 'msal-secret', 'oauth-access-token': 'oauth-secret', 'unrelated-secret': 'secret',
   'timer-pb-daily-records': '{"date":"2026-11-13","records":["Ao100"]}',
   'cuberplus-cloud-provider': 'microsoft',

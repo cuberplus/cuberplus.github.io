@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import { KPattern } from 'cubing/kpuzzle';
 import { TimerEngine, finalizeTiming, setPenalty, solveTime, type RecordedTurn, type Solve } from '../../timer/src/Core/engine';
-import { Cube, SOLVED, inverse, loadCube, locations, movesOf, simplifyMoves } from '../../timer/src/Core/puzzle';
+import { Cube, SOLVED, inverse, isMove, loadCube, locations, movesOf, simplifyMoves, generateStageScramble } from '../../timer/src/Core/puzzle';
 
 let cube: Cube;
 beforeAll(async () => { cube = await loadCube(); });
@@ -35,6 +35,53 @@ function create(scramble = 'R U2') {
   });
   return { engine, records, turn };
 }
+
+test.each([0, 4999, 5000, 5001])('minimum inspection applies Under-inspected only below the %s ms boundary', inspection => {
+  const { engine, turn } = create();
+  engine.minimumInspection = 5;
+  turn('R'); turn('U2');
+  engine.turn({ move: 'U2', hostTime: 300 + inspection, localTimestamp: null, cubeTimestamp: null });
+  engine.turn({ move: "R'", hostTime: 800 + inspection, localTimestamp: null, cubeTimestamp: null });
+  expect(engine.result).toMatchObject({ duration: 500, inspection, status: 'complete' });
+  expect(engine.result?.penaltyReason).toBe(inspection < 5000 ? 'Under-inspected' : undefined);
+  expect(engine.result?.penalty).toBe(inspection < 5000 ? 2000 : undefined);
+});
+test('minimum inspection stacks with other penalties and defaults off', () => {
+  const { engine, turn } = create();
+  expect(engine.minimumInspection).toBe(0);
+  engine.minimumInspection = 20; engine.inspectionPenaltyEnabled = true;
+  turn('R'); turn('U2');
+  engine.turn({ move: 'U2', hostTime: 16300, localTimestamp: null, cubeTimestamp: null });
+  engine.turn({ move: "R'", hostTime: 16800, localTimestamp: null, cubeTimestamp: null });
+  engine.turn({ move: 'U', hostTime: 16900, localTimestamp: null, cubeTimestamp: null });
+  expect(engine.result).toMatchObject({ penalty: 6000, penaltyReason: 'inspection, Under-inspected, over-turn' });
+});
+test('the start guard cannot be bypassed by a physical turn while ready', () => {
+  const { engine, turn } = create();
+  turn('R'); turn('U2');
+  const state = engine.facelets;
+  engine.canStart = () => false;
+  turn('U2');
+  expect(engine.phase).toBe('ready'); expect(engine.active).toBeNull(); expect(engine.facelets).toBe(state);
+});
+test.each(['cross-solved', 'f2l-solved'] as const)('%s produces legal, unsolved states with the requested white stage intact', async kind => {
+  for (const random of [() => 0, () => .999, Math.random]) {
+    const scramble = await generateStageScramble(kind, random), pattern = cube.solved().applyAlg(scramble);
+    expect(movesOf(scramble).every(isMove)).toBe(true);
+    expect(cube.isSolved(pattern)).toBe(false);
+    expect(cube.equals(cube.parse(cube.facelets(pattern)), pattern)).toBe(true);
+    for (const orbit of ['EDGES', 'CORNERS'] as const) {
+      locations[orbit].forEach((stickers, index) => {
+        const fixed = kind === 'cross-solved' ? orbit === 'EDGES' && stickers.some(sticker => Math.floor(sticker / 9) === 3)
+          : !stickers.some(sticker => Math.floor(sticker / 9) === 0);
+        if (fixed) {
+          expect(pattern.patternData[orbit].pieces[index]).toBe(index);
+          expect(pattern.patternData[orbit].orientation[index]).toBe(0);
+        }
+      });
+    }
+  }
+}, 60000);
 
 test.each([14999, 15000, 16999, 17000, 17001])('optional inspection scores the first turn after %s ms without changing solve duration', inspection => {
   const { engine, records, turn } = create();

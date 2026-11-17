@@ -3,14 +3,20 @@ import { beforeEach, expect, jest, test } from '@jest/globals';
 import type { GenerationEvent } from '../../scrambler/src/cube/generation';
 
 const generate = jest.fn<() => Promise<string>>().mockResolvedValue('R U2');
+const generateStage = jest.fn<() => Promise<string>>().mockResolvedValue('U R U R\' U\'');
 const terminate = jest.fn(), postMessage = jest.fn();
 const worker = { onmessage: null as ((event: { data: GenerationEvent }) => void) | null, onerror: null as (() => void) | null, terminate, postMessage };
 await jest.unstable_mockModule('../../timer/src/Core/puzzle', () => ({
-  generateScramble: generate, sameAxis: (a: string, b: string) => ['UD', 'RL', 'FB'].some(axis => axis.includes(a[0]) && axis.includes(b[0])),
+  generateScramble: generate, generateStageScramble: generateStage, sameAxis: (a: string, b: string) => ['UD', 'RL', 'FB'].some(axis => axis.includes(a[0]) && axis.includes(b[0])),
 }));
 await jest.unstable_mockModule('../../scrambler/src/cube/workerClient', () => ({ createSolverWorker: () => worker }));
 const { sessionScramble, readSessionScramblers, SESSION_SCRAMBLERS } = await import('../../timer/src/Core/scramblers');
 beforeEach(() => { localStorage.clear(); jest.clearAllMocks(); });
+test.each(['cross-solved', 'f2l-solved'] as const)('%s uses constrained random-state generation', async kind => {
+  const random = () => .5;
+  expect(await sessionScramble(kind, random)).toBe('U R U R\' U\'');
+  expect(generateStage).toHaveBeenCalledWith(kind, random);
+});
 test('default uses the existing random-state generator and invalid saved choices are ignored', async () => {
   expect(await sessionScramble()).toBe('R U2');
   expect(generate).toHaveBeenCalledTimes(1);

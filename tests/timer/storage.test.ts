@@ -315,15 +315,15 @@ test('penalties round-trip through local storage and backups without changing ra
 
 test('stacked penalties retain all reasons through storage, backups, statistics and Analyzer CSV', async () => {
   const solve = { ...sample(), duration: 3000 };
-  ['inspection', 'over-turn', 'manual'].forEach(reason => setPenalty(solve, reason as 'inspection' | 'over-turn' | 'manual'));
+  (['inspection', 'over-turn', 'Under-inspected', 'manual'] as const).forEach(reason => setPenalty(solve, reason));
   await saveSolves([solve]);
   const saved = (await readSolves()).find(item => item.id === solve.id)!;
   expect(validateBackup(backupJSON([saved]), cube)).toEqual([solve]);
-  expect(sessionStats([solve])[0]).toMatchObject({ current: 9000, best: 9000 });
-  expect(average(Array.from({ length: 5 }, () => solve), 5)).toBe(9000);
+  expect(sessionStats([solve])[0]).toMatchObject({ current: 11000, best: 11000 });
+  expect(average(Array.from({ length: 5 }, () => solve), 5)).toBe(11000);
   const csv = cubeastCSV([saved], cube), [analyzed] = parseCsv(csv, ',');
-  expect(csv).toContain('"inspection, over-turn, manual"');
-  expect(analyzed).toMatchObject({ time: 9, dnf: false });
+  expect(csv).toContain('"inspection, over-turn, Under-inspected, manual"');
+  expect(analyzed).toMatchObject({ time: 11, dnf: false });
   expect(solve.duration).toBe(3000);
 });
 
@@ -656,7 +656,7 @@ test('Cubeast CSV matches the sample schema and records milliseconds, UTC dates,
   solve.moves[1].elapsed = 1234.56;
   solve.duration = 1234.56;
   const [header, line, trailing] = cubeastCSV([solve], cube).split('\r\n');
-  expect(header).toBe(`${cubeastHeader},first_f2l_pair,manual_two_second_penalty,penalty_reason,dnf_reason,cuberplus_version,solve_end_date,cuberplus_source`);
+  expect(header).toBe(`${cubeastHeader},first_f2l_pair,manual_two_second_penalty,under_inspected_two_second_penalty,penalty_reason,dnf_reason,cuberplus_version,solve_end_date,cuberplus_source`);
   expect(trailing).toBe('');
   const columns = header.split(',');
   const cells = line.split(',');
@@ -741,5 +741,5 @@ test('Cubeast CSV excludes active attempts, includes incomplete attempts as DNFs
   expect(cells).toHaveLength(columns.length);
   expect(row).toMatchObject({ dnf: 'true', time: '', timer_time: '', solving_time: '', session_name: 'Other', description: 'Disconnected.' });
   expect(row.solution).toBe("U2[0] R'[100]");
-  expect(cubeastCSV([], cube)).toBe(cubeastHeader + ',first_f2l_pair,manual_two_second_penalty,penalty_reason,dnf_reason,cuberplus_version,solve_end_date,cuberplus_source\r\n');
+  expect(cubeastCSV([], cube)).toBe(cubeastHeader + ',first_f2l_pair,manual_two_second_penalty,under_inspected_two_second_penalty,penalty_reason,dnf_reason,cuberplus_version,solve_end_date,cuberplus_source\r\n');
 });

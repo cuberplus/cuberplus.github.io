@@ -44,7 +44,13 @@ function report(failure: Error): void {
   message = failure.message || 'Cloud backup failed. Your local data is still available.'; error = true; emit();
 }
 export async function initializeCloud(): Promise<void> {
-  try { await prepareProvider(selectedProvider()); emit(); } catch (failure) { report(failure instanceof Error ? failure : new Error('Cloud sign-in could not load.')); }
+  try {
+    const provider = selectedProvider();
+    if (!isConfigured(provider)) return;
+    if (provider === 'microsoft') await prepareProvider(provider);
+    emit();
+    await automaticBackup();
+  } catch (failure) { report(failure instanceof Error ? failure : new Error('Cloud sign-in could not load.')); }
 }
 export function configureCloud(provider: Provider, every100: boolean, onPb: boolean): void {
   if (busy) return;

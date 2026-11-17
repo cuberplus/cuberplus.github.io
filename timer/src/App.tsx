@@ -22,6 +22,8 @@ import { SessionPicker } from './Components/SessionPicker';
 import { noteCloudSolve } from '../../src/cloud/backup';
 import { relativeTime } from './Data/relativeTime';
 import { MacAddressHelp } from '../../shared/Components/MacAddressHelp';
+import { BreakReminder } from './Components/BreakReminder';
+import { BREAK_ACTIVE, BREAK_CHANGED, BREAK_SETTINGS, breakReason, readBreakSettings, readTimerBreak } from './Core/breakReminder';
 
 const errorText = (error: Error): string => error.message || 'The operation failed.';
 const historyColumns = [
@@ -101,6 +103,15 @@ export default function App() {
   const { precision, solveLimit, session: selectedSession, setSession, allSessions, setAllSessions } = useContext(SettingsContext);
   const [overTurnPenalty, setOverTurnPenalty] = useState(() => { try { return localStorage.getItem('timer-over-turn-penalty') === 'true'; } catch { return false; } });
   const [inspection, setInspection] = useState(() => { try { return localStorage.getItem('timer-inspection') === 'true'; } catch { return false; } });
+  const [inspectionReadiness, setInspectionReadiness] = useState(() => { try { return localStorage.getItem('timer-inspection-readiness') === 'true'; } catch { return false; } });
+  const [minimumInspection, setMinimumInspection] = useState(() => {
+    try { const value = Number(localStorage.getItem('timer-minimum-inspection')); return Number.isFinite(value) && value >= 0 && value <= 60 ? value : 0; } catch { return 0; }
+  });
+  const minimumInspectionRef = useRef(minimumInspection); minimumInspectionRef.current = minimumInspection;
+  const [timerBreak, setTimerBreak] = useState(readTimerBreak);
+  const timerBreakRef = useRef(timerBreak);
+  const [breakSettings, setBreakSettings] = useState(readBreakSettings);
+  const [breakNow, setBreakNow] = useState(Date.now);
   const [showEveryLongPb, setShowEveryLongPb] = useState(() => { try { return localStorage.getItem('timer-show-every-long-pb') === 'true'; } catch { return false; } });
   const allSessionsRef = useRef(allSessions); allSessionsRef.current = allSessions;
   const [historyNow, setHistoryNow] = useState(Date.now);
@@ -258,6 +269,15 @@ export default function App() {
     if (deletedSolves.current.has(solve.id)) return;
     const copy = structuredClone(solve);
     const previous = historyRef.current, check = recordChecks.current.get(copy.id);
+    const settings = readBreakSettings(), reason = notify && !timerBreakRef.current ? breakReason(copy, previous, settings) : null;
+    if (reason) {
+      const next = { until: Date.now() + settings.minutes * 60000, solveId: copy.id, reason };
+      timerBreakRef.current = next; setTimerBreak(next); setBreakNow(Date.now()); setBreakSettings(settings);
+      try { localStorage.setItem(BREAK_ACTIVE, JSON.stringify(next)); window.dispatchEvent(new Event(BREAK_CHANGED)); }
+      catch { setError('Your break is active, but could not be saved for your next visit.'); }
+      cancelPreparation();
+      engine.current?.fail('Timer paused for a break.', false);
+    }
     if (copy.status !== 'active') updateHistory([copy, ...previous.filter(item => item.id !== copy.id)].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
     if (copy.status === 'incomplete') setCelebrations(current => current.filter(item => item.solve.id !== copy.id));
     if (!notify) {
@@ -352,6 +372,8 @@ export default function App() {
       engine.current = new TimerEngine(model, record, render);
       engine.current.overTurnPenaltyEnabled = overTurnPenaltyRef.current;
       engine.current.inspectionPenaltyEnabled = inspectionRef.current;
+      engine.current.minimumInspection = minimumInspectionRef.current;
+      engine.current.canStart = () => !(timerBreakRef.current && timerBreakRef.current.until > Date.now()) && !readTimerBreak();
       setCube(model); console.info('[Timer Bluetooth] Puzzle loaded; connection controls ready');
       let recovered: Solve[] = [];
       try {
@@ -373,7 +395,7 @@ export default function App() {
       setHistoryReady(true);
     }).catch((failure: Error) => { console.error('[Timer Bluetooth] Puzzle initialization failed', failure); setError(errorText(failure)); });
     const interval = setInterval(() => {
-      if (visible.current && !document.hidden && (engine.current?.phase === 'solving' || engine.current?.phase === 'ready' && inspectionRef.current)) render();
+      if (visible.current && !document.hidden && (engine.current?.phase === 'solving' || engine.current?.phase === 'ready' && (inspectionRef.current || minimumInspectionRef.current > 0))) render();
     }, 30);
     const checks = recordChecks.current;
     const unsubscribe = cubeConnection.onEvent(event => {
@@ -440,6 +462,7 @@ export default function App() {
 
   function receive(event: CubeEvent, hostTime = performance.now()) {
     const timer = engine.current; if (!timer || (event.type === 'FACELETS' && (event.source === 'moves' || calibrating.current))) return;
+    if (timerBreakRef.current && timerBreakRef.current.until > Date.now() && event.type !== 'DISCONNECT' && event.type !== 'BATTERY') return;
     if (event.type === 'CALIBRATE') {
       cancelPreparation(); finishRetry();
       if (event.stage === 'start') timer.fail('Solve aborted by cube recalibration.', false, 'solve aborted');
@@ -512,6 +535,18 @@ export default function App() {
     try { localStorage.setItem(`timer-${kind}`, String(value)); }
     catch { setError('Penalty preference changed, but this browser could not save the preference.'); }
   }
+  function changeMinimumInspection(value: number) {
+    if (!Number.isFinite(value) || value < 0 || value > 60) return;
+    setMinimumInspection(value); minimumInspectionRef.current = value;
+    if (engine.current) engine.current.minimumInspection = value;
+    try { localStorage.setItem('timer-minimum-inspection', String(value)); }
+    catch { setError('Penalty preference changed, but this browser could not save the preference.'); }
+  }
+  function changeInspectionReadiness(value: boolean) {
+    setInspectionReadiness(value);
+    try { localStorage.setItem('timer-inspection-readiness', String(value)); }
+    catch { setError('Visual preference changed, but this browser could not save the preference.'); }
+  }
   function changeSolve(solve: Solve) {
     if (engine.current?.result?.id === solve.id) engine.current.result = solve;
     record(solve, false);
@@ -551,6 +586,27 @@ export default function App() {
     } finally { resynchronizing.current = false; }
   }
 
+  useEffect(() => {
+    const refresh = (event?: Event) => {
+      if (event?.type === 'storage' && ![BREAK_ACTIVE, BREAK_SETTINGS, null].includes((event as StorageEvent).key)) return;
+      const now = Date.now(), previous = timerBreakRef.current;
+      if (event) setBreakSettings(readBreakSettings());
+      let next = readTimerBreak(now);
+      if (!event && previous && previous.until > now) next = previous;
+      timerBreakRef.current = next; setTimerBreak(current => current?.until === next?.until ? current : next); setBreakNow(now);
+      if (next && !previous) {
+        cancelPreparation();
+        if (engine.current?.active) engine.current.interrupt('Timer paused for a break.');
+        engine.current?.fail('Timer paused for a break.', false);
+      } else if (previous && !next && engine.current && engine.current.phase !== 'disconnected') {
+        cancelPreparation(); void resynchronize();
+      }
+    };
+    const clock = setInterval(() => { if (timerBreakRef.current) refresh(); }, 250);
+    window.addEventListener(BREAK_CHANGED, refresh); window.addEventListener('storage', refresh);
+    return () => { clearInterval(clock); window.removeEventListener(BREAK_CHANGED, refresh); window.removeEventListener('storage', refresh); };
+  }, [demo]);
+
   async function importBackup(file?: File) {
     if (!file || !cube) return;
     try {
@@ -577,9 +633,11 @@ export default function App() {
   }
 
   const timer = engine.current, solve = timer?.active ?? (timer?.result ? history.find(solve => solve.id === timer.result?.id) ?? null : history.find(solve => solve.status !== 'active')), elapsed = timer?.elapsed(performance.now()) ?? 0;
-  const inspecting = inspection && timer?.phase === 'ready', inspectionTime = timer?.inspectionElapsed(performance.now()) ?? 0;
-  const displayedTime = formatTime(inspecting ? inspectionTime : timer?.active ? elapsed : solve ? solveTime(solve) : elapsed, precision);
-  const inspectionStatus = inspectionPenalty(inspectionTime);
+  const inspecting = (inspection || minimumInspection > 0) && timer?.phase === 'ready', inspectionTime = timer?.inspectionElapsed(performance.now()) ?? 0;
+  const readinessDisplay = inspecting && inspectionReadiness;
+  const displayedTime = readinessDisplay ? inspectionTime < minimumInspection * 1000 ? 'Keep inspecting' : 'Ready' :
+    formatTime(inspecting ? inspectionTime : timer?.active ? elapsed : solve ? solveTime(solve) : elapsed, precision);
+  const inspectionStatus = inspection ? inspectionPenalty(inspectionTime) : 0;
   const message = status || timer?.message || 'Loading local puzzle tools...';
   const sessions = useMemo(() => [...new Set([...createdSessions, ...history.map(solve => solve.session)])], [createdSessions, history]);
   const sessionHistory = useMemo(() => history.filter(solve => (allSessions || solve.session === selectedSession) && solve.status !== 'active'), [history, selectedSession, allSessions]);
@@ -657,8 +715,18 @@ export default function App() {
         <button className="btn-close" aria-label="Close options" onClick={() => optionsDialog.current?.close()} />
       </div>
       <SessionPicker value={session} sessions={sessions} disabled={!historyReady || changingSession || solving || !!retry.current} change={selectSession} create={createSession} manage={manageSession} />
-      <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="inspection-help" checked={inspection} disabled={solving} onChange={event => changePenalty('inspection', event.target.checked)} /><span className="form-check-label">15-second inspection</span></label>
-        <InfoTip id="inspection-help">Count up after scrambling. Starting at 15 seconds adds +2; starting at 17 seconds or later is DNF. +2 penalties stack.</InfoTip></div>
+      <details className="mt-3">
+        <summary>Inspection options<span className="ms-2" onClick={event => event.preventDefault()}><InfoTip id="inspection-help">Inspection starts when scrambling finishes. The 15-second rule adds +2 at 15 seconds and DNF at 17 seconds. Starting before the configured minimum adds +2 with the reason Under-inspected. These rules work independently, and penalties stack. Readiness display replaces the clock with Keep inspecting until the minimum is reached, then Ready; penalties still apply.</InfoTip></span></summary>
+        <fieldset className="mt-3 ms-3">
+          <legend className="visually-hidden">Inspection settings</legend>
+          <label className="form-check"><input type="checkbox" className="form-check-input" aria-describedby="inspection-help" checked={inspection} disabled={solving} onChange={event => changePenalty('inspection', event.target.checked)} /><span className="form-check-label">15-second inspection</span></label>
+          <label className="form-check mt-3"><input type="checkbox" className="form-check-input" checked={minimumInspection > 0} disabled={solving} onChange={event => changeMinimumInspection(event.target.checked ? 5 : 0)} />Minimum required inspection</label>
+          {minimumInspection > 0 && <label className="d-block mt-2">Minimum inspection (seconds)<input type="number" className="form-control mt-1" min="0.1" max="60" step="0.1" defaultValue={minimumInspection} disabled={solving}
+            onChange={event => { if (event.currentTarget.validity.valid && event.currentTarget.valueAsNumber > 0) changeMinimumInspection(event.currentTarget.valueAsNumber); }}
+            onBlur={event => { event.currentTarget.value = String(minimumInspection); }} /></label>}
+          <label className="form-check mt-3" htmlFor="inspection-readiness"><input id="inspection-readiness" type="checkbox" className="form-check-input" checked={inspectionReadiness} disabled={solving} onChange={event => changeInspectionReadiness(event.target.checked)} />Show inspection readiness instead of timer</label>
+        </fieldset>
+      </details>
       <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="over-turn-penalty-help" checked={overTurnPenalty} onChange={event => changePenalty('over-turn-penalty', event.target.checked)} /><span className="form-check-label">Extra-turn +2 penalty</span></label>
         <InfoTip id="over-turn-penalty-help">Apply +2 for an extra turn within 0.5 seconds after finishing.</InfoTip></div>
       <FavoriteOptions cube={cube} history={history} />
@@ -681,7 +749,8 @@ export default function App() {
     {error && <div className="alert alert-danger d-flex justify-content-between" role="alert">{error}<button className="btn-close" aria-label="Dismiss error" onClick={() => setError('')} /></div>}
     {!['Saved locally', 'Saving locally...'].includes(storage) && <p className="text-secondary small mb-3">{storage}</p>}
     {!connected && <div className="alert alert-info timer-onboarding"><strong>Connect a smart cube to start timing.</strong><InfoTip>Choose a saved cube in Cube setup, connect, then follow the highlighted scramble. New cube? Add it in Options. Saved solves can be browsed without a connection.</InfoTip><button className="btn btn-primary" onClick={() => setupDialog.current?.showModal()}>Set up a cube</button></div>}
-    <section className={`panel timer-panel ${!connected ? 'timer-disconnected ' : ''}${timer?.phase === 'ready' ? 'ready' : ''}`}>
+    {timerBreak && <BreakReminder timerBreak={timerBreak} history={history} drills={breakSettings.drills} remaining={Math.max(0, Math.ceil((timerBreak.until - breakNow) / 1000))} />}
+    <section hidden={!!timerBreak} className={`panel timer-panel ${!connected ? 'timer-disconnected ' : ''}${timer?.phase === 'ready' ? 'ready' : ''}`}>
       {retry.current && <p className="small text-secondary" role="status">Retry will be saved in Retries, then return to {retry.current.previousSession || 'Default'}.{' '}
         <button className="btn btn-sm btn-outline-secondary" disabled={busy || solving || resynchronizing.current} onClick={() => { finishRetry(); if (timer?.phase === 'disconnected') timer.message = 'Connect your cube to begin.'; else void prepareScramble(); }}>Cancel retry</button></p>}
       <ScrambleInstructions timer={timer} preparing={preparing.current} busy={busy}
@@ -692,11 +761,11 @@ export default function App() {
         <span>Solving</span><span className="solving-dots" aria-hidden="true"><span>...</span></span>
       </div> : <>
           <div className="timer-display d-flex align-items-center justify-content-center gap-3">
-            <div className="timer-value" style={{ '--time-length': displayedTime.length } as CSSProperties} aria-label={inspecting ? 'Inspection time' : 'Solve time'}>{displayedTime}</div>
+            <div className={`timer-value${readinessDisplay ? ' inspection-readiness' : ''}`} style={{ '--time-length': displayedTime.length } as CSSProperties} role={readinessDisplay ? 'status' : undefined} aria-label={inspecting ? readinessDisplay ? 'Inspection readiness' : 'Inspection time' : 'Solve time'}>{displayedTime}</div>
             {!inspecting && <SolvePenalty solve={solve} />}
           </div>
           <div className="timer-details">
-            {inspecting && <p className={`small mb-0 ${inspectionStatus === 'DNF' ? 'text-danger' : 'text-warning'}`} aria-label="Inspection status">Inspection{inspectionStatus ? `: ${inspectionStatus === 'DNF' ? 'DNF' : '+2'}` : ''}</p>}
+            {inspecting && (!readinessDisplay || !!inspectionStatus) && <p className={`small mb-0 ${inspectionStatus === 'DNF' ? 'text-danger' : 'text-warning'}`} aria-label="Inspection status">Inspection{inspectionStatus ? `: ${inspectionStatus === 'DNF' ? 'DNF' : '+2'}` : minimumInspection > 0 && inspectionTime < minimumInspection * 1000 ? `: inspect at least ${minimumInspection}s to avoid +2` : ''}</p>}
             {!(solve?.status === 'incomplete' && message === solve.reason) && !/^(?:Follow the highlighted|Wrong turn\.|Turn .+ once more to complete |Scramble complete\.)/.test(message) && <p className="small mb-0" role="status">{message}</p>}
           </div>
       </>}

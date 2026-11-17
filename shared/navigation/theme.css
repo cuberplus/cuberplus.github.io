@@ -143,7 +143,9 @@ a, a:hover { color: var(--cp-accent); }
 .accordion-button:not(.collapsed) { color: var(--cp-accent); background: var(--cp-subtle); }
 .settings-section { margin-block: 0; padding-block: 1.5rem; border-top: 1px solid var(--cp-border); }
 .settings-section > h3, .options-general h3 { margin-block: 0 1rem; font-size: 1.15rem; }
+.settings-section > summary { font-size: 1.15rem; font-weight: 500; line-height: 1.2; cursor: pointer; }
 .settings-section > :last-child { margin-bottom: 0; }
+.options-page .dev-note-promise { margin-block: 1.25rem; padding: 1rem 1.25rem; border-inline-start: 3px solid var(--cp-accent); background: var(--cp-subtle); }
 .options-general { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; border-top: 0; }
 .options-general p { margin-bottom: 0; }
 .settings-status { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem 1.5rem; margin-bottom: 1rem; }

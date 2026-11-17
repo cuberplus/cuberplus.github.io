@@ -1,6 +1,6 @@
 /** @jest-environment node */
 import type { Solve } from '../../timer/src/Core/engine';
-import { backupNow, cloudState, configureCloud, connectCloud, decodeCloudBackup, dedupeById, encodeCloudBackup, noteCloudSolve, restoreNow } from '../../src/cloud/backup';
+import { backupNow, cloudState, configureCloud, connectCloud, decodeCloudBackup, dedupeById, encodeCloudBackup, initializeCloud, noteCloudSolve, restoreNow } from '../../src/cloud/backup';
 import { CloudHttpError, readRemote, writeRemote } from '../../src/cloud/providers';
 import { excludedSettings, userSettings } from '../fixtures/userSettings';
 import { settingKeys, validateSettings, type Settings } from '../../src/cloud/backupSettings';
@@ -67,6 +67,15 @@ test('backup merges cloud-only solves, dedupes both inputs and lets local matchi
   expect(decoded.settings.theme).toBe('dark');
   expect(decoded.settings['cuberplus-database-favorites']).toContain('PLL-T');
   expect(decoded.settings).not.toHaveProperty('unrelated-secret');
+  expect(cloudState().lastBackup).not.toBeNull();
+});
+test('startup resumes pending automatic backups without requiring another solve', async () => {
+  localStorage.setItem('cuberplus-cloud-provider', 'microsoft');
+  localStorage.setItem('cuberplus-cloud-auto-pb', 'true');
+  localStorage.setItem('cuberplus-cloud-progress', JSON.stringify({ pending: ['local'], pbs: ['local'], lastBackup: {} }));
+  await initializeCloud();
+  expect(writeRemote).toHaveBeenCalledTimes(1);
+  expect(cloudState().pending).toBe(0);
   expect(cloudState().lastBackup).not.toBeNull();
 });
 test('restore dedupes by ID, preserves local-only solves, and uses cloud edits and settings', async () => {

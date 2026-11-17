@@ -209,14 +209,14 @@ function parseCubeastCsv(stringVal: string, splitter: string, keepRecording: boo
     const headerEnd = stringVal.indexOf("\n");
     const keys = splitCsvLine((headerEnd < 0 ? stringVal : stringVal.slice(0, headerEnd)).trim(), splitterCode);
 
+    const penaltyColumns = ['one_turn_away_two_second_penalty', 'inspection_two_second_penalty', 'manual_two_second_penalty', 'under_inspected_two_second_penalty'];
+    const penaltySetter: ColumnSetter = (_obj, value, scratch) => { if (value.toLowerCase() === 'true') scratch.penaltyMs += 2000; };
     const keyMap: { [key: string]: ColumnSetter } = {
         "cuberplus_source": (obj, value) => { if (value === 'cubeast' || value === 'acubemy') obj.source = value; },
         "id": (obj, value) => { obj.id = value; obj.rawSourceId = value; obj.source = 'cubeast'; },
         "time": (obj, value) => { obj.time = Number(value) / 1000; if (obj.time < 1) obj.isCorrupt = true; },
         "dnf": (obj, value) => { obj.dnf = value.toLowerCase() === 'true'; },
-        "one_turn_away_two_second_penalty": (_obj, value, scratch) => { if (value.toLowerCase() === 'true') scratch.penaltyMs += 2000; },
-        "inspection_two_second_penalty": (_obj, value, scratch) => { if (value.toLowerCase() === 'true') scratch.penaltyMs += 2000; },
-        "manual_two_second_penalty": (_obj, value, scratch) => { if (value.toLowerCase() === 'true') scratch.penaltyMs += 2000; },
+        ...Object.fromEntries(penaltyColumns.map(key => [key, penaltySetter])),
         "date": (obj, value) => { obj.date = parseUtcDateTime(value); },
         "solve_end_date": (obj, value) => { if (value) obj.endDate = new Date(value); },
         "solution_rotation": (obj, value) => {

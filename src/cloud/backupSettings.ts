@@ -1,3 +1,5 @@
+import { validBreakSettings } from '../../timer/src/Core/breakReminder';
+
 // Only app-owned user data belongs here: never copy arbitrary origin storage or OAuth caches.
 export type BackupValue = null | boolean | number | string | BackupValue[] | { [key: string]: BackupValue | undefined };
 type Check = (value: BackupValue | undefined) => boolean;
@@ -55,11 +57,14 @@ const validators = {
   'timer-last-cube-mac': value => typeof value === 'string' && (value === '' || /^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(value)),
   'recent-solve-limit': value => typeof value === 'string' && /^\d+$/.test(value) && Number.isSafeInteger(Number(value)),
   'timer-inspection': flag,
+  'timer-inspection-readiness': flag,
+  'timer-minimum-inspection': value => typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 60,
+  'timer-break-settings': json(validBreakSettings),
   'timer-over-turn-penalty': flag,
   'timer-show-every-long-pb': flag,
   'timer-hide-distracting-visuals': json(value => boolean(value) || fields({ timer: optional(boolean), cube: optional(boolean), progressBar: optional(boolean) })(value)),
   'timer-sessions': json(array(value => typeof value === 'string' && !!value.trim() && value.length <= 100)),
-  'timer-session-scramblers': json(dictionary(oneOf('default', 'easy-cross', 'easy-xcross', '2-gen', '3-gen', 'doubles'))),
+  'timer-session-scramblers': json(dictionary(oneOf('default', 'easy-cross', 'easy-xcross', 'cross-solved', 'f2l-solved', '2-gen', '3-gen', 'doubles'))),
   'selected-session': value => typeof value === 'string' && !!value.trim() && value.length <= 100,
   'timer-all-session-history': flag,
   'timer-non-favorite-mistakes': flag,

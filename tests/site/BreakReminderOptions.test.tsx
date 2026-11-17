@@ -1,0 +1,58 @@
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { BreakReminderOptions } from '../../shared/Components/BreakReminderOptions';
+import { BREAK_ACTIVE, breakDefaults, readBreakSettings, writeBreakSettings } from '../../timer/src/Core/breakReminder';
+
+beforeEach(() => {
+  localStorage.clear();
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } });
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; this.dispatchEvent(new Event('close')); } });
+});
+afterEach(cleanup);
+test('disabling requires two warnings, cancel keeps the feature and active break, and final confirmation clears both', () => {
+  writeBreakSettings({ ...breakDefaults, enabled: true });
+  localStorage.setItem(BREAK_ACTIVE, JSON.stringify({ until: Date.now() + 120000, solveId: 'slow', reason: 'Slow solve' }));
+  render(<BreakReminderOptions />);
+  const toggle = screen.getByRole('checkbox', { name: 'Enable break reminders' });
+  fireEvent.click(toggle);
+  expect(screen.getByRole('dialog').textContent).toContain('Are you sure you want to continue?');
+  expect(readBreakSettings().enabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Continue to final warning' }));
+  expect(readBreakSettings().enabled).toBe(true);
+  expect(localStorage.getItem(BREAK_ACTIVE)).not.toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Keep reminders' }));
+  expect(readBreakSettings().enabled).toBe(true);
+  fireEvent.click(toggle);
+  fireEvent.click(screen.getByRole('button', { name: 'Continue to final warning' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Disable reminders' }));
+  expect(readBreakSettings().enabled).toBe(false);
+  expect(localStorage.getItem(BREAK_ACTIVE)).toBeNull();
+});
+test('duration and thresholds are customizable and synchronize between settings instances', () => {
+  const view = render(<BreakReminderOptions />);
+  const disclosure = screen.getByText('Customize break reminders').closest('details')!;
+  expect(disclosure.open).toBe(false);
+  expect(screen.getByRole('checkbox', { name: 'Enable break reminders' }).closest('details')).toBeNull();
+  fireEvent.click(screen.getByText('Customize break reminders'));
+  expect(disclosure.open).toBe(true);
+  expect(screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Single-solve slowdown multiplier' }).value).toBe('2');
+  const average = screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Average window (solves)' });
+  expect(average.value).toBe('100');
+  expect(screen.queryByLabelText('Single-solve average window')).toBeNull();
+  expect(screen.queryByLabelText('Streak average window')).toBeNull();
+  expect(screen.queryByLabelText('Completed solves before reminders')).toBeNull();
+  fireEvent.blur(average, { target: { value: '50' } });
+  expect(readBreakSettings().streakWindow).toBe(50);
+  const minutes = screen.getByRole('spinbutton', { name: 'Break length (minutes)' });
+  fireEvent.blur(minutes, { target: { value: '3' } });
+  expect(readBreakSettings().minutes).toBe(3);
+  const drills = screen.getByRole<HTMLInputElement>('checkbox', { name: 'Suggest a targeted drill during breaks' });
+  expect(drills.checked).toBe(true);
+  fireEvent.click(drills);
+  expect(readBreakSettings().drills).toBe(false);
+  view.unmount();
+  render(<BreakReminderOptions />);
+  fireEvent.click(screen.getByText('Customize break reminders'));
+  expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'Suggest a targeted drill during breaks' }).checked).toBe(false);
+  expect(screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Average window (solves)' }).value).toBe('50');
+  expect(screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Break length (minutes)' }).value).toBe('3');
+});

@@ -8,9 +8,10 @@ import { IDBFactory } from 'fake-indexeddb';
 import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
 import { getPenaltyReasons, setPenalty, type Solve } from '../../timer/src/Core/engine';
 import { averageDetails, cubeastCSV, dailyStreak, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats, solveEndDate } from '../../timer/src/Data/storage';
-import { loadCube, SOLVED, Cube, inverse, isMove, movesOf, locations, sameAxis, simplifyMoves, crossRotation } from '../../timer/src/Core/puzzle';
+import { loadCube, SOLVED, Cube, inverse, isMove, movesOf, locations, sameAxis, simplifyMoves, crossRotation, generateStageScramble } from '../../timer/src/Core/puzzle';
 import { PageLocation, SettingsProvider } from '@cuberplus/navigation';
 import { relativeTime } from '../../timer/src/Data/relativeTime';
+import { BREAK_ACTIVE, BREAK_SETTINGS, breakDefaults } from '../../timer/src/Core/breakReminder';
 
 const cube = await loadCube();
 const generate = jest.fn<() => Promise<string>>();
@@ -34,7 +35,7 @@ async function persistSession(ids: string[], name: string | null): Promise<void>
 let recovered: Solve[] = [];
 let emit: (event: SmartCubeEvent) => void;
 let physicalFacelets = SOLVED, physicalSerial: number | undefined;
-await jest.unstable_mockModule('../../timer/src/Core/puzzle', () => ({ Cube, SOLVED, inverse, isMove, movesOf, locations, sameAxis, simplifyMoves, crossRotation, loadCube: async () => cube, generateScramble: generate }));
+await jest.unstable_mockModule('../../timer/src/Core/puzzle', () => ({ Cube, SOLVED, inverse, isMove, movesOf, locations, sameAxis, simplifyMoves, crossRotation, generateStageScramble, loadCube: async () => cube, generateScramble: generate }));
 await jest.unstable_mockModule('../../timer/src/Bluetooth/bluetooth', () => ({ BluetoothCube: class {
   connection: { deviceName: string } | null = null;
   async connect(_mac: string, events: typeof emit, ready: (device: { deviceName: string }) => void) {
@@ -81,6 +82,8 @@ beforeEach(async () => {
   localStorage.removeItem('timer-time-precision');
   localStorage.removeItem('timer-over-turn-penalty');
   localStorage.removeItem('timer-inspection');
+  localStorage.removeItem('timer-inspection-readiness');
+  ['timer-minimum-inspection', 'timer-break-settings', 'timer-break-active'].forEach(key => localStorage.removeItem(key));
   localStorage.removeItem('timer-pb-daily-records');
   localStorage.removeItem('timer-show-every-long-pb');
   localStorage.removeItem('timer-hide-distracting-visuals');
@@ -240,6 +243,70 @@ function historySolve(number: number, duration: number, count: number, session =
     moves: Array.from({ length: count }, () => ({ move: 'R', hostTime: 0, elapsed: 0, localTimestamp: null, cubeTimestamp: null })),
   };
 }
+test('minimum required inspection is optional, configurable, and records the Under-inspected reason', async () => {
+  await click('Options');
+  const toggle = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Minimum required inspection'))!.querySelector('input')!;
+  expect(toggle.checked).toBe(false);
+  await act(async () => toggle.click());
+  expect(localStorage.getItem('timer-minimum-inspection')).toBe('5');
+  await click('Close options');
+  await click('Connect cube');
+  await act(async () => { move('R', 100); move('U2', 200); move('U2', 300); move("R'", 900); });
+  expect(save.mock.calls.at(-1)![0][0]).toMatchObject({ status: 'complete', duration: 600, penalty: 2000, penaltyReason: 'Under-inspected' });
+});
+test('inspection readiness replaces only the inspection clock and switches at the configured minimum', async () => {
+  jest.useFakeTimers({ doNotFake: ['performance'] });
+  jest.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () => root.render(app()));
+  await click('Options');
+  const minimum = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Minimum required inspection'))!.querySelector('input')!;
+  await act(async () => minimum.click());
+  const readiness = container.querySelector<HTMLInputElement>('#inspection-readiness')!;
+  expect(readiness.checked).toBe(false);
+  await act(async () => readiness.click());
+  expect(localStorage.getItem('timer-inspection-readiness')).toBe('true');
+  await click('Close options');
+  await click('Connect cube');
+  await act(async () => { move('R', 100); move('U2', 200); });
+  expect(container.querySelector('[aria-label="Inspection readiness"]')?.textContent).toBe('Keep inspecting');
+  expect(container.querySelector('[aria-label="Inspection time"]')).toBeNull();
+  await act(async () => { jest.mocked(performance.now).mockReturnValue(5199); jest.advanceTimersByTime(30); });
+  expect(container.querySelector('[aria-label="Inspection readiness"]')?.textContent).toBe('Keep inspecting');
+  await act(async () => { jest.mocked(performance.now).mockReturnValue(5200); jest.advanceTimersByTime(30); });
+  expect(container.querySelector('[aria-label="Inspection readiness"]')?.textContent).toBe('Ready');
+  await click('Options');
+  await act(async () => readiness.click());
+  expect(container.querySelector('[aria-label="Inspection time"]')?.textContent).toBe('5.00');
+  await act(async () => readiness.click());
+  await click('Close options');
+  await act(async () => { move('U2', 5300); move("R'", 5900); });
+  expect(container.querySelector('[aria-label="Inspection readiness"]')).toBeNull();
+  expect(container.querySelector('[aria-label="Solve time"]')?.textContent).toBe('0.60');
+  expect(save.mock.calls.at(-1)![0][0].penalty).toBeUndefined();
+});
+test('a slow solve starts a persistent timer lock that survives remount, ignores physical turns, and expires', async () => {
+  jest.useFakeTimers({ doNotFake: ['performance'] });
+  localStorage.setItem(BREAK_SETTINGS, JSON.stringify({ ...breakDefaults, enabled: true }));
+  await showHistory(Array.from({ length: 100 }, (_, index) => historySolve(index + 1, 1000, 0)));
+  await click('Connect cube');
+  await act(async () => { move('R', 100); move('U2', 200); move('U2', 300); move("R'", 3300); });
+  expect(container.querySelector('#break-reminder-title')?.textContent).toBe('Time for a break');
+  expect(container.querySelector<HTMLElement>('.timer-panel')?.hidden).toBe(true);
+  const saved = JSON.parse(localStorage.getItem(BREAK_ACTIVE)!) as { until: number };
+  expect(saved.until - Date.now()).toBe(120000);
+  const savedCount = save.mock.calls.length;
+  await act(async () => { move('R', 4000); move('U2', 4100); move('U2', 4200); move("R'", 4500); });
+  expect(save.mock.calls.length).toBe(savedCount);
+  expect(container.querySelector('#break-reminder-title')).not.toBeNull();
+  await showHistory(recovered);
+  expect(container.querySelector('#break-reminder-title')).not.toBeNull();
+  expect(container.querySelector('[aria-labelledby="break-reminder-title"]')?.textContent).not.toContain('Disable');
+  await act(async () => { jest.setSystemTime(saved.until); jest.advanceTimersByTime(250); });
+  expect(container.querySelector('#break-reminder-title')).toBeNull();
+  expect(container.querySelector<HTMLElement>('.timer-panel')?.hidden).toBe(false);
+});
 function historyNumbers() {
   return Array.from(container.querySelectorAll('[aria-label="Solve history"] tbody tr')).map(row => Number(row.firstElementChild!.textContent));
 }

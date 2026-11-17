@@ -1,10 +1,12 @@
-import { generateScramble, sameAxis } from './puzzle';
+import { generateScramble, generateStageScramble, sameAxis } from './puzzle';
 import type { GenerationEvent } from '../../../scrambler/src/cube/generation';
 
 export const scramblers = {
   default: 'Random state (default)',
   'easy-cross': 'Easy Cross (3 moves, White)',
   'easy-xcross': 'Easy X-Cross (3 moves, White)',
+  'cross-solved': 'Cross solved (White)',
+  'f2l-solved': 'F2L solved (White)',
   '2-gen': '2-gen (R, U)',
   '3-gen': '3-gen (R, U, F)',
   doubles: 'Double moves only',
@@ -19,6 +21,7 @@ export function readSessionScramblers(): Record<string, Scrambler> {
 }
 export async function sessionScramble(kind: Scrambler = 'default', random = Math.random, signal?: AbortSignal): Promise<string> {
   if (kind === 'default') return generateScramble();
+  if (kind === 'cross-solved' || kind === 'f2l-solved') return generateStageScramble(kind, random);
   if (kind === 'easy-cross' || kind === 'easy-xcross') {
     const { createSolverWorker } = await import('../../../scrambler/src/cube/workerClient');
     return new Promise((resolve, reject) => {

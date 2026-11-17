@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { backupNow, cloudState, configureCloud, connectCloud, disconnectCloud, dismissCloudMessage, initializeCloud, restoreNow, subscribeCloud } from './backup';
-import { providerNames, type Provider } from './providers';
+import { isConfigured, prepareProvider, providerNames, type Provider } from './providers';
 import { InfoTip } from '../../shared/Components/InfoTip';
 
 function useCloud() {
@@ -10,7 +10,7 @@ function useCloud() {
 }
 export function CloudOptions() {
   const state = useCloud();
-  useEffect(() => { void initializeCloud(); }, []);
+  useEffect(() => { if (isConfigured(state.provider)) void prepareProvider(state.provider).catch(() => {}); }, [state.provider]);
   return <section className="settings-section" aria-labelledby="cloud-heading">
     <h3 id="cloud-heading" className="d-flex align-items-center">Cloud backup<InfoTip>Back up solves and move recordings, settings, empty sessions and their scramble generators, Blitz and practice history, custom trainings, saved cubes and the last Bluetooth MAC address, custom algorithms, favorites, and Unlearn selections to your own cloud storage. Timer JSON exports include the same user settings and training data; CSV exports contain solves only. Sign-in credentials, cloud provider and sync progress, and daily notification suppression are excluded. Analysis caches are rebuilt when needed.</InfoTip></h3>
     <div className="settings-fields mb-3">
@@ -27,7 +27,7 @@ export function CloudOptions() {
     {!state.configured ? <div role="status" className="backup-status mb-3">Provider unavailable<InfoTip>{`${providerNames[state.provider]} is not configured by this site's owner yet. Public OAuth application IDs must be added to the deployment configuration.`}</InfoTip></div>
       : <p className="backup-status">{state.connected ? `Connected to ${providerNames[state.provider]}` : 'Not connected'}</p>}
     <fieldset className="my-3">
-    <legend className="h6">Automatic backups <InfoTip>PB backups follow a Single, Ao5, or Ao12. Automatic backups run while CuberPlus is open and authorized. If sign-in expires, reconnect here to send pending backups.</InfoTip></legend>
+    <legend className="h6">Automatic backups <InfoTip>PB backups follow a Single, Ao5, or Ao12. Automatic backups run while CuberPlus is open and authorized. Sign-in is remembered on this browser. Microsoft renews tokens automatically when possible; choose Keep me signed in during sign-in to persist across browser restarts. Google requires a click to renew expired access. Reconnect here to resume pending backups; no solves are lost.</InfoTip></legend>
     <label className="d-block mb-2"><input className="form-check-input me-2" type="checkbox" checked={state.every100} disabled={state.busy}
       onChange={event => configureCloud(state.provider, event.target.checked, state.onPb)} />Back up every 100 solves</label>
     <label className="d-block mb-3"><input className="form-check-input me-2" type="checkbox" checked={state.onPb} disabled={state.busy}
@@ -48,6 +48,13 @@ export function CloudOptions() {
 }
 export function CloudNotice() {
   const state = useCloud();
+  useEffect(() => {
+    const resume = () => { if (!document.hidden) void initializeCloud(); };
+    resume();
+    window.addEventListener('online', resume);
+    document.addEventListener('visibilitychange', resume);
+    return () => { window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume); };
+  }, []);
   if (!state.message) return null;
   return <aside className="position-fixed top-0 end-0 m-3 p-3 border rounded bg-body shadow" style={{ zIndex: 1100, maxWidth: 'min(26rem, calc(100vw - 2rem))' }}
     role={state.error ? 'alert' : 'status'} aria-live={state.error ? 'assertive' : 'polite'}>

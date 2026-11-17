@@ -110,3 +110,30 @@ export class Cube {
 
 export const loadCube = async (): Promise<Cube> => new Cube(await puzzles['3x3x3'].kpuzzle());
 export const generateScramble = async (): Promise<string> => simplifyMoves(movesOf((await randomScrambleForEvent('333')).toString())).join(' ');
+
+export async function generateStageScramble(kind: 'cross-solved' | 'f2l-solved', random = Math.random): Promise<string> {
+  const cube = await loadCube(), data = structuredClone(cube.solved().patternData);
+  let freeCorners: number[] = [];
+  for (const orbit of ['EDGES', 'CORNERS'] as const) {
+    const free = locations[orbit].flatMap((stickers, index) =>
+      (kind === 'cross-solved' ? orbit === 'CORNERS' || !stickers.some(sticker => Math.floor(sticker / 9) === 3)
+        : stickers.some(sticker => Math.floor(sticker / 9) === 0)) ? [index] : []);
+    if (orbit === 'CORNERS') freeCorners = free;
+    const { pieces, orientation } = data[orbit], modulus = orbit === 'EDGES' ? 2 : 3;
+    for (let i = free.length - 1; i > 0; i--) {
+      const a = free[i], b = free[Math.floor(random() * (i + 1))];
+      [pieces[a], pieces[b]] = [pieces[b], pieces[a]];
+    }
+    let sum = 0;
+    free.forEach((position, index) => {
+      orientation[position] = index === free.length - 1 ? (modulus - sum % modulus) % modulus : Math.floor(random() * modulus);
+      sum += orientation[position];
+    });
+  }
+  if (parity(data['EDGES'].pieces) !== parity(data['CORNERS'].pieces)) {
+    const [a, b] = freeCorners, pieces = data['CORNERS'].pieces;
+    [pieces[a], pieces[b]] = [pieces[b], pieces[a]];
+  }
+  const solution = await cube.solution(cube.facelets(new KPattern(cube.puzzle, data)));
+  return simplifyMoves(solution.reverse().map(inverse)).join(' ') || 'U';
+}

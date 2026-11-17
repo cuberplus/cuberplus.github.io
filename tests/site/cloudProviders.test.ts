@@ -3,12 +3,14 @@ import type { RemoteFile } from '../../src/cloud/providers';
 
 const mockPopup = jest.fn(), mockSilent = jest.fn(), mockClear = jest.fn();
 let mockAccount: { homeAccountId: string } | null = null;
+let mockCachedAccounts: { homeAccountId: string }[] = [];
 jest.mock('@azure/msal-browser', () => ({
   PublicClientApplication: jest.fn().mockImplementation(() => ({
     initialize: async () => {},
     acquireTokenPopup: mockPopup, acquireTokenSilent: mockSilent, clearCache: mockClear,
     setActiveAccount: (account: typeof mockAccount) => { mockAccount = account; },
     getActiveAccount: () => mockAccount,
+    getAllAccounts: () => mockCachedAccounts,
   })),
 }));
 const scope = 'https://www.googleapis.com/auth/drive.appdata';
@@ -19,7 +21,13 @@ let request: jest.Mock<Promise<Response>, [string, RequestInit?]>;
 const json = (value: Record<string, object | string | number | null> | { files: { id: string }[] }, status = 200) =>
   new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
 beforeEach(() => {
-  jest.resetModules(); jest.clearAllMocks(); mockAccount = null;
+  jest.resetModules(); jest.clearAllMocks(); mockAccount = null; mockCachedAccounts = [];
+  const values = new Map<string, string>();
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); },
+    removeItem: (key: string) => { values.delete(key); },
+  } });
   Object.assign(globalThis, { __GOOGLE_CLIENT_ID__: 'google-public-id', __MICROSOFT_CLIENT_ID__: 'microsoft-public-id' });
   Object.defineProperty(globalThis, 'window', { configurable: true, value: { google: { accounts: { oauth2: { initTokenClient: mockInit } } } } });
   Object.defineProperty(globalThis, 'location', { configurable: true, value: { origin: 'https://cuberplus.com' } });
@@ -30,11 +38,16 @@ beforeEach(() => {
   mockSilent.mockResolvedValue({ accessToken: 'microsoft-test-token' });
   api = require('../../src/cloud/providers') as typeof api;
 });
-test('Google uses app-data-only consent, keeps its token out of storage, and disconnects locally', async () => {
+test('Google uses app-data-only consent, persists its expiring token across reloads, and disconnects locally', async () => {
   await api.connectProvider('google');
   expect(mockInit).toHaveBeenCalledWith(expect.objectContaining({ client_id: 'google-public-id', scope }));
   expect(api.isConnected('google')).toBe(true);
+  expect(localStorage.getItem('cuberplus-google-token')).toContain('google-test-token');
+  jest.resetModules();
+  api = require('../../src/cloud/providers') as typeof api;
+  expect(api.isConnected('google')).toBe(true);
   await api.disconnectProvider('google');
+  expect(localStorage.getItem('cuberplus-google-token')).toBeNull();
   expect(api.isConnected('google')).toBe(false);
   await expect(api.readRemote('google')).rejects.toThrow('Reconnect');
   expect(request).not.toHaveBeenCalled();
@@ -45,6 +58,39 @@ test('declined Google permissions and popup cancellation are visible errors', as
   mockInit.mockImplementationOnce(options => ({ requestAccessToken: () => options.error_callback() }));
   await expect(api.connectProvider('google')).rejects.toThrow('cancelled');
   expect(api.isConnected('google')).toBe(false);
+});
+test('expired Google tokens never authorize requests, and a user-driven reconnect avoids forced account selection', async () => {
+  const requests: { prompt: string }[] = [];
+  mockInit.mockImplementation(options => ({ requestAccessToken: (request?: { prompt: string }) => {
+    if (request) requests.push(request);
+    options.callback({ access_token: 'google-test-token', scope, expires_in: 3600 });
+  } }));
+  await api.connectProvider('google');
+  expect(requests[0]).toEqual({ prompt: 'select_account' });
+  const now = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 3600000);
+  expect(api.isConnected('google')).toBe(false);
+  await expect(api.readRemote('google')).rejects.toThrow('Reconnect');
+  expect(request).not.toHaveBeenCalled();
+  now.mockRestore();
+  await api.connectProvider('google');
+  expect(requests[1]).toEqual({ prompt: '' });
+  expect(api.isConnected('google')).toBe(true);
+});
+test('Microsoft startup restores a sole cached account without interaction', async () => {
+  mockCachedAccounts = [{ homeAccountId: 'remembered' }];
+  await api.prepareProvider('microsoft');
+  expect(api.isConnected('microsoft')).toBe(true);
+  expect(mockAccount).toEqual({ homeAccountId: 'remembered' });
+  expect(mockPopup).not.toHaveBeenCalled();
+});
+test('a rejected Microsoft access token is renewed once and the request retried without a popup', async () => {
+  await api.connectProvider('microsoft');
+  request.mockResolvedValueOnce(new Response(null, { status: 401 }))
+    .mockResolvedValueOnce(json({ id: 'folder' }))
+    .mockResolvedValueOnce(new Response(null, { status: 404 }));
+  expect(await api.readRemote('microsoft')).toBeNull();
+  expect(mockSilent.mock.calls[1][0]).toMatchObject({ forceRefresh: true });
+  expect(mockPopup).toHaveBeenCalledTimes(1);
 });
 test('Google lists the app folder and returns content with its conditional-write revision', async () => {
   await api.connectProvider('google');
@@ -83,7 +129,7 @@ test('Microsoft sign-in uses MSAL with app-folder scope and the dedicated callba
   const { PublicClientApplication } = jest.requireMock('@azure/msal-browser') as { PublicClientApplication: jest.Mock };
   expect(PublicClientApplication).toHaveBeenCalledWith(expect.objectContaining({
     auth: { clientId: 'microsoft-public-id', authority: 'https://login.microsoftonline.com/common', redirectUri: 'https://cuberplus.com/auth-callback.html' },
-    cache: { cacheLocation: 'sessionStorage' },
+    cache: { cacheLocation: 'localStorage' },
   }));
   expect(mockPopup).toHaveBeenCalledWith({ scopes: ['Files.ReadWrite.AppFolder'], prompt: 'select_account' });
   expect(api.isConnected('microsoft')).toBe(true);
