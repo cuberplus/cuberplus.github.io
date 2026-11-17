@@ -3,6 +3,7 @@ import { usePageDialog } from '@cuberplus/navigation';
 import { cubeConnection, useCubeConnection } from '../cube/connection';
 import { InfoTip } from './InfoTip';
 import { MacAddressHelp } from './MacAddressHelp';
+import { SettingsSection } from './SettingsSection';
 
 export function CubeButton({ connected, open }: { connected: boolean; open: () => void }) {
   const { cubes, selected, connection } = useCubeConnection();
@@ -53,8 +54,7 @@ export function CubeStateControls({ busy, read, calibrate }: { busy: boolean; re
 export function MyCubes() {
   const { cubes, connection, connecting } = useCubeConnection();
   const [name, setName] = useState(''), [mac, setMac] = useState('');
-  return <section className="settings-section" aria-label="My cubes">
-    <h3>Connect cube <InfoTip>One Bluetooth connection is shared across pages. Choose a saved cube or connect another device. Expand a saved cube to edit its name or optional Bluetooth MAC. The browser may still ask you to select the device. Bluetooth requires a secure connection and a supported browser, such as Chrome or Edge.</InfoTip></h3>
+  return <SettingsSection title="Connect cube" help={<InfoTip>One Bluetooth connection is shared across pages. Choose a saved cube or connect another device. Expand a saved cube to edit its name or optional Bluetooth MAC. The browser may still ask you to select the device. Bluetooth requires a secure connection and a supported browser, such as Chrome or Edge.</InfoTip>}>
     <div className="settings-status">
       <span className="backup-status" role="status">{connection ? `Connected to ${connection.deviceName}` : connecting ? 'Connecting...' : !navigator.bluetooth || !window.isSecureContext ? 'Bluetooth unavailable in this browser' : 'No cube connected'}</span>
       <CubeConnectionControls />
@@ -83,5 +83,5 @@ export function MyCubes() {
       <button className="btn btn-outline-primary" disabled={!name.trim()}>Save cube</button>
     </form>
     </details>
-  </section>;
+  </SettingsSection>;
 }

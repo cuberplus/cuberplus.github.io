@@ -35,7 +35,7 @@ jest.mock('../../smartcubeanalyzer/src/Workers/createChartWorker', () => ({
     },
 }));
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ChartPanel } from '../../smartcubeanalyzer/src/Components/ChartPanel';
 import { FilterPanel } from '../../smartcubeanalyzer/src/Components/FilterPanel';
 import { parseCsv } from '../../smartcubeanalyzer/src/Data/CsvParser';
@@ -50,6 +50,7 @@ import {
     StepName,
 } from '../../smartcubeanalyzer/src/Models/Types';
 import type { WorkerInput } from '../../smartcubeanalyzer/src/Workers/chartWorker';
+import { makeSolve, makeStep } from './testUtils';
 
 /** Charts that are built purely from per-step timings. */
 const STEP_TIMING_CHARTS = [
@@ -114,6 +115,7 @@ async function renderCharts(solves: Solve[], method: MethodName) {
 }
 
 beforeAll(() => {
+    Element.prototype.scrollIntoView ??= () => undefined;
     if (!('ResizeObserver' in globalThis)) {
         Object.assign(globalThis, { ResizeObserver: class { observe() { } unobserve() { } disconnect() { } } });
     }
@@ -152,6 +154,42 @@ describe('an Acubemy export viewed as Roux, which has no step timings', () => {
 });
 
 describe('a Cubeast export that does have step timings', () => {
+    test.each([StepName.F2L_1, StepName.OLL, StepName.PLL])('%s practice Failed selects only classified failures, Total selects every matching solve', async step => {
+        const caseName = step === StepName.PLL ? 'T' : '1';
+        const instance = (id: string, time: number, moves: string) => makeSolve({ id, steps: [makeStep(step, time, { case: caseName, moves })] });
+        const simple = "R U R'", complex = "R U R' F U F' R U R'";
+        const matches = [
+            instance('normal-a', 1, simple), instance('normal-b', 1, simple),
+            instance('slow-but-few-moves', 5, simple), instance('extra-moves-but-fast', 0.5, complex),
+            instance('failed', 10, complex),
+        ];
+        if (step === StepName.F2L_1) matches[4].steps.push(
+            makeStep(StepName.F2L_2, 1, { case: caseName, moves: simple }),
+            makeStep(StepName.F2L_3, 10, { case: caseName, moves: complex }));
+        const solves = [instance('outside-window', 100, complex), ...matches, { ...instance('dnf', 100, complex), dnf: true }];
+        const select = jest.spyOn(ChartPanel.prototype, 'selectSolves').mockImplementation(() => {});
+        const bounds = jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+            return { x: 0, y: 0, top: 0, left: 0, right: 1200, bottom: 600, width: this.getAttribute('role') === 'grid' ? 1200 : 100, height: 600, toJSON: () => ({}) };
+        });
+        try {
+            render(<ChartPanel solves={solves} steps={step === StepName.F2L_1 ? [StepName.F2L_1, StepName.F2L_2, StepName.F2L_3] : [step]}
+                methodName={MethodName.CFOP} windowSize={5} pointsPerGraph={20} goodTime={15} badTime={20} useLogScale={false} use4SegmentTiming />);
+            await screen.findByText('Average Time');
+            fireEvent.click(screen.getByRole('button', { name: 'Cases', exact: true }));
+            const practice = screen.getByRole('region', { name: 'Algorithm Practice', exact: true });
+            const row = within(practice).getAllByRole('row')[1];
+            const cells = within(row).getAllByRole('gridcell');
+            expect(cells[3].textContent).toBe(step === StepName.F2L_1 ? '2' : '1');
+            fireEvent.click(cells[3]);
+            expect(select.mock.calls.at(-1)![0].map(solve => solve.id)).toEqual(['failed']);
+            expect(select.mock.calls.at(-1)![2]).toContain('Failed');
+            fireEvent.click(cells[4]);
+            expect(select.mock.calls.at(-1)![0].map(solve => solve.id)).toEqual(matches.map(solve => solve.id));
+            expect(select.mock.calls.at(-1)![2]).not.toContain('Failed');
+            fireEvent.click(cells[1]);
+            expect(select.mock.calls.at(-1)![0]).toEqual(matches);
+        } finally { select.mockRestore(); bounds.mockRestore(); }
+    });
     let solves: Solve[];
 
     beforeAll(() => { solves = prepare('cfop-small.csv', MethodName.CFOP); });

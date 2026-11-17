@@ -10,6 +10,7 @@ import type { ChartWorkerScope, WorkerInput, WorkerOutput } from '../../smartcub
 import { buildAllStreakRows } from '../../smartcubeanalyzer/src/Workers/chartWorker';
 import { streakSolves } from '../../smartcubeanalyzer/src/Charts/ChartDataBuilders';
 import { calendarDay } from '../../shared/statistics/streaks';
+import { FilterPanel } from '../../smartcubeanalyzer/src/Components/FilterPanel';
 
 const workerGlobal = globalThis as ChartWorkerScope;
 
@@ -314,7 +315,7 @@ describe('chartWorker case data', () => {
         ] }));
         const { chartData } = run({ solves, steps: [StepName.F2L_1, StepName.F2L_2], windowSize: 100 });
         expect(chartData.caseData!.labels).toEqual(Array.from({ length: 20 }, (_, i) => String(25 - i)));
-        expect(chartData.algoPracticeRows).toHaveLength(20);
+        expect(chartData.algoPracticeRows).toHaveLength(25);
         expect(chartData.algoPracticeRows![0].total).toBe(2);
     });
     test('F2L practice prioritizes failure rate instead of slowest case', () => {
@@ -326,7 +327,37 @@ describe('chartWorker case data', () => {
         ]).flat();
         const { chartData } = run({ solves, steps: [StepName.F2L_1, StepName.F2L_4], windowSize: 100 });
         expect(chartData.algoPracticeRows![0]).toMatchObject({ case: '25', total: 2, failed: 1, failureRate: '50.0%' });
-        expect(chartData.algoPracticeRows).toHaveLength(20);
+        expect(chartData.algoPracticeRows).toHaveLength(25);
+    });
+    test('F2L practice includes every observed standard, advanced, other and combined case within the window', () => {
+        const cases = [...Array.from({ length: 41 }, (_, i) => String(i + 1)), 'AF2L-1a', 'OF2L-12', 'F2L-1 + AF2L-2'];
+        const solves = cases.map(caseName => makeSolve({ steps: [
+            makeStep(StepName.F2L_1, 2, { case: caseName }),
+            makeStep(StepName.F2L_4, 4, { case: caseName }),
+        ] }));
+        const { chartData } = run({ solves: [makeSolve({ steps: [makeStep(StepName.F2L_1, 1, { case: 'old' })] }), ...solves],
+            steps: [StepName.F2L_1, StepName.F2L_4], windowSize: solves.length });
+        expect(chartData.algoPracticeRows!.map(row => row.case).sort()).toEqual(cases.sort());
+        expect(chartData.algoPracticeRows!.every(row => row.total === 2 && row.avgTime === '3.000')).toBe(true);
+        expect(chartData.caseData!.labels).toHaveLength(20);
+    });
+    test.each([false, true])('F2L recognition/execution averages each pair and preserves solve window labels (four segments: %s)', use4SegmentTiming => {
+        const steps = ALL_CFOP_STEPS.filter(step => step.startsWith('F2L'));
+        const solves = [1, 2, 4].map((scale, index) => makeSolve({ id: String(index), steps: [
+            makeStep(StepName.F2L_1, 10 * scale, { recognitionTime: scale, executionTime: 9 * scale, preAufTime: scale, postAufTime: 2 * scale }),
+            ...(index ? [makeStep(StepName.F2L_2, 20 * scale, { recognitionTime: 2 * scale, executionTime: 18 * scale, preAufTime: 2 * scale, postAufTime: 4 * scale })] : []),
+        ] }));
+        const compressed = FilterPanel.compressSolves(solves, steps);
+        const dnf = { ...compressed[0], dnf: true };
+        const { chartData } = run({ solves: [compressed[0], dnf, ...compressed.slice(1)], steps, windowSize: 2, use4SegmentTiming });
+        const chart = chartData.runningRecognitionExecution;
+        expect(chart.labels).toEqual(['3', '4']);
+        const expected = use4SegmentTiming ? [[7 / 3, 4.5], [7 / 3, 4.5], [14, 27], [14 / 3, 9]] : [[7 / 3, 4.5], [21, 40.5]];
+        chart.datasets.forEach((dataset, i) => dataset.data.forEach((value, j) => expect(value).toBeCloseTo(expected[i][j])));
+        expect(chartData.runningAverage.datasets[0].data).toEqual([null, null, 90]);
+        const fullSelection = run({ solves: [compressed[0], dnf, ...compressed.slice(1)], steps: ALL_CFOP_STEPS, windowSize: 2, use4SegmentTiming }).chartData;
+        expect(chartData.runningAverage).toEqual(fullSelection.runningAverage);
+        expect(fullSelection.runningRecognitionExecution.datasets[0].data).toEqual([3.5, 9]);
     });
 });
 

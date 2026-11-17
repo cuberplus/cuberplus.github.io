@@ -34,6 +34,7 @@ import { fastestByDay, streakSolves } from '../Charts/ChartDataBuilders';
 import type { WorkerOutput } from '../Workers/chartWorker';
 import { CaseModal } from '../../../src/database/CaseModal';
 import { CaseThumbnail } from '../../../src/database/CaseThumbnail';
+import { F2LPracticeCase } from '../../../src/database/F2LPracticeCase';
 
 const TimerReplay = React.lazy(() => import('../../../timer/src/Components/analyzer-replay'));
 
@@ -77,16 +78,13 @@ const ALGO_STAT_COLS = [
 ];
 
 /** Keep column identity stable to preserve the grid's layout and virtualisation. */
-export function algoCols(step: StepName, openCase: (key: string) => void = () => {}): Column<AlgoPracticeRow>[] {
+export function algoCols(step: StepName, openCase: (key: string) => void = () => {}, findSolve?: (name: string) => Solve | undefined): Column<AlgoPracticeRow>[] {
     return [
         {
-            key: 'case',
-            name: 'Case',
-            minWidth: 80,
-            width: 'max-content',
-            cellClass: 'algo-case-cell',
-            headerCellClass: 'algo-case-cell',
+            key: 'case', name: 'Case', minWidth: 80, width: 'max-content',
+            cellClass: 'algo-case-cell', headerCellClass: 'algo-case-cell',
             renderCell: ({ row }: RenderCellProps<AlgoPracticeRow>) => {
+                if (step === StepName.F2L) return <F2LPracticeCase caseName={row.case} solve={findSolve?.(row.case)} openCase={openCase} />;
                 const url = databaseCaseUrl(step, row.case);
                 return url === null ? row.case :
                     <button type="button" aria-label={row.case} className="algo-case-link btn btn-link" onClick={() => openCase(url.split('#')[1])}>
@@ -167,7 +165,10 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
     }
 
     private _worker: Worker | null = null;
-    private caseColumns = new Map([StepName.OLL, StepName.PLL, StepName.F2L].map(step => [step, algoCols(step, caseKey => this.setState({ caseKey }))]));
+    private caseColumns = new Map([StepName.OLL, StepName.PLL, StepName.F2L].map(step => [step, algoCols(step, caseKey => this.setState({ caseKey }), name => {
+        const solve = this.props.solves.filter(solve => !solve.dnf).slice(-this.props.windowSize).find(solve => caseSteps(solve, StepName.F2L).some(step => step.case === name));
+        return this.props.recordSolves?.find(original => original.id === solve?.id) ?? solve;
+    })]));
     private _pendingRequestId = 0;
     private readyFrame = 0;
 
@@ -336,7 +337,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
         const category = caseCategory(p.steps);
         if (hasStepTimings && category && c.caseData) {
             plot('caseData', "Average Recognition Time and Execution Time per Case", "Recognition and execution per case, sorted slowest first. F2L shows the worst 20 cases by time.", ChartType.Bar, 'Case');
-            charts.push(buildChartHtml(<SortableGrid rows={c.algoPracticeRows ?? []} columns={this.caseColumns.get(category)!} onCellClick={({ row, column }) => { if (column.key !== 'case') this.selectSolves(p.solves.filter(solve => !solve.dnf).slice(-p.windowSize).filter(solve => caseSteps(solve, category).some(step => step.case === row.case)), 0, `${category} ${row.case}`); }} />, "Algorithm Practice", "Click statistics to view solves, or a case image/name to open its algorithms. F2L shows the worst 20 by failure rate. Failed means excess core moves and above-average case time. Avg Wasted counts cancellable turns."));
+            charts.push(buildChartHtml(<SortableGrid rows={c.algoPracticeRows ?? []} columns={this.caseColumns.get(category)!} onCellClick={({ row, column }) => { if (column.key !== 'case') this.selectSolves(p.solves.filter(solve => !solve.dnf).slice(-p.windowSize).filter(solve => column.key === 'failed' ? row.failedSolveIds.includes(solve.id) : caseSteps(solve, category).some(step => step.case === row.case)), 0, `${category} ${row.case}${column.key === 'failed' ? ' - Failed' : ''}`); }} />, "Algorithm Practice", "Click Failed to view only failed solves, or other statistics to view all solves for the case. Click a case image/name to open its algorithms. Failed means excess core moves and above-average case time. Avg Wasted counts cancellable turns."));
         }
 
         plot('runningAverage', "Average Time", `Rolling average chopping ${p.chopAverages === false ? 0 : p.chopPercentage ?? 5}% per end (rounded up, retaining at least one solve). Untrimmed DNFs create gaps. Best and worst valid averages are always plotted; solve numbers mark each window's end. Record averages always use standard 5% trimming.`);

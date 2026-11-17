@@ -8,6 +8,7 @@ import { algoCols } from '../../smartcubeanalyzer/src/Components/ChartPanel';
 import { databaseCaseUrl } from '../../smartcubeanalyzer/src/Charts/ChartHelpers';
 import { Const } from '../../smartcubeanalyzer/src/Models/Constants';
 import { AlgoPracticeRow, StepName } from '../../smartcubeanalyzer/src/Models/Types';
+import { algorithms } from '../../src/database/algorithms';
 
 const DATABASE_PLL_IDS = [
     'Aa', 'Ab', 'E', 'F', 'Ga', 'Gb', 'Gc', 'Gd', 'H', 'Ja', 'Jb',
@@ -16,7 +17,7 @@ const DATABASE_PLL_IDS = [
 
 function algoRow(caseName: string): AlgoPracticeRow {
     return {
-        case: caseName, total: 5, failed: 1, failureRate: '20.0%',
+        case: caseName, total: 5, failed: 1, failedSolveIds: [], failureRate: '20.0%',
         avgMoves: '9.0', expectedMoves: 9, avgWasted: '0.5', avgTime: '1.500',
     };
 }
@@ -92,6 +93,25 @@ describe('databaseCaseUrl', () => {
 });
 
 describe('Algorithm Practice case cells', () => {
+    test('every F2L catalog case has its own image and modal target without visible case names', () => {
+        for (const entry of algorithms.filter(entry => entry.category.endsWith('F2L'))) {
+            const key = `${entry.category}-${entry.id}`, open = jest.fn(), column = algoCols(StepName.F2L, open)[0];
+            const { container, unmount } = render(<>{column.renderCell?.({ row: algoRow(key) } as RenderCellProps<AlgoPracticeRow>)}</>);
+            expect(container.textContent).toBe('');
+            expect(container.querySelector('img')?.getAttribute('src')).toBe(`/case-images/${key}.svg`);
+            fireEvent.click(screen.getByRole('button', { name: key }));
+            expect(open).toHaveBeenCalledWith(key);
+            unmount();
+        }
+    });
+    test('plain numbered and combined F2L cases retain the correct image for each component', () => {
+        const single = renderCase(StepName.F2L, '1');
+        expect(single.querySelector('img')?.getAttribute('src')).toBe('/case-images/F2L-1.svg');
+        const combined = renderCase(StepName.F2L, 'F2L-2 + AF2L-1a + OF2L-12');
+        expect(Array.from(combined.querySelectorAll('img')).map(image => image.getAttribute('src')))
+            .toEqual(['/case-images/F2L-2.svg', '/case-images/AF2L-1a.svg', '/case-images/OF2L-12.svg']);
+        expect(combined.textContent).toBe('');
+    });
     test('a known OLL case renders as a modal button beside its image', () => {
         renderCase(StepName.OLL, '21');
         expect(screen.getByRole('button', { name: '21' })).toBeDefined();

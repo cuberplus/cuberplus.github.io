@@ -27,7 +27,15 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 const nav = () => within(screen.getByRole('navigation', { name: 'CuberPlus' }));
-async function visit(name: string) { fireEvent.click(nav().getByRole('link', { name, exact: true })); await screen.findByRole('link', { name, current: 'page' }, { timeout: 10000 }); }
+async function openGeneral() {
+  const toggle = await screen.findByRole('button', { name: 'General', exact: true });
+  if (toggle.getAttribute('aria-expanded') === 'false') fireEvent.click(toggle);
+}
+async function visit(name: string) {
+  fireEvent.click(nav().getByRole('link', { name, exact: true }));
+  await screen.findByRole('link', { name, current: 'page' }, { timeout: 10000 });
+  if (name === 'Options') await openGeneral();
+}
 
 test('the site-wide recent-solve setting updates retained tools and survives a reload', async () => {
   const view = render(<Site />);
@@ -172,6 +180,7 @@ test.each(['missing', 'invalid', 'blocked'])('Aurora is the default when the sav
   const read = saved === 'blocked' ? jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Blocked'); }) : null;
   try {
     render(<Site />);
+    await openGeneral();
     const theme = await screen.findByRole('button', { name: 'Aurora theme' }, { timeout: 10000 });
     expect(theme.getAttribute('aria-pressed')).toBe('true');
     expect(document.documentElement.dataset.theme).toBe('aurora');
@@ -184,6 +193,7 @@ test.each(['missing', 'invalid', 'blocked'])('Aurora is the default when the sav
 test.each(['light', 'dark', 'aurora', 'disco', 'inferno', '90s'])('options apply and persist the %s theme across all pages', async theme => {
   history.replaceState(null, '', '/options/');
   const view = render(<Site />);
+  await openGeneral();
   fireEvent.click(await screen.findByRole('button', { name: `${theme[0].toUpperCase() + theme.slice(1)} theme` }));
   expect(document.documentElement.dataset.theme).toBe(theme);
   expect(document.documentElement.dataset.bsTheme).toBe(theme === 'light' || theme === '90s' ? 'light' : 'dark');
@@ -215,6 +225,7 @@ test('global precision updates a retained timer and survives reloads', async () 
 test('blocked storage does not prevent options taking effect', async () => {
   history.replaceState(null, '', '/options/');
   render(<Site />);
+  await openGeneral();
   const choice = await screen.findByRole('button', { name: 'Disco theme' });
   const save = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Blocked'); });
   try {
@@ -229,6 +240,7 @@ test('blocked storage does not prevent options taking effect', async () => {
 test('theme carousel wraps in both directions and keeps the selected theme accessible', async () => {
   history.replaceState(null, '', '/options/');
   render(<Site />);
+  await openGeneral();
   fireEvent.click(await screen.findByRole('button', { name: 'Light theme' }));
   fireEvent.click(screen.getByRole('button', { name: 'Previous theme' }));
   expect(screen.getByRole('button', { name: '90s theme' }).getAttribute('aria-pressed')).toBe('true');

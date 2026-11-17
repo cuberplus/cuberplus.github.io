@@ -16,6 +16,7 @@ beforeEach(() => { jest.clearAllMocks(); jest.mocked(cloudState).mockReturnValue
 afterEach(cleanup);
 test('cloud options expose both providers, manual actions and independent automatic triggers', () => {
   render(<CloudOptions />);
+  fireEvent.click(screen.getByRole('button', { name: 'Cloud backup', exact: true }));
   expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Google Drive', 'Microsoft OneDrive']);
   fireEvent.change(screen.getByRole('combobox', { name: 'Backup provider' }), { target: { value: 'microsoft' } });
   expect(configureCloud).toHaveBeenLastCalledWith('microsoft', false, false);
@@ -36,6 +37,7 @@ test('cloud options expose both providers, manual actions and independent automa
 test('missing deployment IDs disable cloud sign-in instead of presenting a broken OAuth flow', async () => {
   jest.mocked(cloudState).mockReturnValue({ ...initial, configured: false, connected: false });
   render(<CloudOptions />);
+  fireEvent.click(screen.getByRole('button', { name: 'Cloud backup', exact: true }));
   expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Connect Google Drive' }).disabled).toBe(true);
   expect(screen.queryByRole('button', { name: 'Back up now' })).toBeNull();
   expect(screen.getByRole('status').textContent).toContain('Provider unavailable');
@@ -45,6 +47,7 @@ test('missing deployment IDs disable cloud sign-in instead of presenting a broke
 test('in-flight operations disable controls and pending counts are visible', () => {
   jest.mocked(cloudState).mockReturnValue({ ...initial, every100: true, busy: true, pending: 87 });
   render(<CloudOptions />);
+  fireEvent.click(screen.getByRole('button', { name: 'Cloud backup', exact: true }));
   for (const control of screen.getAllByRole<HTMLButtonElement>('button').filter(button => !button.classList.contains('btn-link'))) expect(control.disabled).toBe(true);
   expect(screen.getByRole<HTMLSelectElement>('combobox').disabled).toBe(true);
   expect(screen.getByText('87 / 100 new solves since the last successful backup')).toBeDefined();
@@ -59,6 +62,7 @@ test('automatic backup failures are dismissible and link to reconnection options
 });
 test('backup semantics tooltip follows the last successful backup, not Disconnect', () => {
   render(<CloudOptions />);
+  fireEvent.click(screen.getByRole('button', { name: 'Cloud backup', exact: true }));
   fireEvent.click(screen.getByText('Restore and connection settings'));
   const label = screen.getByText(/Last successful backup: Never/);
   const tooltip = label.querySelector('button')!;

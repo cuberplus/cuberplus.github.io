@@ -265,8 +265,8 @@ export interface RecordRow { recordType: string; time: string; }
 
 export interface AlgoPracticeRow {
     case: string;
-    total: number;
-    failed: number;
+    total: number; failed: number;
+    failedSolveIds: string[];
     failureRate: string;
     avgMoves: string;
     expectedMoves: number;

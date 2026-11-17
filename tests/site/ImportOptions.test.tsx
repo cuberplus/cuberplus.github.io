@@ -19,6 +19,7 @@ beforeEach(() => {
 });
 test('CSV import shows reading, measured progress and saving until the worker has persisted the solves', async () => {
   render(<ImportOptions />);
+  fireEvent.click(screen.getByRole('button', { name: 'Import solves', exact: true }));
   const input = screen.getByLabelText('Import solve CSV files');
   fireEvent.change(input, { target: { files: [new File(['csv'], 'solves.csv')] } });
   const dialog = screen.getByRole('dialog', { name: 'Importing solves' });
@@ -38,6 +39,7 @@ test('CSV import shows reading, measured progress and saving until the worker ha
 });
 test('a failed import closes progress and leaves import enabled for retry', async () => {
   render(<ImportOptions />);
+  fireEvent.click(screen.getByRole('button', { name: 'Import solves', exact: true }));
   fireEvent.change(screen.getByLabelText('Import solve CSV files'), { target: { files: [new File([], 'invalid.csv')] } });
   await act(async () => mockReject(new Error('Invalid CSV')));
   expect(screen.getByRole('alert').textContent).toBe('Invalid CSV');
@@ -48,6 +50,7 @@ test('settings displays worker progress and estimated remaining time, then annou
   const changed = jest.fn();
   window.addEventListener('timer-solves-changed', changed);
   const { unmount } = render(<ImportOptions />);
+  fireEvent.click(screen.getByRole('button', { name: 'Import solves', exact: true }));
   try {
     fireEvent.click(screen.getByText('Re-analyze all solves'));
     const dialog = screen.getByRole('dialog');

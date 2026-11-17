@@ -3,6 +3,7 @@ import { usePageDialog } from '@cuberplus/navigation';
 import { InfoTip } from '../../../shared/Components/InfoTip';
 import { dataTask } from '../../../shared/workers/dataClient';
 import type { DataProgress, DataTask } from '../../../shared/workers/dataTasks';
+import { SettingsSection } from '../../../shared/Components/SettingsSection';
 
 export function ImportOptions() {
   const [operation, setOperation] = useState<'import' | 'reanalyze' | null>(null), [message, setMessage] = useState(''), [error, setError] = useState(false);
@@ -27,8 +28,7 @@ export function ImportOptions() {
       if (task.type === 'reanalyze') window.dispatchEvent(new CustomEvent('timer-solves-changed', { detail: { reanalyzed: true } }));
     }
   }
-  return <section className="settings-section" aria-labelledby="import-heading">
-    <h3 id="import-heading" className="d-flex align-items-center">Import solves<InfoTip>Merge Cubeast or Acubemy CSV exports into your local solve database. Existing solves and source labels are kept; duplicate source IDs are skipped. Valid original move recordings are retained for replay and reanalysis.</InfoTip></h3>
+  return <SettingsSection title="Import solves" id="import-heading" help={<InfoTip>Merge Cubeast or Acubemy CSV exports into your local solve database. Existing solves and source labels are kept; duplicate source IDs are skipped. Valid original move recordings are retained for replay and reanalysis.</InfoTip>}>
     <label className={`btn btn-outline-primary ${busy ? 'disabled' : ''}`}>{importing ? 'Importing...' : 'Import Cubeast / Acubemy CSV'}
       <input className="visually-hidden" aria-label="Import solve CSV files" type="file" accept=".csv,text/csv" multiple disabled={busy}
         onChange={event => { void run({ type: 'import', files: Array.from(event.target.files ?? []) }); event.target.value = ''; }} />
@@ -47,5 +47,5 @@ export function ImportOptions() {
       {!importing && <button className="btn btn-outline-secondary" onClick={() => cancel.current?.()}>Cancel</button>}
     </dialog>
     {message && <p role={error ? 'alert' : 'status'} className={error ? 'text-danger' : ''}>{message}</p>}
-  </section>;
+  </SettingsSection>;
 }

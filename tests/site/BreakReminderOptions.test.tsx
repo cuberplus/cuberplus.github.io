@@ -12,6 +12,7 @@ test('disabling requires two warnings, cancel keeps the feature and active break
   writeBreakSettings({ ...breakDefaults, enabled: true });
   localStorage.setItem(BREAK_ACTIVE, JSON.stringify({ until: Date.now() + 120000, solveId: 'slow', reason: 'Slow solve' }));
   render(<BreakReminderOptions />);
+  fireEvent.click(screen.getByRole('button', { name: 'Break reminder', exact: true }));
   const toggle = screen.getByRole('checkbox', { name: 'Enable break reminders' });
   fireEvent.click(toggle);
   expect(screen.getByRole('dialog').textContent).toContain('Are you sure you want to continue?');
@@ -29,6 +30,7 @@ test('disabling requires two warnings, cancel keeps the feature and active break
 });
 test('duration and thresholds are customizable and synchronize between settings instances', () => {
   const view = render(<BreakReminderOptions />);
+  fireEvent.click(screen.getByRole('button', { name: 'Break reminder', exact: true }));
   const disclosure = screen.getByText('Customize break reminders').closest('details')!;
   expect(disclosure.open).toBe(false);
   expect(screen.getByRole('checkbox', { name: 'Enable break reminders' }).closest('details')).toBeNull();
@@ -51,6 +53,7 @@ test('duration and thresholds are customizable and synchronize between settings 
   expect(readBreakSettings().drills).toBe(false);
   view.unmount();
   render(<BreakReminderOptions />);
+  fireEvent.click(screen.getByRole('button', { name: 'Break reminder', exact: true }));
   fireEvent.click(screen.getByText('Customize break reminders'));
   expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'Suggest a targeted drill during breaks' }).checked).toBe(false);
   expect(screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Average window (solves)' }).value).toBe('50');

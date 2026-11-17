@@ -185,18 +185,13 @@ export function buildAlgorithmPracticeRows(solves: Solve[], steps: StepName[], w
         grouped.set(step.case, row);
     }
     const caseStats = computeCaseFailureStats(recentSolves, category);
-    if (category === StepName.F2L) caseStats.splice(20);
     return caseStats.map((cs: CaseStats) => {
         const { time, wasted, count } = grouped.get(cs.caseName)!;
         return {
-            case: cs.caseName,
-            total: cs.totalCount,
-            failed: cs.failureCount,
-            failureRate: cs.failureRate.toFixed(1) + '%',
-            avgMoves: cs.avgMoves.toFixed(1),
-            expectedMoves: cs.expectedMovesBase,
-            avgWasted: (wasted / count).toFixed(1),
-            avgTime: (time / count).toFixed(precision),
+            case: cs.caseName, total: cs.totalCount, failed: cs.failureCount,
+            failureRate: cs.failureRate.toFixed(1) + '%', failedSolveIds: cs.instances.filter(instance => instance.failed).map(instance => instance.solveId),
+            avgMoves: cs.avgMoves.toFixed(1), expectedMoves: cs.expectedMovesBase,
+            avgWasted: (wasted / count).toFixed(1), avgTime: (time / count).toFixed(precision),
         };
     });
 }
@@ -240,7 +235,7 @@ export function computeAllChartData(input: WorkerInput): ChartDataBundle {
             ? paintRolling(buildRunningInspectionData(inspectionSolves, windowSize, pointsPerGraph), solveNumbers.filter((_, i) => solves[i].inspectionTime != null))
             : null,
         runningTurns: paintRolling(buildRunningTurnsData(solves, windowSize, pointsPerGraph)),
-        runningRecognitionExecution: paintRolling(buildRunningRecognitionExecution(solves, windowSize, pointsPerGraph, use4SegmentTiming)),
+        runningRecognitionExecution: paintRolling(buildRunningRecognitionExecution(solves, windowSize, pointsPerGraph, use4SegmentTiming, caseCategory(steps) === StepName.F2L)),
         runningEfficiency: paintRolling(buildRunningEfficiencyData(solves, steps, methodName, windowSize, pointsPerGraph)),
         histogram: paint(buildHistogramData(solves, windowSize)),
         stepAverages: paintRolling(buildStepAverages(solves, steps, windowSize, pointsPerGraph)),

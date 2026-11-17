@@ -8,6 +8,7 @@ import { MyCubes } from '../../../shared/Components/CubeConnection';
 import { SolveLimit } from '../../../shared/Components/SolveLimit';
 import { InfoTip } from '../../../shared/Components/InfoTip';
 import { BreakReminderOptions } from '../../../shared/Components/BreakReminderOptions';
+import { SettingsSection } from '../../../shared/Components/SettingsSection';
 
 export default function Options() {
   const { theme, setTheme, precision, setPrecision, solveLimit, setSolveLimit, allSessions, setAllSessions, error } = useContext(SettingsContext);
@@ -16,7 +17,7 @@ export default function Options() {
   return <div className="cuberplus-page options-page">
     <header className="cuberplus-header"><Navigation current="options" /></header>
     <main className="container py-4"><h1 className="route-heading">Options</h1><section className="card p-4">
-      <div className="settings-section options-general">
+      <SettingsSection title="General" className="options-general-section"><div className="options-general">
       <section aria-label="Theme picker" aria-roledescription="carousel">
         <h3>Theme</h3>
         <div className="theme-carousel">
@@ -36,12 +37,12 @@ export default function Options() {
       <div className="d-flex align-items-center gap-2"><label className="form-check mb-0" htmlFor="all-sessions"><input id="all-sessions" type="checkbox" className="form-check-input" checked={allSessions} aria-describedby="all-sessions-help" onChange={event => setAllSessions(event.target.checked)} />Show all sessions</label>
         <InfoTip id="all-sessions-help">Include every session in Timer history, recent solves, records, and Analyzer. Otherwise, these follow the session selected in Timer. New solves still use that session. Analyzer session filters can override this selection.</InfoTip></div>
       <div><InstallControl /></div>
-      </div>
+      </div></SettingsSection>
       <MyCubes />
       <BreakReminderOptions />
       <ImportOptions />
       <CloudOptions />
-      <section className="settings-section"><h3>Community</h3><div className="d-flex gap-2">
+      <SettingsSection title="Community"><div className="d-flex gap-2">
         {/* Bootstrap Icons (MIT): /licenses/bootstrap-icons.txt */}
         <a className="btn btn-link d-inline-flex p-2" href="https://discord.gg/ft7tmsSWs" target="_blank" rel="noopener noreferrer" aria-label="Join the CuberPlus Discord server" title="Discord">
           <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
@@ -53,10 +54,9 @@ export default function Options() {
             <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8" />
           </svg>
         </a>
-      </div></section>
+      </div></SettingsSection>
       {error && <p role="alert">{error}</p>}
-      <details className="settings-section">
-        <summary>Dev Note</summary>
+      <SettingsSection title="Dev Note">
         <div className="mt-3">
           <p>Hey! My name is Fifey</p>
           <p>If you're reading this, thank you for using CuberPlus!</p>
@@ -67,7 +67,7 @@ export default function Options() {
           <p>I hope that this site helps you learn and improve!</p>
           <p className="mb-0">-Fifey</p>
         </div>
-      </details>
+      </SettingsSection>
     </section></main>
     <Footer />
   </div>;

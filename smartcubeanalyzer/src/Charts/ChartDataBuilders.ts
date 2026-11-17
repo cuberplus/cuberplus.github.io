@@ -96,9 +96,10 @@ export function buildRunningRecognitionExecution(
     solves: Solve[],
     windowSize: number,
     pointsPerGraph: number,
-    use4SegmentTiming: boolean
+    use4SegmentTiming: boolean, perF2LPair = false
 ): LabelledChart<'line'> {
     const moving = (extract: (s: Solve) => number) => calculateMovingAverage(solves.map(extract), windowSize);
+    const pairCounts = perF2LPair ? moving(solve => solve.steps.filter(step => step.name.startsWith('F2L')).length) : null;
     const segments: { name: string; key: keyof typeof SEGMENT_COLORS; extract: (s: Solve) => number; optional?: boolean }[] = [
         { name: 'Recognition', key: 'recognition', extract: x => x.recognitionTime },
         ...(use4SegmentTiming ? [{ name: 'Pre-AUF', key: 'preAuf' as const, extract: (x: Solve) => x.preAufTime, optional: true }] : []),
@@ -108,7 +109,7 @@ export function buildRunningRecognitionExecution(
     return {
         labels: makeLabels(Math.max(0, solves.length - windowSize + 1), pointsPerGraph, windowSize),
         datasets: segments
-            .map(segment => ({ ...segment, data: reduceDataset(moving(segment.extract), pointsPerGraph) }))
+            .map(segment => ({ ...segment, data: reduceDataset(moving(segment.extract).map((value, i) => pairCounts ? pairCounts[i] ? value / pairCounts[i] : 0 : value), pointsPerGraph) }))
             .filter(segment => !segment.optional || segment.data.some(value => value > 0))
             .map(segment => ({
                 label: `Average ${segment.name} Of ${windowSize}`, data: segment.data,

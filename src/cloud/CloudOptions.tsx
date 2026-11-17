@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { backupNow, cloudState, configureCloud, connectCloud, disconnectCloud, dismissCloudMessage, initializeCloud, restoreNow, subscribeCloud } from './backup';
 import { isConfigured, prepareProvider, providerNames, type Provider } from './providers';
 import { InfoTip } from '../../shared/Components/InfoTip';
+import { SettingsSection } from '../../shared/Components/SettingsSection';
 
 function useCloud() {
   const [state, setState] = useState(cloudState);
@@ -11,8 +12,7 @@ function useCloud() {
 export function CloudOptions() {
   const state = useCloud();
   useEffect(() => { if (isConfigured(state.provider)) void prepareProvider(state.provider).catch(() => {}); }, [state.provider]);
-  return <section className="settings-section" aria-labelledby="cloud-heading">
-    <h3 id="cloud-heading" className="d-flex align-items-center">Cloud backup<InfoTip>Back up solves and move recordings, settings, empty sessions and their scramble generators, Blitz and practice history, custom trainings, saved cubes and the last Bluetooth MAC address, custom algorithms, favorites, and Unlearn selections to your own cloud storage. Timer JSON exports include the same user settings and training data; CSV exports contain solves only. Sign-in credentials, cloud provider and sync progress, and daily notification suppression are excluded. Analysis caches are rebuilt when needed.</InfoTip></h3>
+  return <SettingsSection title="Cloud backup" id="cloud-heading" help={<InfoTip>Back up solves and move recordings, settings, empty sessions and their scramble generators, Blitz and practice history, custom trainings, saved cubes and the last Bluetooth MAC address, custom algorithms, favorites, and Unlearn selections to your own cloud storage. Timer JSON exports include the same user settings and training data; CSV exports contain solves only. Sign-in credentials, cloud provider and sync progress, and daily notification suppression are excluded. Analysis caches are rebuilt when needed.</InfoTip>}>
     <div className="settings-fields mb-3">
     <label className="backup-provider">Backup provider
       <select className="form-select mt-2" value={state.provider} disabled={state.busy}
@@ -44,7 +44,7 @@ export function CloudOptions() {
         <button className="btn btn-outline-secondary" disabled={state.busy || !state.connected} onClick={() => { void disconnectCloud(); }}>Disconnect</button>
       </div>
     </details>
-  </section>;
+  </SettingsSection>;
 }
 export function CloudNotice() {
   const state = useCloud();

@@ -264,6 +264,7 @@ describe('chopped average modal', () => {
         const solves = makeSolves(1).map(solve => ({ ...solve, time: 12.345 }));
         render(<><Options /><AverageModal solves={solves} numbers={[1]} percentage={0} close={() => undefined} view={() => undefined} /></>);
         expect(screen.getByRole('heading', { name: 'Ao1: 12.345s' })).not.toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'General', exact: true }));
         fireEvent.change(screen.getByRole('combobox', { name: 'Time precision' }), { target: { value: '2' } });
         expect(screen.getByRole('heading', { name: 'Ao1: 12.35s' })).not.toBeNull();
         expect(solves[0].time).toBe(12.345);
