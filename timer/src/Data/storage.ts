@@ -2,7 +2,7 @@ import { getDnfReason, getPenaltyReasons, solveTime, type Solve } from '../Core/
 import { Cube, isMove, movesOf } from '../Core/puzzle';
 import { analyzeCFOP, CFOP_STEPS, cfopFrame, cfopTiming, elapsedAt, f2lPair } from '../Analysis/cfop';
 import { movingAverages } from '../../../shared/statistics/averages';
-import { calendarDay, streakWindows } from '../../../shared/statistics/streaks';
+import { calendarDay, STREAK_TARGETS, streakLabel, streakWindows } from '../../../shared/statistics/streaks';
 import { validImported } from './csvImport';
 import { analysisKey } from '../Analysis/analysis';
 import type { KPattern, KTransformation } from 'cubing/kpuzzle';
@@ -264,8 +264,26 @@ export function dailyStreak(solves: Solve[], date = new Date()): { current: numb
   const { current, best } = streakWindows(days, today);
   return { current: current.length, best: best.length, hasToday: days.includes(today) };
 }
+export function dailyStreakNotification(previous: Solve[], solve: Solve): { current: number; label: string } | null {
+  if (solve.status === 'active' || solve.session === 'Retries') return null;
+  const today = calendarDay(solveEndDate(solve)), history = previous.filter(item => item.id !== solve.id && item.status !== 'active' && item.session !== 'Retries');
+  for (const target of STREAK_TARGETS) {
+    const qualifies = (item: Solve) => target === Infinity || item.status === 'complete' && solveTime(item) < target * 1000;
+    if (!qualifies(solve) || history.some(item => calendarDay(solveEndDate(item)) === today && qualifies(item))) continue;
+    const { current } = streakWindows([...history.filter(qualifies).map(item => calendarDay(solveEndDate(item))), today], today);
+    return { current: current.length, label: streakLabel(target) };
+  }
+  return null;
+}
+export function dailyStreakSolves(previous: Solve[], solve: Solve, label: string): Solve[] {
+  const target = label === 'Overall' ? Infinity : Number(label.slice(4)) * 1000;
+  const eligible = [...previous.filter(item => item.id !== solve.id), solve].filter(item => item.status !== 'active' && item.session !== 'Retries' &&
+    (target === Infinity || item.status === 'complete' && solveTime(item) < target));
+  const { current } = streakWindows(eligible.map(item => calendarDay(solveEndDate(item))), calendarDay(solveEndDate(solve)));
+  return eligible.filter(item => current.includes(calendarDay(solveEndDate(item)))).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
 export const turns = (solve: Solve): number => solve.imported?.turns ?? solve.moves.reduce((n, move) => n + (move.move.includes('2') ? 2 : 1), 0);
-export const formatTime = (milliseconds: number, precision: 2 | 3 = 2): string => (milliseconds / 1000).toFixed(precision);
+export { formatMilliseconds as formatTime } from '../../../shared/display';
 
 const cubeastColumns = 'id,date,dnf,time,solving_method,device_name,device_model,device_color_scheme,user,one_turn_away_two_second_penalty,inspection_two_second_penalty,inspection_time,timer_time,missing_turn,solution,timer,description,session_name,session_ruleset,scramble,scramble_provider,ruleset,share_views,share_likes,share_comments,analysis_version,solution_rotation,pickup_time,putdown_time,solving_time,slice_turns,face_turns,quarter_turns,turns_per_second,total_recognition_time,total_execution_time,turns_after_solution,steps_skipped'.split(',').concat(
   Array.from({ length: 9 }, (_, i) => 'name,moves,recorded_moves,skipped,has_turns,time,recognition_time,execution_time,cumulative_time,slice_turns,face_turns,quarter_turns,turns_per_second'.split(',').map(field => `step_${i}_${field}`)).flat(),

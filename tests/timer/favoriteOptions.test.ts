@@ -42,23 +42,26 @@ test('deduplicated variants and current Other F2L keys resolve to retained algor
     expect(algorithmAliases[key].split(':')[0]).toBe(key);
   }
 });
-test('three independent sub-options default on and retain choices across main toggles and remounts', async () => {
+test('boxed favorite group selects all, clears all and retains individual choices across remounts', async () => {
   await render();
   expect(controls()).toHaveLength(4);
-  expect(controls().map(input => input.checked)).toEqual([false, true, true, true]);
-  expect(container.querySelector('fieldset')!.disabled).toBe(true);
+  expect(controls().map(input => input.checked)).toEqual([false, false, false, false]);
   await act(async () => controls()[0].click());
   expect(container.querySelector('fieldset')!.disabled).toBe(false);
   await act(async () => controls()[1].click());
   await act(async () => controls()[2].click());
+  expect(controls()[0].indeterminate).toBe(true);
   expect(JSON.parse(localStorage.getItem(CATEGORIES_KEY)!)).toEqual({ F2L: false, OLL: false, PLL: true });
   await act(async () => controls()[0].click());
-  expect(controls().map(input => input.checked)).toEqual([false, false, false, true]);
+  expect(controls().map(input => input.checked)).toEqual([true, true, true, true]);
   await act(async () => controls()[0].click());
+  expect(controls().map(input => input.checked)).toEqual([false, false, false, false]);
+  await act(async () => controls()[3].click());
   expect(localStorage.getItem(MISTAKES_KEY)).toBe('true');
   await act(async () => root.unmount());
   root = createRoot(container); await render();
-  expect(controls().map(input => input.checked)).toEqual([true, false, false, true]);
+  expect(controls().map(input => input.checked)).toEqual([false, false, false, true]);
+  expect(controls()[0].indeterminate).toBe(true);
   expect(container.textContent).toContain('F2L (including Advanced and Other F2L)');
 });
 test('Automatically find favorites adds recorded matches and preserves existing favorites', async () => {
@@ -119,15 +122,15 @@ test('category checkboxes occupy separate lines and discovery follows all checkb
   expect(controls().every(control => !!(control.compareDocumentPosition(discoverButton()) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   expect(container.querySelectorAll('p.text-secondary')).toHaveLength(0);
 });
-test('favorite settings collapse independently while their checkbox and tooltip stay in the summary', async () => {
+test('favorite settings use a bordered group with visible sub-options and a tooltip beside its legend', async () => {
   await render();
-  const details = container.querySelector('details')!, summary = details.querySelector('summary')!;
-  expect(details.open).toBe(false);
-  expect(summary.contains(controls()[0])).toBe(true);
-  expect(summary.querySelector('button')).not.toBeNull();
+  const fieldset = container.querySelector('fieldset')!, legend = fieldset.querySelector('legend')!;
+  expect(fieldset.classList.contains('border')).toBe(true);
+  expect(legend.contains(controls()[0])).toBe(true);
+  expect(controls().slice(1).every(input => fieldset.contains(input) && !input.disabled)).toBe(true);
+  expect(container.querySelector('details')).toBeNull();
   await act(async () => controls()[0].click());
-  expect(details.open).toBe(false);
   expect(controls()[0].checked).toBe(true);
-  await act(async () => summary.querySelector<HTMLButtonElement>('button')!.focus());
+  await act(async () => legend.querySelector<HTMLButtonElement>('button')!.focus());
   await waitFor(() => expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain('Only checks cases with favorites.'));
 });

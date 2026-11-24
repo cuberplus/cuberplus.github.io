@@ -1,5 +1,6 @@
 import { useId, useMemo, useState } from 'react';
 import { scramblers, type Scrambler } from '../Core/scramblers';
+import { TOOLTIPS } from '../../../shared/tooltips';
 
 export function SessionPicker({ value, sessions, disabled, change, create, manage }: {
   value: string; sessions: string[]; disabled: boolean; change: (session: string) => void; create: (session: string, scrambler: Scrambler) => void;
@@ -32,7 +33,7 @@ export function SessionPicker({ value, sessions, disabled, change, create, manag
     </label>
     {manage && !editing && <div className="d-flex gap-2 mt-2">
       <button type="button" className="btn btn-outline-secondary" disabled={disabled || value === 'Retries'}
-        title={value === 'Retries' ? 'Retries is reserved for retry attempts.' : undefined}
+        title={value === 'Retries' ? TOOLTIPS.sessionPicker.reservedSession : undefined}
         onClick={() => { setError(''); setName(value); setEditing('rename'); }}>Rename session</button>
       <button type="button" className="btn btn-outline-danger" disabled={disabled} onClick={() => void submitChange(null)}>Delete session</button>
     </div>}

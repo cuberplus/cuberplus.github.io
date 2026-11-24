@@ -3,6 +3,7 @@ import { backupNow, cloudState, configureCloud, connectCloud, disconnectCloud, d
 import { isConfigured, prepareProvider, providerNames, type Provider } from './providers';
 import { InfoTip } from '../../shared/Components/InfoTip';
 import { SettingsSection } from '../../shared/Components/SettingsSection';
+import { TOOLTIPS } from '../../shared/tooltips';
 
 function useCloud() {
   const [state, setState] = useState(cloudState);
@@ -12,7 +13,7 @@ function useCloud() {
 export function CloudOptions() {
   const state = useCloud();
   useEffect(() => { if (isConfigured(state.provider)) void prepareProvider(state.provider).catch(() => {}); }, [state.provider]);
-  return <SettingsSection title="Cloud backup" id="cloud-heading" help={<InfoTip>Back up solves and move recordings, settings, empty sessions and their scramble generators, Blitz and practice history, custom trainings, saved cubes and the last Bluetooth MAC address, custom algorithms, favorites, and Unlearn selections to your own cloud storage. Timer JSON exports include the same user settings and training data; CSV exports contain solves only. Sign-in credentials, cloud provider and sync progress, and daily notification suppression are excluded. Analysis caches are rebuilt when needed.</InfoTip>}>
+  return <SettingsSection title="Cloud backup" id="cloud-heading" help={<InfoTip>{TOOLTIPS.cloudOptions.overview}</InfoTip>}>
     <div className="settings-fields mb-3">
     <label className="backup-provider">Backup provider
       <select className="form-select mt-2" value={state.provider} disabled={state.busy}
@@ -24,16 +25,16 @@ export function CloudOptions() {
         ? <button className="btn btn-primary" disabled={state.busy} onClick={() => { void backupNow(); }}>Back up now</button>
         : <button className="btn btn-primary" disabled={state.busy || !state.configured} onClick={() => { void connectCloud(); }}>Connect {providerNames[state.provider]}</button>}
     </div>
-    {!state.configured ? <div role="status" className="backup-status mb-3">Provider unavailable<InfoTip>{`${providerNames[state.provider]} is not configured by this site's owner yet. Public OAuth application IDs must be added to the deployment configuration.`}</InfoTip></div>
+    {!state.configured ? <div role="status" className="backup-status mb-3">Provider unavailable<InfoTip>{TOOLTIPS.cloudOptions.unconfigured(providerNames[state.provider])}</InfoTip></div>
       : <p className="backup-status">{state.connected ? `Connected to ${providerNames[state.provider]}` : 'Not connected'}</p>}
     <fieldset className="my-3">
-    <legend className="h6">Automatic backups <InfoTip>PB backups follow a Single, Ao5, or Ao12. Automatic backups run while CuberPlus is open and authorized. Sign-in is remembered on this browser. Microsoft renews tokens automatically when possible; choose Keep me signed in during sign-in to persist across browser restarts. Google requires a click to renew expired access. Reconnect here to resume pending backups; no solves are lost.</InfoTip></legend>
+    <legend className="h6">Automatic backups <InfoTip>{TOOLTIPS.cloudOptions.automaticBackups}</InfoTip></legend>
     <label className="d-block mb-2"><input className="form-check-input me-2" type="checkbox" checked={state.every100} disabled={state.busy}
       onChange={event => configureCloud(state.provider, event.target.checked, state.onPb)} />Back up every 100 solves</label>
     <label className="d-block mb-3"><input className="form-check-input me-2" type="checkbox" checked={state.onPb} disabled={state.busy}
       onChange={event => configureCloud(state.provider, state.every100, event.target.checked)} />Back up after a PB</label>
     </fieldset>
-    <p className="backup-status mb-1">Last successful backup: {state.lastBackup ? new Date(state.lastBackup).toLocaleString() : 'Never'}<InfoTip>Backups are compressed and merge by solve ID: local data wins on backup; cloud data wins on restore. Restoring preserves local-only solves and reloads the site to apply settings. This is a backup, not live sync; deleting a local solve does not delete its cloud copy.</InfoTip></p>
+    <p className="backup-status mb-1">Last successful backup: {state.lastBackup ? new Date(state.lastBackup).toLocaleString() : 'Never'}<InfoTip>{TOOLTIPS.cloudOptions.restore}</InfoTip></p>
     {state.every100 && <p className="backup-status mb-1">{state.pending} / 100 new solves since the last successful backup</p>}
     <details className="settings-disclosure"><summary>Restore and connection settings</summary>
       <div className="d-flex flex-wrap gap-2">

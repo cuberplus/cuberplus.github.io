@@ -6,7 +6,9 @@ const columns = [
   { key: 'turns', label: 'Turns' }, { key: 'tps', label: 'TPS' },
 ] as const;
 type Column = typeof columns[number]['key'];
-const format = (value: number | 'DNF', precision: 2 | 3) => value === 'DNF' ? value : `${value.toFixed(precision)}s`;
+import { formatSeconds } from '../../../shared/display';
+import { TOOLTIPS } from '../../../shared/tooltips';
+const format = (value: number | 'DNF', precision: 2 | 3) => value === 'DNF' ? value : `${formatSeconds(value, precision)}s`;
 
 export interface AverageRow<T> {
   solve: T;
@@ -47,7 +49,7 @@ export function AverageDialog<T>({ rows, time, precision, view, close, title }: 
       view(row.solve);
     }}>
       <th scope="row">{field(row.number, '')}</th>
-      <td>{field(<>{row.trimmed ? <span className={`average-trimmed-${row.trimmed}`} title={`Excluded ${row.trimmed}`} aria-label={`Excluded ${row.trimmed}: ${value}`}>({value})</span> : value}
+      <td>{field(<>{row.trimmed ? <span className={`average-trimmed-${row.trimmed}`} title={TOOLTIPS.averageDialog.excludedSolve(row.trimmed)} aria-label={`Excluded ${row.trimmed}: ${value}`}>({value})</span> : value}
         {!!row.penalty && <span className="badge text-bg-warning ms-1">+{row.penalty}</span>}
       </>, `${row.trimmed ? `(${value})` : value}${row.penalty ? ` +${row.penalty}` : ''}${row.trimmed ? `, excluded ${row.trimmed}` : ''}`)}</td>
       <td>{field(row.turns, `${row.turns} turns`)}</td><td>{field(row.tps === null ? '--' : row.tps.toFixed(2), `${row.tps === null ? '--' : row.tps.toFixed(2)} TPS`)}</td>

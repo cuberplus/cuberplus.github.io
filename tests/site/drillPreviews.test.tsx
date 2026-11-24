@@ -12,6 +12,7 @@ jest.mock('../../src/trainer/practice', () => ({
 jest.mock('../../timer/src/Analysis/cfop', () => ({}));
 jest.mock('../../timer/src/Components/CubeView', () => ({ CubeView: () => null }));
 jest.mock('../../src/trainer/SolutionProgress', () => ({ SolutionProgress: () => null }));
+jest.mock('../../src/trainer/DrillSettings', () => ({ DrillSettings: () => null }));
 jest.mock('../../shared/cube/connection', () => ({
   useCubeConnection: () => ({ connection: {} }), cubeConnection: { onEvent: () => () => {} },
 }));

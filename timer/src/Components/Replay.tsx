@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { getDnfReason, getPenaltyReasons, setPenalty, solveTime, type Solve } from '../Core/engine';
 import { Cube, movesOf } from '../Core/puzzle';
 import { CubeView } from './CubeView';
 import { deleteSolve, formatTime, turns } from '../Data/storage';
 import { analyzeCFOP, cfopFrame, cfopRotation, CFOP_STEPS, elapsedAt, f2lPair } from '../Analysis/cfop';
 import { pairEmojis } from '../../../shared/cube/f2l';
-import { usePageDialog } from '@cuberplus/navigation';
+import { SettingsContext, usePageDialog } from '@cuberplus/navigation';
 import { SolveMistakes } from './SolveMistakes';
 import { SolveTimeline } from './SolveTimeline';
 import { CaseModal } from '../../../src/database/CaseModal';
@@ -15,6 +15,8 @@ import { algorithms, databaseCaseKey, databaseCaseKeys } from '../../../src/data
 import { caseKeyLabel } from '../../../src/database/caseLabels';
 import { persistReplayAnalysis, reanalyzeSolve } from '../Analysis/analysis';
 import '../CSS/Replay.css';
+import { solvePairChoices, stepPieces } from '../Analysis/f2lSuggestions';
+import { TOOLTIPS } from '../../../shared/tooltips';
 
 export function Replay({ cube, solve, history, close, change, remove, retry, retryDisabled = false, readOnly = false, precision = 2, saveError }: { cube: Cube; solve: Solve; history?: Solve[] | (() => Promise<Solve[]>); close: () => void; change?: (solve: Solve) => void; remove?: (solve: Solve) => Promise<void>; retry?: (solve: Solve) => void; retryDisabled?: boolean; readOnly?: boolean; precision?: 2 | 3; saveError?: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -24,6 +26,7 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
   const playhead = useRef(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const { replayHighlight: highlightMode } = useContext(SettingsContext);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [caseKey, setCaseKey] = useState('');
@@ -38,6 +41,14 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
   const { cross, ends, cases, pairs } = useMemo(() => analyzeCFOP(solve, cube), [solve, cube]);
   useEffect(() => { if (!readOnly) void persistReplayAnalysis(solve, cube).catch(() => {}); }, [solve, cube, readOnly]);
   const rotation = useMemo(() => cfopRotation(cube, cross, pairs[0]), [cube, cross, pairs]);
+  const choices = useMemo(() => highlightMode === 'suggested' ? solvePairChoices(solve, cube) : [], [solve, cube, highlightMode]);
+  const step = ends.findIndex(end => end > position);
+  const highlight = useMemo(() => {
+    if (highlightMode === 'none' || step < 0 || step >= 5) return {};
+    const corner = highlightMode === 'suggested' && step > 0 && step < 5
+      ? choices.find(choice => choice.step === step)?.ranked[0]?.corner : pairs[step - 1];
+    return stepPieces(cross, step, corner);
+  }, [highlightMode, step, cross, pairs, choices]);
   const visible = usePageDialog(dialog);
   const hasReplay = !solve.imported || solve.moves.length > 0;
   const seekPosition = (next: number) => {
@@ -128,7 +139,7 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
         ? <button className="btn btn-outline-primary" disabled={deleting || retryDisabled} onClick={() => { dismiss(); retry(solve); }}>Retry</button>
         : <a className={`btn btn-outline-primary${deleting ? ' disabled' : ''}`} aria-disabled={deleting || undefined} tabIndex={deleting ? -1 : undefined} href={`/timer/?retry=${encodeURIComponent(solve.id)}`} onClick={event => { if (deleting) event.preventDefault(); else dismiss(); }}>Retry</a>)}
     </div>
-    {hasReplay && <section className="replay-playback" aria-label="Playback"><CubeView cube={cube} facelets={facelets} moves={moves} position={position} speed={speed} playback seekVersion={seekVersion} cross={cross} rotation={rotation} height={220} />
+    {hasReplay && <section className="replay-playback" aria-label="Playback"><CubeView cube={cube} facelets={facelets} moves={moves} position={position} speed={speed} playback seekVersion={seekVersion} cross={cross} rotation={rotation} height={220} highlight={highlight} />
     <div className="replay-controls">
       <button className="btn btn-primary" disabled={!solve.moves.length} onClick={() => { if (position >= solve.moves.length) seekPosition(0); setPlaying(!playing); }}>{playing ? 'Pause' : 'Play'}</button>
       <button className="btn btn-outline-secondary" disabled={position === 0} onClick={() => seekPosition(position - 1)}>Previous move</button>
@@ -155,12 +166,12 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
       {!hasReplay ? <span>{step.importedMoves || 'No moves reported'}</span> : step.groups.length ? step.groups.map(group => {
         const current = position === 0 ? group.start === 0 : group.start < position && position <= group.end;
         return <button key={group.start} className={`move ${group.end <= position ? 'done' : ''} ${current ? 'current' : ''} ${current && position > group.start && position < group.end ? 'partial' : ''}`}
-          title={`${formatTime(timestamps[group.end - 1], precision)}s`} aria-current={current ? 'step' : undefined}
+          title={TOOLTIPS.replay.moveTime(formatTime(timestamps[group.end - 1], precision))} aria-current={current ? 'step' : undefined}
           aria-label={`${group.move}, recorded moves ${group.start + 1} to ${group.end}: ${solve.moves.slice(group.start, group.end).map(move => move.move).join(' ')}`}
           onClick={() => seekPosition(group.end)}>{group.move}</button>;
       }) : <span className="small text-secondary">{step.empty}</span>}
     </div>)}</div>
-    </details><InfoTip>Select any recorded move to jump to it. Recognized step names and case badges open the matching algorithm case. The timeline shows recognition and execution time for each step.</InfoTip></div>
+    </details><InfoTip>{TOOLTIPS.replay.timeline}</InfoTip></div>
     {solve.status === 'incomplete' && <p className="text-warning mt-2" aria-label="Penalty reason">DNF reason: {getDnfReason(solve)}</p>}
     {!!solve.penalty && <p className="text-warning mt-2" aria-label="Penalty reason">+{solve.penalty / 1000} {solve.penalty === 2000 ? 'reason' : 'reasons'}: {getPenaltyReasons(solve).join(', ')}</p>}
     {solve.reason && solve.reason !== 'Solve aborted by user.' && <p className="text-secondary small mt-2">{solve.reason}</p>}
@@ -175,7 +186,7 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
           {['White', 'Red', 'Green', 'Yellow', 'Orange', 'Blue'].map((color, face) => <option key={color} value={face}>{color}</option>)}
         </select>
       </label>}
-    </div></details><InfoTip>Re-run analysis to refresh step detection and mistakes. Choosing a cross color recalculates the solve using that base face. Time losses are estimates, not additive; overlapping mistakes can describe the same lost time.</InfoTip></div>}
+    </div></details><InfoTip>{TOOLTIPS.replay.reanalysis}</InfoTip></div>}
     {analysisError && <p role="alert" className="alert alert-warning">{analysisError}</p>}
     {caseKey && <CaseModal caseKey={caseKey} close={() => setCaseKey('')} />}
     <div className="replay-actions" role="group" aria-label="Solve penalties and deletion">
@@ -194,6 +205,6 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
       <span aria-label="Inspection time">Inspection: {solve.inspection === undefined ? 'Not recorded' : `${formatTime(solve.inspection, precision)}s`}</span>
       <span aria-label="Solve ID">Solve ID: <span className="font-monospace">{solve.id}</span></span>
       <span aria-label="Solve source">{sourceLabel(solve)}</span>
-    </div></details>{solve.imported && <InfoTip>{hasReplay ? 'Replay rebuilt from exported moves and timestamps; original device clock data is not available. Imported step analysis is preserved.' : 'Imported step analysis is preserved. This CSV has no valid timed recording to replay.'}</InfoTip>}</div>
+    </div></details>{solve.imported && <InfoTip>{hasReplay ? TOOLTIPS.replay.recording : TOOLTIPS.replay.recordingAlternative}</InfoTip>}</div>
   </dialog>;
 }

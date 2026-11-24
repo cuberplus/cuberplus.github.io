@@ -11,8 +11,9 @@ import { CrossColor, MethodName, StepName } from '../../../smartcubeanalyzer/src
 import { analyzeCFOP, cfopKey } from './cfop';
 import { completedF2LCross } from '../../../shared/cube/f2l';
 import { COLORS } from '../../../scrambler/src/cube/cube';
+import { comparePairs, solvePairChoices } from './f2lSuggestions';
 
-export const ANALYSIS_VERSION = 2;
+export const ANALYSIS_VERSION = 3;
 export const analysisKey = (solve: Solve) => JSON.stringify([cfopKey(solve), solve.penalty, solve.duration, solve.session, solve.inspection, solve.createdAt, solve.timingBasis]);
 const serialize = ({ date, endDate, ...data }: Analysis): NonNullable<Solve['imported']> => ({ ...data, date: date.toISOString(), endDate: endDate?.toISOString() });
 const restore = (data: NonNullable<Solve['imported']>): Analysis => ({ ...data, date: new Date(data.date), endDate: data.endDate ? new Date(data.endDate) : undefined });
@@ -32,6 +33,10 @@ export function solveAnalysis(solve: Solve, cube: Cube): Analysis {
   const timing = { time: solveTime(solve) / 1000, date: new Date(solve.createdAt), inspectionTime: solve.inspection === undefined ? null : solve.inspection / 1000 };
   if (solve.analysis?.version === ANALYSIS_VERSION && solve.analysis.key === key) return { ...restore(solve.analysis.data), ...timing };
   const data = solve.imported ? importedAnalysis(solve) : { ...parseCsv(cubeastCSV([solve], cube), ',')[0], ...timing, source: 'timer' as const, rawSource: 'timer', isCorrupt: false };
+  if (solve.moves.length && data.method === MethodName.CFOP) data.pairChoices = solvePairChoices(solve, cube).flatMap(({ step, actual, ranked }) => {
+    const chosen = ranked.find(pair => pair.corner === actual), best = ranked[0];
+    return chosen && best && comparePairs(chosen, best) > 0 ? [{ step: [StepName.Cross, StepName.F2L_1, StepName.F2L_2, StepName.F2L_3, StepName.F2L_4][step], wastedMoves: Math.max(0, chosen.moves - best.moves) }] : [];
+  });
   if (!solve.imported) solve.cfop = { ...analyzeCFOP(solve, cube), version: 1, key: cfopKey(solve) };
   rememberAnalysis(solve, data);
   return data;

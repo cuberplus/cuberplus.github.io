@@ -2,7 +2,7 @@
 import { beforeAll, describe, expect, test } from '@jest/globals';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { Column } from 'react-data-grid';
-import { CellValue, SortableGrid, compareCells } from '../../smartcubeanalyzer/src/Components/ChartPanel';
+import { BEST_SOLVES_COLS, CellValue, SortableGrid, compareCells } from '../../smartcubeanalyzer/src/Components/ChartPanel';
 
 /**
  * The data grids are sorted here rather than by react-data-grid, so both halves
@@ -87,6 +87,10 @@ describe('compareCells', () => {
         expect(ascending(['10.000', '9.500', '100.250', '1.000']))
             .toEqual(['1.000', '9.500', '10.000', '100.250']);
     });
+    test('minute displays sort numerically with seconds and multi-minute results', () => {
+        expect(ascending(['10:00.00', '59.99', '1:02.30', '2:01.00']))
+            .toEqual(['59.99', '1:02.30', '2:01.00', '10:00.00']);
+    });
 
     test('missing values sort without throwing', () => {
         expect(() => ascending([undefined, 'a', 1])).not.toThrow();
@@ -102,6 +106,17 @@ describe('compareCells', () => {
 });
 
 describe('SortableGrid', () => {
+    test('fastest solves show relative dates and keep exact chronological sorting without a scramble column', () => {
+        const dates = [new Date(Date.now() - 3 * 7 * 86400000).toISOString(), new Date(Date.now() - 86400000).toISOString()];
+        const rows = dates.map((date, index) => ({ id: String(index), date, time: '10.00', fullstep: 'No', scramble: 'R U' }));
+        render(<SortableGrid rows={rows} columns={[BEST_SOLVES_COLS[2], ...BEST_SOLVES_COLS.slice(0, 2)]} />);
+        expect(screen.getByText('3 weeks ago')).toBeDefined();
+        expect(screen.getByText('1 day ago')).toBeDefined();
+        expect(screen.queryByRole('columnheader', { name: 'Scramble' })).toBeNull();
+        expect(screen.getByText('1 day ago').getAttribute('dateTime')).toBe(dates[1]);
+        fireEvent.click(screen.getByRole('columnheader', { name: /When/ }));
+        expect(screen.getAllByRole('row').slice(1).map(row => row.textContent)).toEqual([expect.stringContaining('3 weeks ago'), expect.stringContaining('1 day ago')]);
+    });
     const ROWS: Row[] = [
         { label: 'Sub-10', value: '3' },
         { label: 'Sub-5', value: '12' },

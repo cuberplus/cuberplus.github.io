@@ -6,7 +6,7 @@ import { PageOptionsButton } from '../../shared/Components/PageOptionsButton';
 import { TimerEngine, inspectionPenalty, solveTime, type Solve } from './Core/engine';
 import { inverse, loadCube, movesOf, simplifyMoves, SOLVED, type Cube } from './Core/puzzle';
 import { readSessionScramblers, SESSION_SCRAMBLERS, sessionScramble, type Scrambler } from './Core/scramblers';
-import { averageDetails, cubeastCSV, dailyStreak, deleteSolve, formatTime, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, recoverLocalSolves, saveSolves, sessionStats, solveEndDate, turns, updateSession } from './Data/storage';
+import { averageDetails, cubeastCSV, dailyStreakNotification, dailyStreakSolves, deleteSolve, formatTime, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, recoverLocalSolves, saveSolves, sessionStats, turns, updateSession } from './Data/storage';
 import { userBackupJSON, validateUserBackup } from '../../src/cloud/userBackup';
 import { restoreSettings } from '../../src/cloud/backupSettings';
 import { AverageDetails } from './Components/AverageDetails';
@@ -14,7 +14,7 @@ import { CubeView } from './Components/CubeView';
 import { Replay } from './Components/Replay';
 import { SolveTimeline } from './Components/SolveTimeline';
 import { SolveMistakes } from './Components/SolveMistakes';
-import { FavoriteOptions } from './Components/FavoriteOptions';
+import { ReplayHighlightOptions } from '../../shared/Components/ReplayHighlightOptions';
 import { useScreenWakeLock } from './Hooks/useScreenWakeLock';
 import { InfoTip } from '../../shared/Components/InfoTip';
 import { latestSolves } from '../../shared/Components/SolveLimit';
@@ -24,6 +24,7 @@ import { relativeTime } from './Data/relativeTime';
 import { MacAddressHelp } from '../../shared/Components/MacAddressHelp';
 import { BreakReminder } from './Components/BreakReminder';
 import { BREAK_ACTIVE, BREAK_CHANGED, BREAK_SETTINGS, breakReason, readBreakSettings, readTimerBreak } from './Core/breakReminder';
+import { TOOLTIPS } from '../../shared/tooltips';
 
 const errorText = (error: Error): string => error.message || 'The operation failed.';
 const historyColumns = [
@@ -53,7 +54,7 @@ function ScrambleInstructions({ timer, preparing, busy, refresh, abort }: {
   const correctionMoves = timer?.phase === 'scrambling' || recovering ? timer.recovery : [];
   const currentMoveClass = timer?.isPartialTurn ? 'current partial' : 'current';
   const scrambleMoves = timer ? displayedMoves.flatMap((move, i) => correctionMoves.length && !timer.completed[i + displayedOffset] ? [] :
-    [<span key={i} className={`move ${timer.completed[i + displayedOffset] ? 'done' : !correctionMoves.length && i + displayedOffset === timer.progress ? currentMoveClass : timer.isPartialMove(i + displayedOffset) ? 'partial' : ''}`} title={timer.isPartialMove(i + displayedOffset) ? 'Partially complete' : undefined}>{move}</span>]) : [];
+    [<span key={i} className={`move ${timer.completed[i + displayedOffset] ? 'done' : !correctionMoves.length && i + displayedOffset === timer.progress ? currentMoveClass : timer.isPartialMove(i + displayedOffset) ? 'partial' : ''}`} title={timer.isPartialMove(i + displayedOffset) ? TOOLTIPS.app.partialMove : undefined}>{move}</span>]) : [];
   return <>
     {recovering && <p className="small text-secondary mb-2">Return the cube to solved</p>}
     {returning && !recovering && <p className="small text-secondary mb-2">First solve the current cube</p>}
@@ -67,7 +68,7 @@ function ScrambleInstructions({ timer, preparing, busy, refresh, abort }: {
         <span role="status">Scrambles hidden while solving</span>
         <button className="btn btn-sm btn-outline-warning" onClick={abort}>Abort solve</button>
       </div>}
-      <button className={`btn btn-sm btn-outline-secondary scramble-refresh${solving ? ' invisible' : ''}`} aria-label="New scramble" title="New scramble" aria-hidden={solving} disabled={busy || !timer || !['scrambling', 'ready', 'finished'].includes(timer.phase)} onClick={refresh}>
+      <button className={`btn btn-sm btn-outline-secondary scramble-refresh${solving ? ' invisible' : ''}`} aria-label="New scramble" title={TOOLTIPS.app.newScramble} aria-hidden={solving} disabled={busy || !timer || !['scrambling', 'ready', 'finished'].includes(timer.phase)} onClick={refresh}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
           <path d="M20 6v5h-5M20 11a8 8 0 1 0-2.3 6.7" />
         </svg>
@@ -88,7 +89,8 @@ export default function App() {
   const [cube, setCube] = useState<Cube | null>(null);
   const [history, setHistory] = useState<Solve[]>([]);
   const [celebrations, setCelebrations] = useState<{ id: string; name: string; time: number; solve: Solve; average: ReturnType<typeof averageDetails> }[]>([]);
-  const [streaks, setStreaks] = useState<{ id: string; current: number; best: number }[]>([]);
+  const [streaks, setStreaks] = useState<{ id: string; current: number; label: string; solves: Solve[] }[]>([]);
+  const [streakDetails, setStreakDetails] = useState<{ label: string; solves: Solve[] } | null>(null);
   const [average, setAverage] = useState<ReturnType<typeof averageDetails>>(null);
   const [historySort, setHistorySort] = useState<{ column: HistoryColumn; direction: 'ascending' | 'descending' }>({ column: 'number', direction: 'descending' });
   const [error, setError] = useState('');
@@ -293,12 +295,9 @@ export default function App() {
           const candidate = recordChecks.current.get(copy.id);
           recordChecks.current.delete(copy.id);
           if (!candidate) return;
-          const date = solveEndDate(candidate.solve);
-          if (!candidate.previous.some(solve => solve.status !== 'active' && solveEndDate(solve).toDateString() === date.toDateString())) {
-            const { current, best } = dailyStreak(historyRef.current, date);
-            setStreaks(items => [...items, { id: copy.id, current, best }]);
-          }
           const previousRecords = candidate.previous.filter(solve => allSessionsRef.current || solve.session === candidate.solve.session);
+          const streak = dailyStreakNotification(previousRecords, candidate.solve);
+          if (streak) setStreaks(items => [...items, { id: copy.id, ...streak, solves: dailyStreakSolves(previousRecords, candidate.solve, streak.label) }]);
           const personalBests = newPersonalBests(previousRecords, candidate.solve);
           if (!candidate.previous.some(item => item.id === copy.id && item.status !== 'active')) {
             void writes.current.then(() => {
@@ -716,7 +715,7 @@ export default function App() {
       </div>
       <SessionPicker value={session} sessions={sessions} disabled={!historyReady || changingSession || solving || !!retry.current} change={selectSession} create={createSession} manage={manageSession} />
       <details className="mt-3">
-        <summary>Inspection options<span className="ms-2" onClick={event => event.preventDefault()}><InfoTip id="inspection-help">Inspection starts when scrambling finishes. The 15-second rule adds +2 at 15 seconds and DNF at 17 seconds. Starting before the configured minimum adds +2 with the reason Under-inspected. These rules work independently, and penalties stack. Readiness display replaces the clock with Keep inspecting until the minimum is reached, then Ready; penalties still apply.</InfoTip></span></summary>
+        <summary>Inspection options<span className="ms-2" onClick={event => event.preventDefault()}><InfoTip id="inspection-help">{TOOLTIPS.app.inspection}</InfoTip></span></summary>
         <fieldset className="mt-3 ms-3">
           <legend className="visually-hidden">Inspection settings</legend>
           <label className="form-check"><input type="checkbox" className="form-check-input" aria-describedby="inspection-help" checked={inspection} disabled={solving} onChange={event => changePenalty('inspection', event.target.checked)} /><span className="form-check-label">15-second inspection</span></label>
@@ -728,15 +727,15 @@ export default function App() {
         </fieldset>
       </details>
       <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="over-turn-penalty-help" checked={overTurnPenalty} onChange={event => changePenalty('over-turn-penalty', event.target.checked)} /><span className="form-check-label">Extra-turn +2 penalty</span></label>
-        <InfoTip id="over-turn-penalty-help">Apply +2 for an extra turn within 0.5 seconds after finishing.</InfoTip></div>
-      <FavoriteOptions cube={cube} history={history} />
+        <InfoTip id="over-turn-penalty-help">{TOOLTIPS.app.overTurnPenalty}</InfoTip></div>
+      <ReplayHighlightOptions />
       <div className="d-flex align-items-center mt-3"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" aria-describedby="long-pb-notifications-help" checked={showEveryLongPb} onChange={event => changeLongPbNotifications(event.target.checked)} /><span className="form-check-label">Notify for every Ao100/Ao1000 PB</span></label>
-        <InfoTip id="long-pb-notifications-help">When off, show each of these PB notifications at most once per day.</InfoTip></div>
+        <InfoTip id="long-pb-notifications-help">{TOOLTIPS.app.pbNotifications}</InfoTip></div>
       <details className="mt-3">
         <summary className="visuals-summary d-flex align-items-center gap-2">
           <input type="checkbox" className="form-check-input m-0" aria-labelledby="hide-visuals-title" aria-describedby="hide-visuals-help" checked={allVisualsHidden} ref={element => { if (element) element.indeterminate = someVisualsHidden && !allVisualsHidden; }} onClick={event => event.stopPropagation()} onChange={event => changeHiddenVisuals({ timer: event.target.checked, cube: event.target.checked, progressBar: event.target.checked })} />
           <span id="hide-visuals-title">Hide distracting visuals</span>
-          <span onClick={event => event.preventDefault()}><InfoTip id="hide-visuals-help">Choose which visuals to hide while solving.</InfoTip></span>
+          <span onClick={event => event.preventDefault()}><InfoTip id="hide-visuals-help">{TOOLTIPS.app.solvingVisuals}</InfoTip></span>
         </summary>
         <fieldset className="mt-3 ms-3">
           <legend className="visually-hidden">Visuals hidden while solving</legend>
@@ -748,7 +747,7 @@ export default function App() {
     {(!navigator.bluetooth || !window.isSecureContext) && <p className="alert alert-info">Bluetooth needs a supported browser and HTTPS or localhost. Try Chrome/Edge on Windows.</p>}
     {error && <div className="alert alert-danger d-flex justify-content-between" role="alert">{error}<button className="btn-close" aria-label="Dismiss error" onClick={() => setError('')} /></div>}
     {!['Saved locally', 'Saving locally...'].includes(storage) && <p className="text-secondary small mb-3">{storage}</p>}
-    {!connected && <div className="alert alert-info timer-onboarding"><strong>Connect a smart cube to start timing.</strong><InfoTip>Choose a saved cube in Cube setup, connect, then follow the highlighted scramble. New cube? Add it in Options. Saved solves can be browsed without a connection.</InfoTip><button className="btn btn-primary" onClick={() => setupDialog.current?.showModal()}>Set up a cube</button></div>}
+    {!connected && <div className="alert alert-info timer-onboarding"><strong>Connect a smart cube to start timing.</strong><InfoTip>{TOOLTIPS.app.cubeSetup}</InfoTip><button className="btn btn-primary" onClick={() => setupDialog.current?.showModal()}>Set up a cube</button></div>}
     {timerBreak && <BreakReminder timerBreak={timerBreak} history={history} drills={breakSettings.drills} remaining={Math.max(0, Math.ceil((timerBreak.until - breakNow) / 1000))} />}
     <section hidden={!!timerBreak} className={`panel timer-panel ${!connected ? 'timer-disconnected ' : ''}${timer?.phase === 'ready' ? 'ready' : ''}`}>
       {retry.current && <p className="small text-secondary" role="status">Retry will be saved in Retries, then return to {retry.current.previousSession || 'Default'}.{' '}
@@ -790,7 +789,7 @@ export default function App() {
     <div className="timer-summary mt-3">
     <section className="panel timer-records">
       <div className="table-responsive">
-        <table className="table table-sm" aria-label="All-time statistics"><thead><tr><th scope="col">Metric <InfoTip>Records use all saved solves in the selected session, regardless of the recent-solves limit. Enable Show all sessions in site Options to combine sessions. Retry attempts do not count toward records.</InfoTip></th><th scope="col">Current</th><th scope="col">Best</th></tr></thead>
+        <table className="table table-sm" aria-label="All-time statistics"><thead><tr><th scope="col">Metric <InfoTip>{TOOLTIPS.app.records}</InfoTip></th><th scope="col">Current</th><th scope="col">Best</th></tr></thead>
           <tbody>{statistics.map((stat, index) => <tr key={stat.name}><th scope="row">{stat.name}</th>
             {(['current', 'best'] as const).map(kind => <td key={kind}>{stat[kind] === null ? '--' :
               <button className="stat-link" aria-label={`View ${kind} ${stat.name}`} onClick={() => stat.name === 'Single'
@@ -831,10 +830,12 @@ export default function App() {
       {!historyRows.length && <p className="text-secondary">{allSessions ? 'No saved solves yet.' : 'No solves in this session yet.'} Your data stays on this device.</p>}
     </section>
     {average && <AverageDetails details={average} history={history} precision={precision} view={setReplay} close={() => setAverage(null)} />}
+    {streakDetails && <AverageDetails title={`${streakDetails.label} daily streak solves`} details={{ time: 0, solves: streakDetails.solves.map(solve => ({ solve, trimmed: null })) }}
+      history={history} precision={precision} view={setReplay} close={() => setStreakDetails(null)} />}
     {cube && replay && <Replay key={replay.id} cube={cube} solve={replay} history={history} precision={precision} change={changeSolve} remove={removeSolve} retry={retrySolve} retryDisabled={solving || resynchronizing.current} close={() => setReplay(null)} />}
     {(!!celebrations.length || !!streaks.length) && <div className="pb-notifications" aria-label="Solve notifications">
       {streaks.map(streak => <div key={streak.id} className="pb-celebration streak-celebration" role="status" aria-label="Daily streak">
-        <div className="pb-open">
+        <button className="pb-open" aria-label={`View ${streak.label} streak solves`} onClick={() => setStreakDetails(streak)}>
           <svg width="52" height="64" viewBox="0 0 64 80" aria-hidden="true" focusable="false">
             <g className="streak-flame">
               <path d="M32 5C39 22 52 25 50 39C55 36 57 30 57 30C64 49 53 72 32 72C10 72 0 52 9 35C9 45 17 46 18 36C19 23 30 19 32 5Z" fill="#ff8647" />
@@ -848,9 +849,9 @@ export default function App() {
           </svg>
           <span><strong>Congratulations!</strong>
             <span className="d-block">Daily Streak: {streak.current}</span>
-            <span className="d-block">Best Streak: {streak.best}</span>
+            <span className="d-block">{streak.label} streak</span>
           </span>
-        </div>
+        </button>
         <button className="btn btn-sm btn-outline-light pb-dismiss" aria-label="Dismiss daily streak"
           onClick={() => setStreaks(current => current.filter(item => item.id !== streak.id))}>Dismiss</button>
       </div>)}

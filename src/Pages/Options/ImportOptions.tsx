@@ -4,6 +4,7 @@ import { InfoTip } from '../../../shared/Components/InfoTip';
 import { dataTask } from '../../../shared/workers/dataClient';
 import type { DataProgress, DataTask } from '../../../shared/workers/dataTasks';
 import { SettingsSection } from '../../../shared/Components/SettingsSection';
+import { TOOLTIPS } from '../../../shared/tooltips';
 
 export function ImportOptions() {
   const [operation, setOperation] = useState<'import' | 'reanalyze' | null>(null), [message, setMessage] = useState(''), [error, setError] = useState(false);
@@ -28,14 +29,14 @@ export function ImportOptions() {
       if (task.type === 'reanalyze') window.dispatchEvent(new CustomEvent('timer-solves-changed', { detail: { reanalyzed: true } }));
     }
   }
-  return <SettingsSection title="Import solves" id="import-heading" help={<InfoTip>Merge Cubeast or Acubemy CSV exports into your local solve database. Existing solves and source labels are kept; duplicate source IDs are skipped. Valid original move recordings are retained for replay and reanalysis.</InfoTip>}>
+  return <SettingsSection title="Import solves" id="import-heading" help={<InfoTip>{TOOLTIPS.importOptions.merge}</InfoTip>}>
     <label className={`btn btn-outline-primary ${busy ? 'disabled' : ''}`}>{importing ? 'Importing...' : 'Import Cubeast / Acubemy CSV'}
       <input className="visually-hidden" aria-label="Import solve CSV files" type="file" accept=".csv,text/csv" multiple disabled={busy}
         onChange={event => { void run({ type: 'import', files: Array.from(event.target.files ?? []) }); event.target.value = ''; }} />
     </label>
     <div className="d-flex align-items-center mt-3">
       <button className="btn btn-outline-primary" disabled={busy} onClick={() => void run({ type: 'reanalyze' })}>Re-analyze all solves</button>
-      <InfoTip>Rebuild CFOP steps, case labels, cross color and first pair from saved move recordings without changing original times, sessions or moves. Solves without recordings and non-CFOP imports are skipped. Missing inspection time cannot be recovered. Completed batches are kept if cancelled.</InfoTip>
+      <InfoTip>{TOOLTIPS.importOptions.reanalyze}</InfoTip>
     </div>
     <dialog ref={dialog} className="panel options-dialog" aria-labelledby="solve-progress-heading" onCancel={event => event.preventDefault()}>
       <h3 id="solve-progress-heading">{importing ? 'Importing solves' : 'Re-analyzing solves'}</h3>

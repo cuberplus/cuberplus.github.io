@@ -2,6 +2,7 @@ import { useContext, useEffect, useRef, useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import Navigation, { PageVisible, SettingsContext, usePageDialog } from '@cuberplus/navigation';
 import Site, { toolAt } from '../../src/Site';
+import { formatSeconds } from '../../shared/display';
 
 const lifecycle = { mounts: 0, unmounts: 0 };
 jest.mock('../../timer/src/Bluetooth/bluetooth', () => ({ BluetoothCube: class {} }));
@@ -56,6 +57,32 @@ test('the site-wide recent-solve setting updates retained tools and survives a r
   await visit('Timer');
   expect(screen.getByText('Recent scope: 0')).toBeDefined();
 });
+test('time, font and individual mistake preferences persist while Normal leaves existing sizing untouched', async () => {
+  const view = render(<Site />);
+  await screen.findByRole('heading', { name: 'Home' });
+  await visit('Options');
+  expect((screen.getByRole('checkbox', { name: 'Show minutes' }) as HTMLInputElement).checked).toBe(true);
+  expect(formatSeconds(65.25)).toBe('1:05.25');
+  expect(document.body.style.zoom).toBe('');
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Show minutes' }));
+  expect(formatSeconds(65.25)).toBe('65.25');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Font size' }), { target: { value: 'large' } });
+  expect(document.body.style.zoom).toBe('1.2');
+  const mistakes = screen.getByRole('button', { name: 'Mistakes', exact: true });
+  fireEvent.click(mistakes);
+  fireEvent.click(screen.getByRole('checkbox', { name: 'F2L: Non-suggested pair', exact: true }));
+  expect(JSON.parse(localStorage.getItem('disabled-mistakes')!)).toEqual(['f2lChoice']);
+  expect(screen.getByText('Mark non-favorite algs as mistakes')).toBeDefined();
+  view.unmount();
+  render(<Site />);
+  await openGeneral();
+  expect((screen.getByRole('checkbox', { name: 'Show minutes' }) as HTMLInputElement).checked).toBe(false);
+  expect((screen.getByRole('combobox', { name: 'Font size' }) as HTMLSelectElement).value).toBe('large');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Font size' }), { target: { value: 'small' } });
+  expect(document.body.style.zoom).toBe('0.8');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Font size' }), { target: { value: 'normal' } });
+  expect(document.body.style.zoom).toBe('');
+});
 
 test('navigation disclosure closes on Escape, navigation, and leaving a retained page', () => {
   const view = render(<PageVisible.Provider value={true}><Navigation current="home" /></PageVisible.Provider>);
@@ -72,6 +99,50 @@ test('navigation disclosure closes on Escape, navigation, and leaving a retained
   fireEvent.click(menu);
   view.rerender(<PageVisible.Provider value={false}><Navigation current="home" /></PageVisible.Provider>);
   expect(menu.getAttribute('aria-expanded')).toBe('false');
+});
+test('mistake group checkboxes toggle their children, show mixed state and preserve unrelated preferences', async () => {
+  render(<Site />);
+  await screen.findByRole('heading', { name: 'Home' });
+  await visit('Options');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Highlight aura' }), { target: { value: 'color' } });
+  expect(localStorage.getItem('highlight-aura')).toBe('color');
+  fireEvent.click(screen.getByRole('button', { name: 'Mistakes', exact: true }));
+  const group = screen.getByRole('checkbox', { name: 'Long recognition', exact: true }) as HTMLInputElement;
+  const individual = screen.getByRole('checkbox', { name: 'OLL: Long recognition', exact: true }) as HTMLInputElement;
+  fireEvent.click(individual);
+  expect(group.indeterminate).toBe(true);
+  expect(group.checked).toBe(false);
+  fireEvent.click(group);
+  expect(group.checked).toBe(true); expect(individual.checked).toBe(true);
+  fireEvent.click(group);
+  expect(JSON.parse(localStorage.getItem('disabled-mistakes')!)).toEqual(['f2lPause', 'ollRecognition', 'pllRecognition']);
+  expect((screen.getByRole('checkbox', { name: 'Cross: Inefficient solution', exact: true }) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(individual);
+  expect(group.indeterminate).toBe(true);
+});
+
+test('non-favorite group clears legacy disabled state, supports mixed selection and preserves other mistakes', async () => {
+  localStorage.setItem('disabled-mistakes', '["nonFavorite","f2lChoice"]');
+  localStorage.setItem('timer-non-favorite-mistakes', 'true');
+  render(<Site />);
+  await screen.findByRole('heading', { name: 'Home' });
+  await visit('Options');
+  fireEvent.click(screen.getByRole('button', { name: 'Mistakes', exact: true }));
+  const group = screen.getByRole('checkbox', { name: 'Mark non-favorite algs as mistakes', exact: true }) as HTMLInputElement;
+  expect(group.checked).toBe(false);
+  expect(screen.queryByRole('checkbox', { name: 'Non-favorite algorithms', exact: true })).toBeNull();
+  fireEvent.click(group);
+  expect(JSON.parse(localStorage.getItem('disabled-mistakes')!)).toEqual(['f2lChoice']);
+  const oll = within(group.closest('fieldset')!).getByRole('checkbox', { name: 'OLL', exact: true }) as HTMLInputElement;
+  expect(oll.checked).toBe(true);
+  fireEvent.click(oll);
+  expect(group.indeterminate).toBe(true);
+  expect(JSON.parse(localStorage.getItem('timer-non-favorite-categories')!)).toEqual({ F2L: true, OLL: false, PLL: true });
+  fireEvent.click(group); fireEvent.click(group);
+  expect(JSON.parse(localStorage.getItem('disabled-mistakes')!)).toEqual(['f2lChoice', 'nonFavorite']);
+  fireEvent.click(oll);
+  expect(oll.checked).toBe(true); expect(group.indeterminate).toBe(true);
+  expect(JSON.parse(localStorage.getItem('disabled-mistakes')!)).toEqual(['f2lChoice']);
 });
 
 test('initial load avoids title focus while route changes focus headings and keep a stable skip target', async () => {

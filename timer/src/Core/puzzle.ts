@@ -111,13 +111,13 @@ export class Cube {
 export const loadCube = async (): Promise<Cube> => new Cube(await puzzles['3x3x3'].kpuzzle());
 export const generateScramble = async (): Promise<string> => simplifyMoves(movesOf((await randomScrambleForEvent('333')).toString())).join(' ');
 
-export async function generateStageScramble(kind: 'cross-solved' | 'f2l-solved', random = Math.random): Promise<string> {
-  const cube = await loadCube(), data = structuredClone(cube.solved().patternData);
+export function randomStagePattern(cube: Cube, kind: 'scrambled' | 'cross-solved' | 'f2l-solved', random = Math.random): KPattern {
+  const data = structuredClone(cube.solved().patternData);
   let freeCorners: number[] = [];
   for (const orbit of ['EDGES', 'CORNERS'] as const) {
     const free = locations[orbit].flatMap((stickers, index) =>
-      (kind === 'cross-solved' ? orbit === 'CORNERS' || !stickers.some(sticker => Math.floor(sticker / 9) === 3)
-        : stickers.some(sticker => Math.floor(sticker / 9) === 0)) ? [index] : []);
+      (kind === 'scrambled' || (kind === 'cross-solved' ? orbit === 'CORNERS' || !stickers.some(sticker => Math.floor(sticker / 9) === 3)
+        : stickers.some(sticker => Math.floor(sticker / 9) === 0))) ? [index] : []);
     if (orbit === 'CORNERS') freeCorners = free;
     const { pieces, orientation } = data[orbit], modulus = orbit === 'EDGES' ? 2 : 3;
     for (let i = free.length - 1; i > 0; i--) {
@@ -134,6 +134,9 @@ export async function generateStageScramble(kind: 'cross-solved' | 'f2l-solved',
     const [a, b] = freeCorners, pieces = data['CORNERS'].pieces;
     [pieces[a], pieces[b]] = [pieces[b], pieces[a]];
   }
-  const solution = await cube.solution(cube.facelets(new KPattern(cube.puzzle, data)));
+  return new KPattern(cube.puzzle, data);
+}
+export async function generateStageScramble(kind: 'cross-solved' | 'f2l-solved', random = Math.random): Promise<string> {
+  const cube = await loadCube(), solution = await cube.solution(cube.facelets(randomStagePattern(cube, kind, random)));
   return simplifyMoves(solution.reverse().map(inverse)).join(' ') || 'U';
 }

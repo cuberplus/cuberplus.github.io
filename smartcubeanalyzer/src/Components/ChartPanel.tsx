@@ -31,11 +31,13 @@ import { Mistake, mistakeKey, mistakeLabel, mistakeWindow } from '../Analysis/Mi
 import { AverageModal } from './AverageModal';
 import { splitIntoChunks } from '../Helpers/MathHelpers';
 import { fastestByDay, streakSolves } from '../Charts/ChartDataBuilders';
+import { compareDurationText, formatSeconds } from '../../../shared/display';
 import type { WorkerOutput } from '../Workers/chartWorker';
 import { CaseModal } from '../../../src/database/CaseModal';
 import { CaseThumbnail } from '../../../src/database/CaseThumbnail';
 import { F2LPracticeCase } from '../../../src/database/F2LPracticeCase';
-
+import { relativeTime } from '../../../timer/src/Data/relativeTime';
+import { TOOLTIPS } from '../../../shared/tooltips';
 const TimerReplay = React.lazy(() => import('../../../timer/src/Components/analyzer-replay'));
 
 ChartJS.register(CategoryScale);
@@ -49,7 +51,7 @@ const SECTIONS: Record<string, string[]> = {
 /** Each watched prop is compared with !==, so only identity-comparable values belong here. */
 type WatchedProp = Solve[] | number | string | boolean | MethodName;
 
-type ThemeContextValue = { isDark?: boolean; precision?: 2 | 3 };
+type ThemeContextValue = { isDark?: boolean; precision?: 2 | 3; showMinutes?: boolean; disabledMistakes?: import('../../../shared/mistakes').MistakeCategory[] };
 
 /** Fill the chart card / Ratio box; DataGrid defaults to ~350px without an explicit height chain. */
 const chartDataGridWrapStyle: React.CSSProperties = { height: '100%', width: '100%', minHeight: 0, overflow: 'auto' };
@@ -100,7 +102,7 @@ export function algoCols(step: StepName, openCase: (key: string) => void = () =>
 // ── Sortable grid ────────────────────────────────────────────────────────────
 
 /** Matches Date.toDateString() output, which is how dates reach these grids. */
-const DATE_CELL = /^\w{3} \w{3} \d{2} \d{4}$/;
+const DATE_CELL = /^(?:\w{3} \w{3} \d{2} \d{4}|\d{4}-\d{2}-\d{2}T)/;
 
 /** Natural ordering for formatted times, percentages, case numbers and AoN. */
 const collate = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }).compare;
@@ -114,7 +116,7 @@ export function compareCells(a: CellValue, b: CellValue): number {
     // Dates are the one case the collator cannot get right, since it would
     // compare the month name alphabetically.
     if (DATE_CELL.test(left) && DATE_CELL.test(right)) return Date.parse(left) - Date.parse(right);
-    return collate(left, right);
+    return compareDurationText(left, right) ?? collate(left, right);
 }
 
 interface SortableGridProps<R> {
@@ -146,11 +148,10 @@ export function SortableGrid<R>({ rows, columns, className, onCellClick }: Sorta
     </div>;
 }
 
-const BEST_SOLVES_COLS = [
+export const BEST_SOLVES_COLS: Column<FastestSolve>[] = [
     { key: 'time', name: 'Time' },
     { key: 'fullstep', name: 'Full Step' },
-    { key: 'date', name: 'Date' },
-    { key: 'scramble', name: 'Scramble' },
+    { key: 'date', name: 'When', renderCell: ({ row }) => <time dateTime={row.date} title={new Date(row.date).toLocaleString()}>{relativeTime(row.date)}</time> },
 ];
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -183,7 +184,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
     private _watched(): WatchedProp[] {
         const p = this.props;
         return [p.solves, p.recordSolves ?? p.solves, p.windowSize, p.pointsPerGraph, p.steps.join(','), p.useLogScale,
-            p.goodTime, p.badTime, p.methodName, p.use4SegmentTiming, p.chopAverages !== false, p.chopPercentage ?? 5, this._isDark(), this._precision()];
+            p.goodTime, p.badTime, p.methodName, p.use4SegmentTiming, p.chopAverages !== false, p.chopPercentage ?? 5, this._isDark(), this._precision(), (this.context as ThemeContextValue)?.showMinutes !== false, (this.context as ThemeContextValue)?.disabledMistakes?.join(',') ?? ''];
     }
 
     private _propsChanged(): boolean {
@@ -210,6 +211,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
             use4SegmentTiming: p.use4SegmentTiming,
             isDark: this._isDark(),
             precision: this._precision(),
+            showMinutes: (this.context as ThemeContextValue)?.showMinutes, disabledMistakes: (this.context as ThemeContextValue)?.disabledMistakes,
             chopPercentage: p.chopAverages === false ? 0 : p.chopPercentage ?? 5,
         });
     }
@@ -320,7 +322,7 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
             const data = c[key];
             if (!data || !('datasets' in data)) return;
             const options = { ...createOptions(type, x, y, p.useLogScale, stacked, date, isDark),
-                ...(y.endsWith('(s)') && key !== 'runningTps' ? { plugins: { tooltip: { callbacks: { label: (item: { dataset: { label?: string }; parsed: number | { y: number | null } }) => `${item.dataset.label}: ${Number(typeof item.parsed === 'number' ? item.parsed : item.parsed.y).toFixed(this._precision())}s` } } } } : {}),
+                ...(y.endsWith('(s)') && key !== 'runningTps' ? { plugins: { tooltip: { callbacks: { label: (item: { dataset: { label?: string }; parsed: number | { y: number | null } }) => TOOLTIPS.chartPanel.segmentTime(item.dataset.label, formatSeconds(Number(typeof item.parsed === 'number' ? item.parsed : item.parsed.y), this._precision())) } } } } : key === 'histogram' ? { plugins: { tooltip: { callbacks: { title: (items: { label: string }[]) => items.map(item => TOOLTIPS.chartPanel.duration(formatSeconds(Number(item.label), this._precision()))) } } } } : {}),
                 onClick: (_event: ChartEvent, points: ActiveElement[]) => this.openAverage(key, points[0]), ...(key === 'runningAverage' ? { spanGaps: false } : {}) };
             const chart = type === ChartType.Line ? <Line aria-label={title} data={data as ChartData<'line', (number | null | DatedPoint)[], string>} options={options} />
                 : type === ChartType.Bar ? <Bar aria-label={title} data={data as LabelledChart<'bar', string | number>} options={key === 'caseData' ? withCaseTooltip(options, this._precision()) : options} />
@@ -336,46 +338,46 @@ export class ChartPanel extends React.Component<ChartPanelProps, ChartPanelState
 
         const category = caseCategory(p.steps);
         if (hasStepTimings && category && c.caseData) {
-            plot('caseData', "Average Recognition Time and Execution Time per Case", "Recognition and execution per case, sorted slowest first. F2L shows the worst 20 cases by time.", ChartType.Bar, 'Case');
-            charts.push(buildChartHtml(<SortableGrid rows={c.algoPracticeRows ?? []} columns={this.caseColumns.get(category)!} onCellClick={({ row, column }) => { if (column.key !== 'case') this.selectSolves(p.solves.filter(solve => !solve.dnf).slice(-p.windowSize).filter(solve => column.key === 'failed' ? row.failedSolveIds.includes(solve.id) : caseSteps(solve, category).some(step => step.case === row.case)), 0, `${category} ${row.case}${column.key === 'failed' ? ' - Failed' : ''}`); }} />, "Algorithm Practice", "Click Failed to view only failed solves, or other statistics to view all solves for the case. Click a case image/name to open its algorithms. Failed means excess core moves and above-average case time. Avg Wasted counts cancellable turns."));
+            plot('caseData', "Average Recognition Time and Execution Time per Case", TOOLTIPS.chartPanel.caseData, ChartType.Bar, 'Case');
+            charts.push(buildChartHtml(<SortableGrid rows={c.algoPracticeRows ?? []} columns={this.caseColumns.get(category)!} onCellClick={({ row, column }) => { if (column.key !== 'case') this.selectSolves(p.solves.filter(solve => !solve.dnf).slice(-p.windowSize).filter(solve => column.key === 'failed' ? row.failedSolveIds.includes(solve.id) : caseSteps(solve, category).some(step => step.case === row.case)), 0, `${category} ${row.case}${column.key === 'failed' ? ' - Failed' : ''}`); }} />, "Algorithm Practice", TOOLTIPS.chartPanel.algorithmPractice));
         }
 
-        plot('runningAverage', "Average Time", `Rolling average chopping ${p.chopAverages === false ? 0 : p.chopPercentage ?? 5}% per end (rounded up, retaining at least one solve). Untrimmed DNFs create gaps. Best and worst valid averages are always plotted; solve numbers mark each window's end. Record averages always use standard 5% trimming.`);
-        if (hasStepTimings) plot('runningRecognitionExecution', "Average Recognition and Execution", "This chart shows your running average, split up by recognition time and execution time");
-        plot('histogram', "Count of Solves by How Long They Took", "This chart shows how many solves you have done in 10s, 11s, 12s, etc...", ChartType.Bar, 'Time (s)', 'Count');
-        plot('runningTps', "Average Turns Per Second", "This chart shows your average turns per second. 'TPS During Execution' only counts your TPS while actively turning the cube");
-        plot('runningTurns', "Average Turns", "This chart shows your average number of turns, in quarter turn metric", ChartType.Line, 'Solve Number', 'Turns');
+        plot('runningAverage', "Average Time", TOOLTIPS.chartPanel.runningAverage(p.chopAverages === false ? 0 : p.chopPercentage ?? 5));
+        if (hasStepTimings) plot('runningRecognitionExecution', "Average Recognition and Execution", TOOLTIPS.chartPanel.runningRecognitionExecution);
+        plot('histogram', "Count of Solves by How Long They Took", TOOLTIPS.chartPanel.histogram, ChartType.Bar, 'Time (s)', 'Count');
+        plot('runningTps', "Average Turns Per Second", TOOLTIPS.chartPanel.runningTps);
+        plot('runningTurns', "Average Turns", TOOLTIPS.chartPanel.runningTurns, ChartType.Line, 'Solve Number', 'Turns');
         charts.push(<MistakeChart key="mistakes" summary={c.mistakes} select={mistake => this.openMistakes(mistake)} />);
-        plot('runningEfficiency', "Solve Efficiency", "Move efficiency measures redundant moves, not optimal solution length. OLL/PLL success and combined efficiency require case labels; missing recordings or cases produce gaps, not perfect scores. Import and re-analyze saved recordings in Options to fill missing cases.", ChartType.Line, 'Solve Number', 'Percentage');
-        charts.push(buildChartHtml(<SortableGrid rows={c.bestSolvesData} columns={BEST_SOLVES_COLS} className="clickable-grid" onCellClick={({ row }) => this.openSolveSource(row)} />, `Top ${Const.FastestSolvesCount} Fastest Solves`, `Your ${Const.FastestSolvesCount} fastest solves in the selected sessions, without other analysis filters or the recent-solves limit.`));
-        plot('runningStdDev', "Average Standard Deviation", "This chart shows your running average's standard deviation");
-        plot('runningColorPercentages', "Percentage of Solves by Cross Color", "This chart shows what percentage of solves started with cross on White/Yellow/etc...", ChartType.Line, 'Solve Number', 'Percentage');
-        plot('runningFirstPairPercentages', "First F2L Pair", "The four F2L pairs for your most-used cross axis (opposite cross colors are combined). Each window totals 100% among identified pairs on that axis; windows without identified pairs are gaps.", ChartType.Line, 'Solve Number', 'Percentage');
-        plot('inspection', "Average solve time by inspection time", "This chart shows your average, grouped up by how much inspection time (For example, the left bar is the 1/7 of your solves with the lowest inspection time, and the right bar is the 1/7 of your solves with the most inspection time)", ChartType.Bar, 'Inspection Time (s)', 'Solve Time (s)');
-        if (hasStepTimings) plot('stepAverages', "Average Time by Step", "This chart shows what percentage of your solve each step takes");
-        plot('runningInspection', "Average Inspection Time", "This chart shows how much inspection time you use on average");
-        charts.push(buildChartHtml(<SortableGrid rows={c.streakRows} columns={STREAK_COLS} onCellClick={({ row, column }) => this.selectSolves(streakSolves((p.recordSolves ?? p.solves).filter(solve => !solve.isCorrupt && solve.session !== 'Retries'), column.key === 'currentstreak' ? row.currentDays : row.bestDays), 0, `Daily best - ${row.time}`)} />, "Longest Daily Streaks", "Consecutive local calendar days in the selected sessions, without other filters or the recent-solves limit. Current streaks include yesterday until today is over. Click a streak to view each day's best solve."));
-        plot('dailyRecord', "Daily Fastest Solve", "The fastest solve for each day in the selected sessions, without other analysis filters or the recent-solves limit.", ChartType.Line, 'Date', 'Time (s)', true, true);
+        plot('runningEfficiency', "Solve Efficiency", TOOLTIPS.chartPanel.runningEfficiency, ChartType.Line, 'Solve Number', 'Percentage');
+        charts.push(buildChartHtml(<SortableGrid rows={c.bestSolvesData} columns={BEST_SOLVES_COLS} className="clickable-grid" onCellClick={({ row }) => this.openSolveSource(row)} />, `Top ${Const.FastestSolvesCount} Fastest Solves`, TOOLTIPS.chartPanel.fastestSolves(Const.FastestSolvesCount)));
+        plot('runningStdDev', "Average Standard Deviation", TOOLTIPS.chartPanel.runningStdDev);
+        plot('runningColorPercentages', "Percentage of Solves by Cross Color", TOOLTIPS.chartPanel.runningColorPercentages, ChartType.Line, 'Solve Number', 'Percentage');
+        plot('runningFirstPairPercentages', "First F2L Pair", TOOLTIPS.chartPanel.runningFirstPairPercentages, ChartType.Line, 'Solve Number', 'Percentage');
+        plot('inspection', "Average solve time by inspection time", TOOLTIPS.chartPanel.inspection, ChartType.Bar, 'Inspection Time (s)', 'Solve Time (s)');
+        if (hasStepTimings) plot('stepAverages', "Average Time by Step", TOOLTIPS.chartPanel.stepAverages);
+        plot('runningInspection', "Average Inspection Time", TOOLTIPS.chartPanel.runningInspection);
+        charts.push(buildChartHtml(<SortableGrid rows={c.streakRows} columns={STREAK_COLS} onCellClick={({ row, column }) => this.selectSolves(streakSolves((p.recordSolves ?? p.solves).filter(solve => !solve.isCorrupt && solve.session !== 'Retries'), column.key === 'currentstreak' ? row.currentDays : row.bestDays), 0, `Daily best - ${row.time}`)} />, "Longest Daily Streaks", TOOLTIPS.chartPanel.longestDailyStreaks));
+        plot('dailyRecord', "Daily Fastest Solve", TOOLTIPS.chartPanel.dailyRecord, ChartType.Line, 'Date', 'Time (s)', true, true);
         charts.push(buildChartHtml(<SortableGrid rows={c.recordRows} columns={RECORD_COLS} onCellClick={({ row }) => {
             const datasetIndex = c.recordHistory.datasets.findIndex(dataset => dataset.label === `Record ${row.recordType}`), dataset = c.recordHistory.datasets[datasetIndex];
             if (dataset?.data.length) this.openAverage('recordHistory', { datasetIndex, index: dataset.data.length - 1 } as ActiveElement);
-        }} />, "Current Records", "All-time Single, Ao5, Ao12, Ao100, and Ao1000 in the selected sessions, without other analysis filters or the recent-solves limit. Click to view the record solve or average."));
+        }} />, "Current Records", TOOLTIPS.chartPanel.currentRecords));
 
-        if (hasOll) plot('ollCategory', "OLL Edge Orientation", "Percentages among recognized OLL cases in each window. Missing case data produces gaps; import and re-analyze saved recordings in Options to reconstruct it.", ChartType.Line, 'Solve Number', 'Percentage');
-        if (hasPll) plot('pllCategory', "PLL Corner Permutation", "Percentages among recognized PLL cases in each window. Missing case data produces gaps; import and re-analyze saved recordings in Options to reconstruct it.", ChartType.Line, 'Solve Number', 'Percentage');
+        if (hasOll) plot('ollCategory', "OLL Edge Orientation", TOOLTIPS.chartPanel.ollCategory, ChartType.Line, 'Solve Number', 'Percentage');
+        if (hasPll) plot('pllCategory', "PLL Corner Permutation", TOOLTIPS.chartPanel.pllCategory, ChartType.Line, 'Solve Number', 'Percentage');
 
         if (hasStepTimings && p.methodName === MethodName.CFOP && p.steps.length === Const.MethodSteps[MethodName.CFOP].length) {
-            plot('typicalCompare', "Time Per Step, Compared to Typical Solver", "This chart shows how long each step takes, compared to a typical solver at your average. The 'typical' data is calculated based on a tool provided from Felix Zemdegs's CubeSkills blog", ChartType.Bar, 'Step Name', 'Time (s)', false);
+            plot('typicalCompare', "Time Per Step, Compared to Typical Solver", TOOLTIPS.chartPanel.typicalCompare, ChartType.Bar, 'Step Name', 'Time (s)', false);
         }
 
         if (hasStepTimings && p.steps.length >= 2) {
-            plot('stepPercentages', "Percentage of the Solve Each Step Took", "This chart shows what percentage of your solve each step takes", ChartType.Doughnut, '', '');
+            plot('stepPercentages', "Percentage of the Solve Each Step Took", TOOLTIPS.chartPanel.stepAverages, ChartType.Doughnut, '', '');
         }
 
         if (p.steps.length === Const.MethodSteps[p.methodName].length) {
-            plot('goodBad', "Percentage of 'Good' and 'Bad' Solves", "This chart shows your running average of solves considered 'good' and 'bad'. This can be configured in the filter panel. Just set the good and bad values to times you feel are correct", ChartType.Line, 'Solve Number', 'Percentage');
+            plot('goodBad', "Percentage of 'Good' and 'Bad' Solves", TOOLTIPS.chartPanel.goodBad, ChartType.Line, 'Solve Number', 'Percentage');
         }
-        plot('recordHistory', "History of Records", "All-time PBs in the selected sessions, without other analysis filters or the recent-solves limit. Standard averages trim 5% from each end, rounded up.", ChartType.Line, 'Date', 'Time (s)', true, true);
+        plot('recordHistory', "History of Records", TOOLTIPS.chartPanel.recordHistory, ChartType.Line, 'Date', 'Time (s)', true, true);
 
         return (
             <div>

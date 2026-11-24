@@ -4,22 +4,8 @@ import { consolidateMoves, getAufMovesForSolve, tokenizeMoves } from '../Data/Cs
 import { Solve, StepName } from '../Models/Types';
 import { memoize } from '../Helpers/memoize';
 
-const CASE_MOVES_RULE = 'More than 2 extra core moves versus your typical count for this case and method (5+ examples required). AUF excluded.';
-export const MISTAKES = {
-    crossMoves: { label: 'Cross: Inefficient solution', rule: 'More than 8 slice turns for the cross. An intentional X-cross can also trigger this.' },
-    f2lMoves: { label: 'F2L pair: Inefficient solution', rule: 'More than 12 slice turns for any individual F2L pair.' },
-    ollMoves: { label: 'OLL: Inefficient solution', rule: CASE_MOVES_RULE },
-    pllMoves: { label: 'PLL: Inefficient solution', rule: CASE_MOVES_RULE },
-    f2lPause: { label: 'F2L: Long recognition gap', rule: 'More than 2 seconds before starting any F2L pair.' },
-    ollRecognition: { label: 'OLL: Long recognition', rule: 'More than 2 seconds before starting OLL.' },
-    pllRecognition: { label: 'PLL: Long recognition', rule: 'More than 2 seconds before starting PLL.' },
-    singleUndo: { label: 'Single-move undo', rule: "A move immediately cancelled by its inverse (R R') in the named step or AUF." },
-    sequenceUndo: { label: 'Multi-move undo', rule: "Two or more moves immediately undone in reverse (R U U' R') in this step or AUF. The inner single undo isn't counted again." },
-    redundantTurns: { label: 'Redundant same-face turns', rule: 'Explicit 3+ quarter turns (U3, U4). Sensor-split turns such as U U are consolidated into U2 before analysis; actual undos are retained.' },
-    slowAuf: { label: 'AUF: Slow adjustment', rule: 'More than 0.5 seconds in the post-AUF of a last-layer step. Pre-AUF is excluded.' },
-    slowStep: { label: 'Unusually slow', rule: 'This step exceeds its rolling average plus 3 standard deviations, using the selected window. F2L includes outliers in any pair.' },
-    slowSolve: { label: 'Unusually slow solve', rule: 'Solve time exceeds its rolling average plus 3 standard deviations, using the selected window.' },
-} as const;
+import { MISTAKES } from '../../../shared/mistakes';
+export { MISTAKES } from '../../../shared/mistakes';
 export type MistakeKind = keyof typeof MISTAKES;
 export interface Mistake { kind: MistakeKind; step?: StepName; auf?: boolean; estimatedSeconds?: number; stepCosts?: Partial<Record<StepName, number>>; }
 export interface MistakeSummary { sampleCount: number; windowSize: number; counts: (Mistake & { count: number })[]; }
@@ -78,13 +64,13 @@ export function markMistakes(solves: Solve[], windowSize: number, prepared = fal
     const valid = solves.filter(s => !s.isCorrupt && !s.dnf);
     // Only freshly worker-analyzed, unchanged datasets may bypass content hashing.
     const preparedContext = valid[0]?.mistakeContext;
-    if (prepared && preparedContext?.startsWith(`3:${windowSize}:`) && valid.every(s => s.mistakeContext === preparedContext && s.mistakes)) return solves;
+    if (prepared && preparedContext?.startsWith(`4:${windowSize}:`) && valid.every(s => s.mistakeContext === preparedContext && s.mistakes)) return solves;
     let hash = 2166136261;
     for (const solve of valid) {
-        const key = `${solve.id}:${solve.time}:${solve.method}:${solve.source}:${solve.date.getTime()}:${solve.crossColor}:${solve.executionTime}:${solve.turns}:${solve.steps.map(s => `${s.name},${s.case},${s.time},${s.turns},${s.recognitionTime},${s.executionTime},${s.postAufTime},${moveHash(s.moves)}`).join(';')}`;
+        const key = `${solve.id}:${solve.time}:${solve.method}:${solve.source}:${solve.date.getTime()}:${solve.crossColor}:${solve.executionTime}:${solve.turns}:${JSON.stringify(solve.pairChoices)}:${solve.steps.map(s => `${s.name},${s.case},${s.time},${s.turns},${s.recognitionTime},${s.executionTime},${s.postAufTime},${moveHash(s.moves)}`).join(';')}`;
         for (let i = 0; i < key.length; i++) hash = multiply(hash ^ key.charCodeAt(i), 16777619);
     }
-    const context = `3:${windowSize}:${hash}`;
+    const context = `4:${windowSize}:${hash}`;
     if (valid.every(solve => solve.mistakeContext === context && solve.mistakes)) return solves;
     if (latest?.context === context) {
         valid.forEach((solve, i) => Object.assign(solve, latest!.reasons[i], { mistakeContext: context }));
@@ -123,6 +109,7 @@ export function markMistakes(solves: Solve[], windowSize: number, prepared = fal
         if (slowSolves[i]) add('slowSolve', undefined, undefined, solve.time - (average[Math.max(0, i - windowSize)] ?? solve.time));
         slowSteps.forEach(({ actualStep, step, map, times, average }) => { if (map[i]) add('slowStep', step, undefined, times[i] - (average[Math.max(0, i - windowSize)] ?? times[i]), actualStep); });
         const auf = getAufMovesForSolve(solve);
+        for (const choice of solve.pairChoices ?? []) add('f2lChoice', choice.step, false, choice.wastedMoves * (solve.executionTime / solve.turns || 0));
         for (const { name, turns, moves, case: caseName, recognitionTime, time, postAufTime, executionTime } of solve.steps) {
             const pair = PAIRS.has(name), ll = LAST_LAYER.has(name);
             const turnTime = executionTime > 0 && turns > 0 ? executionTime / turns : 0.2;
@@ -150,7 +137,7 @@ export function mistakeWindow(solves: Solve[], windowSize: number): Solve[] {
     const size = Number.isFinite(windowSize) ? Math.max(0, Math.floor(windowSize)) : 0;
     return size ? solves.filter(s => !s.isCorrupt).sort((a, b) => a.date.getTime() - b.date.getTime()).slice(-size) : [];
 }
-export function summarizeMistakes(solves: Solve[], windowSize: number): MistakeSummary {
+export function summarizeMistakes(solves: Solve[], windowSize: number, disabled: string[] = []): MistakeSummary {
     const recent = mistakeWindow(solves, windowSize);
     const counts = new Map<string, Mistake & { count: number }>();
     (Object.keys(MISTAKES) as MistakeKind[]).filter(kind => !['slowStep', 'singleUndo', 'sequenceUndo', 'redundantTurns'].includes(kind))
@@ -159,5 +146,5 @@ export function summarizeMistakes(solves: Solve[], windowSize: number): MistakeS
         const unique = new Map((solve.mistakes ?? []).map(mistake => [mistakeKey(mistake), mistake]));
         unique.forEach(({ kind, step, auf }, key) => counts.set(key, { kind, step, auf, count: (counts.get(key)?.count ?? 0) + 1 }));
     }
-    return { sampleCount: recent.length, windowSize: Number.isFinite(windowSize) ? Math.max(0, Math.floor(windowSize)) : 0, counts: Array.from(counts.values()).sort((a, b) => b.count - a.count) };
+    return { sampleCount: recent.length, windowSize: Number.isFinite(windowSize) ? Math.max(0, Math.floor(windowSize)) : 0, counts: Array.from(counts.values()).filter(item => !disabled.includes(item.kind)).sort((a, b) => b.count - a.count) };
 }

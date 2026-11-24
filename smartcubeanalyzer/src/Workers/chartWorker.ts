@@ -6,7 +6,9 @@ import { getAufMovesForSolve } from '../Data/CsvParser';
 import { summarizeMistakes } from '../Analysis/MistakeAnalysis';
 import { Const } from '../Models/Constants';
 import { AlgoPracticeRow, CaseStats, ChartDataBundle, ChartSettings, FastestSolve, LabelledChart, caseCategory, caseSteps, getStep, MethodName, RecordRow, Solve, StepName, StreakRow } from '../Models/Types';
-import { calendarDay, streakWindows } from '../../../shared/statistics/streaks';
+import { calendarDay, STREAK_TARGETS, streakLabel, streakWindows } from '../../../shared/statistics/streaks';
+import { formatSeconds, setTimeDisplay } from '../../../shared/display';
+import type { MistakeCategory } from '../../../shared/mistakes';
 
 export interface WorkerInput extends ChartSettings {
     requestId: number;
@@ -16,6 +18,8 @@ export interface WorkerInput extends ChartSettings {
     methodName: MethodName;
     isDark: boolean;
     precision?: 2 | 3;
+    showMinutes?: boolean;
+    disabledMistakes?: MistakeCategory[];
     chopPercentage?: number;
 }
 
@@ -23,14 +27,12 @@ export interface WorkerInput extends ChartSettings {
 
 export function buildAllStreakRows(solves: Solve[], today = new Date()): StreakRow[] {
     const daily = [...fastestByDay(solves).values()];
-    const targets = [5, 10, 15, 20, 30, 10000] as const;
-    const labels: { [k: number]: string } = { 5: 'Sub-5', 10: 'Sub-10', 15: 'Sub-15', 20: 'Sub-20', 30: 'Sub-30', 10000: 'Overall' };
-    return targets.map(t => {
-        const windows = streakWindows(daily.filter(solve => t === 10000 || !solve.dnf && solve.time < t)
+    return STREAK_TARGETS.map(t => {
+        const windows = streakWindows(daily.filter(solve => t === Infinity || !solve.dnf && solve.time < t)
             .map(solve => calendarDay(solve.endDate ?? solve.date)), calendarDay(today));
         const longest = String(windows.best.length), current = String(windows.current.length);
         return {
-            time: labels[t],
+            time: streakLabel(t),
             longeststreak: longest,
             currentstreak: longest === current && current !== '0' ? `${current} 🔥` : current,
             currentDays: windows.current, bestDays: windows.best,
@@ -50,7 +52,7 @@ export function buildRecordRows(solves: Solve[], precision = 3, records = record
     return RECORD_WINDOWS.map((window, i) => {
         const times = records[i];
         const best = times.reduce((a, b) => Math.min(a, b), Infinity);
-        return { recordType: window === 1 ? 'Single' : `Ao${window}`, time: !times.length ? '-' : best === Infinity ? 'DNF' : best.toFixed(precision) };
+        return { recordType: window === 1 ? 'Single' : `Ao${window}`, time: !times.length ? '-' : best === Infinity ? 'DNF' : formatSeconds(best, precision) };
     });
 }
 
@@ -191,7 +193,7 @@ export function buildAlgorithmPracticeRows(solves: Solve[], steps: StepName[], w
             case: cs.caseName, total: cs.totalCount, failed: cs.failureCount,
             failureRate: cs.failureRate.toFixed(1) + '%', failedSolveIds: cs.instances.filter(instance => instance.failed).map(instance => instance.solveId),
             avgMoves: cs.avgMoves.toFixed(1), expectedMoves: cs.expectedMovesBase,
-            avgWasted: (wasted / count).toFixed(1), avgTime: (time / count).toFixed(precision),
+            avgWasted: (wasted / count).toFixed(1), avgTime: formatSeconds(time / count, precision),
         };
     });
 }
@@ -200,7 +202,7 @@ export function buildAlgorithmPracticeRows(solves: Solve[], steps: StepName[], w
 
 export function computeBestSolvesData(solves: Solve[], precision = 3): FastestSolve[] {
     return solves.slice().sort((a, b) => a.time - b.time).slice(0, Const.FastestSolvesCount).map(solve => ({
-        date: solve.date.toDateString(), time: solve.time.toFixed(precision),
+        date: solve.date.toISOString(), time: formatSeconds(solve.time, precision),
         scramble: solve.scramble, id: solve.id, fullstep: solve.isFullStep ? 'Yes 🔥' : 'No',
         source: solve.source, rawSourceId: solve.rawSourceId,
     }));
@@ -209,6 +211,7 @@ export function computeBestSolvesData(solves: Solve[], precision = 3): FastestSo
 // ── Main computation ──────────────────────────────────────────────────────────
 
 export function computeAllChartData(input: WorkerInput): ChartDataBundle {
+    setTimeDisplay(input.showMinutes !== false);
     const { windowSize, pointsPerGraph, steps, goodTime, badTime, methodName, use4SegmentTiming, isDark } = input;
     const solves = input.solves.filter(s => !s.dnf);
     const recordSolves = (input.recordSolves ?? input.solves).filter(solve => !solve.isCorrupt && solve.session !== 'Retries'), records = recordTimes(recordSolves);
@@ -227,7 +230,7 @@ export function computeAllChartData(input: WorkerInput): ChartDataBundle {
         paint({ ...data, labels: data.labels?.map(label => String(numbers[Number(label) - 1])) });
 
     const cache: ChartDataBundle = {
-        mistakes: summarizeMistakes(solves, windowSize),
+        mistakes: summarizeMistakes(solves, windowSize, input.disabledMistakes),
         runningAverage: paintRolling(buildRunningAverageData(input.solves, windowSize, pointsPerGraph, input.chopPercentage), numbers),
         runningStdDev: paintRolling(buildRunningStdDevData(solves, windowSize, pointsPerGraph)),
         runningTps: paintRolling(buildRunningTpsData(solves, windowSize, pointsPerGraph)),

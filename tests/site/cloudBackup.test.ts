@@ -2,7 +2,7 @@
 import type { Solve } from '../../timer/src/Core/engine';
 import { backupNow, cloudState, configureCloud, connectCloud, decodeCloudBackup, dedupeById, encodeCloudBackup, initializeCloud, noteCloudSolve, restoreNow } from '../../src/cloud/backup';
 import { CloudHttpError, readRemote, writeRemote } from '../../src/cloud/providers';
-import { excludedSettings, userSettings } from '../fixtures/userSettings';
+import { excludedSettings, orientationAttempt, userSettings } from '../fixtures/userSettings';
 import { settingKeys, validateSettings, type Settings } from '../../src/cloud/backupSettings';
 
 jest.mock('../../src/cloud/providers', () => ({
@@ -32,6 +32,7 @@ const values = new Map<string, string>();
 const local = { id: 'local', status: 'complete', duration: 10000 } as Solve;
 const cloud = { id: 'cloud', status: 'complete', duration: 12000 } as Solve;
 const same = { id: 'shared', status: 'complete', duration: 8000 } as Solve;
+const attemptsKey = 'cuberplus-orientation-attempts-v1';
 const remote = async (solves: Solve[], settings = {}) => ({
   id: 'file', revision: 'etag', content: await encodeCloudBackup({
     format: 'cuberplus-cloud-v1', savedAt: '2026-11-05T00:00:00.000Z',
@@ -77,6 +78,53 @@ test('startup resumes pending automatic backups without requiring another solve'
   expect(writeRemote).toHaveBeenCalledTimes(1);
   expect(cloudState().pending).toBe(0);
   expect(cloudState().lastBackup).not.toBeNull();
+});
+test.each(['google', 'microsoft'] as const)('%s backs up exact flashcard statistics and merges both devices on upload and restore', async provider => {
+  configureCloud(provider, false, false);
+  const localAttempt = { ...orientationAttempt, id: 'local-card', date: '2026-11-23T12:00:00.000Z', answer: false, correct: false, milliseconds: 500 };
+  const cloudAttempt = { ...orientationAttempt, id: 'cloud-card', date: '2026-11-21T12:00:00.000Z', gray: false };
+  localStorage.setItem(attemptsKey, JSON.stringify([localAttempt, orientationAttempt]));
+  localStorage.setItem('cuberplus-orientation-settings-v1', userSettings['cuberplus-orientation-settings-v1']!);
+  jest.mocked(readRemote).mockResolvedValue(await remote([], {
+    [attemptsKey]: JSON.stringify([cloudAttempt, { ...orientationAttempt, milliseconds: 900 }]),
+  }));
+  expect(await backupNow()).toBe(true);
+  const [uploadedProvider, content] = jest.mocked(writeRemote).mock.calls[0];
+  const decoded = await decodeCloudBackup(content);
+  expect(uploadedProvider).toBe(provider);
+  expect(JSON.parse(decoded.settings[attemptsKey]!)).toEqual([localAttempt, orientationAttempt, cloudAttempt]);
+  expect(decoded.settings['cuberplus-orientation-settings-v1']).toBe(userSettings['cuberplus-orientation-settings-v1']);
+  const deviceOnly = { ...orientationAttempt, id: 'device-only', date: '2026-11-23T13:00:00.000Z' };
+  localStorage.setItem(attemptsKey, JSON.stringify([{ ...orientationAttempt, milliseconds: 999 }, deviceOnly]));
+  jest.mocked(readRemote).mockResolvedValue({ id: 'file', revision: 'etag', content });
+  for (let i = 0; i < 2; i++) {
+    expect(await restoreNow()).toBe(true);
+    expect(JSON.parse(localStorage.getItem(attemptsKey)!)).toEqual([deviceOnly, localAttempt, orientationAttempt, cloudAttempt]);
+  }
+  expect(writeRemote).toHaveBeenCalledTimes(1);
+});
+test.each([null, '[]'])('upload from a browser with %s flashcard history preserves cloud-only statistics', async history => {
+  if (history !== null) localStorage.setItem(attemptsKey, history);
+  jest.mocked(readRemote).mockResolvedValue(await remote([], { [attemptsKey]: JSON.stringify([orientationAttempt]) }));
+  expect(await backupNow()).toBe(true);
+  const decoded = await decodeCloudBackup(jest.mocked(writeRemote).mock.calls[0][1]);
+  expect(JSON.parse(decoded.settings[attemptsKey]!)).toEqual([orientationAttempt]);
+});
+test('merged flashcard history is chronological even when devices save different date offsets', async () => {
+  const later = { ...orientationAttempt, date: '2026-11-23T12:00:00.000Z' };
+  const earlier = { ...orientationAttempt, id: 'offset-card', date: '2026-11-23T14:00:00.000+03:00' };
+  localStorage.setItem(attemptsKey, JSON.stringify([earlier]));
+  jest.mocked(readRemote).mockResolvedValue(await remote([], { [attemptsKey]: JSON.stringify([later]) }));
+  expect(await backupNow()).toBe(true);
+  expect(JSON.parse((await decodeCloudBackup(jest.mocked(writeRemote).mock.calls[0][1])).settings[attemptsKey]!)).toEqual([later, earlier]);
+});
+test('restoring can repair invalid local settings and explicitly clear invalid flashcard history', async () => {
+  localStorage.setItem('recent-solve-limit', 'invalid');
+  localStorage.setItem(attemptsKey, 'invalid');
+  jest.mocked(readRemote).mockResolvedValue(await remote([], { 'recent-solve-limit': '2500', [attemptsKey]: null }));
+  expect(await restoreNow()).toBe(true);
+  expect(localStorage.getItem('recent-solve-limit')).toBe('2500');
+  expect(localStorage.getItem(attemptsKey)).toBeNull();
 });
 test('restore dedupes by ID, preserves local-only solves, and uses cloud edits and settings', async () => {
   jest.mocked(readRemote).mockResolvedValue(await remote([cloud, { ...same, duration: 6000 }, cloud], {
@@ -192,11 +240,14 @@ test('failed automatic backups preserve pending work and retry it after reconnec
   expect(cloudState().error).toBe(false);
 });
 test('a concurrent cloud edit is reread and merged rather than blindly overwritten', async () => {
-  jest.mocked(readRemote).mockResolvedValueOnce(await remote([cloud])).mockResolvedValueOnce(await remote([cloud, { ...cloud, id: 'other-device' }]));
+  const otherAttempt = { ...orientationAttempt, id: 'other-card', date: '2026-11-23T12:00:00.000Z' };
+  jest.mocked(readRemote).mockResolvedValueOnce(await remote([cloud], { [attemptsKey]: JSON.stringify([orientationAttempt]) }))
+    .mockResolvedValueOnce(await remote([cloud, { ...cloud, id: 'other-device' }], { [attemptsKey]: JSON.stringify([orientationAttempt, otherAttempt]) }));
   jest.mocked(writeRemote).mockRejectedValueOnce(new CloudHttpError(412));
   expect(await backupNow()).toBe(true);
   const decoded = await decodeCloudBackup(jest.mocked(writeRemote).mock.calls[1][1]);
   expect(decoded.solves.map(solve => solve.id)).toEqual(['cloud', 'other-device', 'local', 'shared']);
+  expect(JSON.parse(decoded.settings[attemptsKey]!)).toEqual([otherAttempt, orientationAttempt]);
 });
 test('solves completed while an upload is in flight remain pending if absent from its snapshot', async () => {
   configureCloud('google', true, false);
@@ -243,6 +294,8 @@ test.each([
   ['cuberplus-trainer-blitz-v1', '[{"id":"x","kind":"PLL","date":"2026-11-13","milliseconds":1,"splits":[{"caseId":"T","milliseconds":-1}]}]'],
   ['cuberplus-my-cubes-v1', '[{"id":"cube","mac":123}]'],
   ['cuberplus-custom-algorithms', '{"PLL-T":[123]}'],
+  ['cuberplus-orientation-attempts-v1', JSON.stringify([{ ...orientationAttempt, milliseconds: -1 }])],
+  ['cuberplus-orientation-attempts-v1', JSON.stringify([{ ...orientationAttempt, facelets: 'bad' }])],
 ])('untrusted %s content is rejected before cloud restore or upload modifies anything', async (key, value) => {
   jest.mocked(readRemote).mockResolvedValue(await remote([cloud], { [key]: value }));
   localStorage.setItem('theme', 'dark');

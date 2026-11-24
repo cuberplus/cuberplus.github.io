@@ -1,5 +1,7 @@
 export const calendarDay = (date: Date): number =>
   Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000;
+export const STREAK_TARGETS = [5, 7, 10, 15, 20, 30, Infinity];
+export const streakLabel = (target: number) => Number.isFinite(target) ? `Sub-${target}` : 'Overall';
 
 export function streakWindows(days: number[], today = calendarDay(new Date())): { current: number[]; best: number[] } {
   const sorted = [...new Set(days)].filter(day => day <= today).sort((a, b) => a - b);

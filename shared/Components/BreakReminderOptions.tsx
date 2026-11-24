@@ -3,6 +3,7 @@ import { usePageDialog } from '@cuberplus/navigation';
 import { BREAK_CHANGED, breakRanges, readBreakSettings, writeBreakSettings, type BreakSettings } from '../../timer/src/Core/breakReminder';
 import { InfoTip } from './InfoTip';
 import { SettingsSection } from './SettingsSection';
+import { TOOLTIPS } from '../tooltips';
 
 const fields = [
   ['minutes', 'Break length (minutes)', 0.1],
@@ -25,7 +26,7 @@ export function BreakReminderOptions({ disabled = false }: { disabled?: boolean 
     try { writeBreakSettings(next); setSettings(next); setError(''); return true; }
     catch { setError('Break reminder settings could not be saved.'); return false; }
   }
-  return <SettingsSection title="Break reminder" help={<InfoTip>Pause the timer after an unusually slow solve or a streak of slower-than-average solves in the same session. Only completed solves count; retries do not. Reminders require a full average window of prior completed solves. Both triggers use that window; streaks compare each solve with its own prior average. Breaks persist when you leave or reload Timer.</InfoTip>}>
+  return <SettingsSection title="Break reminder" help={<InfoTip>{TOOLTIPS.breakReminderOptions.overview}</InfoTip>}>
     <label className="form-check"><input className="form-check-input" type="checkbox" checked={settings.enabled} disabled={disabled}
       onChange={event => {
         if (event.target.checked) change({ ...settings, enabled: true });

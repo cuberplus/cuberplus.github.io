@@ -59,6 +59,7 @@
 .trainer-case-choice.trainer-case-card:focus-visible { outline: 3px solid var(--cp-accent); outline-offset: 3px; }
 .trainer-drill-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: .75rem; margin-block-end: 1rem; }
 .trainer-practice table :is(th, td) { white-space: nowrap; }
+.trainer-practice-case-image { display: flex; justify-content: center; }
 .mistake-practice-dialog { inline-size: min(900px, calc(100% - 2rem)); max-block-size: calc(100% - 2rem); overflow: auto; color: var(--cp-text); }
 .mistake-practice-dialog::backdrop { background: #000a; overflow: hidden; overscroll-behavior: contain; }
 .mistake-practice-dialog:modal { overscroll-behavior: contain; }
@@ -71,3 +72,23 @@
 }
 .trainer-solution .move { display: inline-block; padding: 0 .2rem; color: var(--cp-text); }
 .trainer-solution .move.done { color: var(--bs-success-text-emphasis); text-decoration: underline; }
+.orientation-answers { display: flex; justify-content: space-between; gap: .75rem; }
+.orientation-answers button { min-block-size: 44px; }
+.orientation-swipe-area { position: relative; overflow: clip; }
+.orientation-track { display: grid; grid-template-columns: 100% 100% 100%; overflow: scroll clip; scroll-snap-type: x mandatory; overscroll-behavior-x: none; scrollbar-width: none; cursor: grab; }
+.orientation-track > * { scroll-snap-align: start; min-inline-size: 0; }
+.orientation-card { background: var(--cp-panel); }
+.orientation-cube { pointer-events: none; }
+.orientation-case-image { inline-size: 84px; block-size: 84px; flex: 0 0 84px; }
+.orientation-feedback { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.orientation-flashcards table { white-space: nowrap; }
+.drill-grid { min-inline-size: 0; max-inline-size: 100%; max-block-size: 32rem; overflow: auto; }
+.drill-grid table { min-inline-size: 36rem; }
+.drill-grid thead { position: sticky; inset-block-start: 0; z-index: 1; background: var(--cp-panel); }
+.drill-grid th:has(> button) { padding: 0; }
+.drill-grid .trainer-sort { inline-size: 100%; min-block-size: 44px; padding: .5rem; }
+.drill-grid :is(button, [tabindex]):focus-visible { outline: 2px solid var(--cp-accent); outline-offset: -2px; }
+.drill-sort-direction { display: inline-block; inline-size: 1em; margin-inline-start: .35em; }
+.drill-sort-direction::after { content: '\2195'; opacity: .6; }
+.drill-grid [aria-sort="ascending"] .drill-sort-direction::after { content: '\2191'; opacity: 1; }
+.drill-grid [aria-sort="descending"] .drill-sort-direction::after { content: '\2193'; opacity: 1; }

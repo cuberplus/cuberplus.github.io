@@ -7,18 +7,19 @@ import { deserialize, serialize } from 'node:v8';
 import { IDBFactory } from 'fake-indexeddb';
 import type { SmartCubeEvent } from 'smartcube-web-bluetooth';
 import { getPenaltyReasons, setPenalty, type Solve } from '../../timer/src/Core/engine';
-import { averageDetails, cubeastCSV, dailyStreak, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats, solveEndDate } from '../../timer/src/Data/storage';
+import { averageDetails, cubeastCSV, dailyStreakNotification, dailyStreakSolves, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats, solveEndDate } from '../../timer/src/Data/storage';
 import { loadCube, SOLVED, Cube, inverse, isMove, movesOf, locations, sameAxis, simplifyMoves, crossRotation, generateStageScramble } from '../../timer/src/Core/puzzle';
 import { PageLocation, SettingsProvider } from '@cuberplus/navigation';
 import { relativeTime } from '../../timer/src/Data/relativeTime';
 import { BREAK_ACTIVE, BREAK_SETTINGS, breakDefaults } from '../../timer/src/Core/breakReminder';
+import { formatSeconds } from '../../shared/display';
 
 const cube = await loadCube();
 const generate = jest.fn<() => Promise<string>>();
 const calibrate = jest.fn<() => Promise<void>>();
 const save = jest.fn<(solves: Solve[], derivedOnly?: boolean | 'reanalysis') => Promise<void>>().mockResolvedValue();
 const read = jest.fn<() => Promise<Solve[]>>().mockImplementation(async () => recovered);
-const statistics = jest.fn(sessionStats), streakStatistics = jest.fn(dailyStreak), backup = jest.fn<(solves: Solve[]) => string>().mockReturnValue('');
+const statistics = jest.fn(sessionStats), streakStatistics = jest.fn(dailyStreakNotification), backup = jest.fn<(solves: Solve[]) => string>().mockReturnValue('');
 const parseBackup = jest.fn<() => { solves: Solve[]; settings: Record<string, string | null> }>();
 const countTurns = jest.fn((solve: Solve) => solve.moves.length);
 const erase = jest.fn<(id: string) => Promise<void>>().mockImplementation(async id => {
@@ -51,7 +52,7 @@ await jest.unstable_mockModule('../../timer/src/Bluetooth/bluetooth', () => ({ B
 } }));
 await jest.unstable_mockModule('../../timer/src/Data/storage', () => ({
   saveSolves: save, deleteSolve: erase, updateSession: changeSession, readSolves: read, recoverLocalSolves: async () => recovered,
-  cubeastCSV, averageDetails, dailyStreak: streakStatistics, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats: statistics, solveEndDate, turns: countTurns,
+  cubeastCSV, averageDetails, dailyStreakNotification: streakStatistics, dailyStreakSolves, newPersonalBests, numberedSolves, personalBestNotifications, sessionStats: statistics, solveEndDate, turns: countTurns,
   formatTime: (ms: number, precision: 2 | 3 = 2) => (ms / 1000).toFixed(precision),
 }));
 await jest.unstable_mockModule('../../src/cloud/userBackup', () => ({
@@ -139,6 +140,15 @@ async function enableExtraTurnPenalty() {
   await act(async () => container.querySelector<HTMLInputElement>('input[aria-describedby="over-turn-penalty-help"]')!.click());
   await click('Close options');
 }
+test('Timer Options omit duplicate favorite controls without changing preferences', async () => {
+  localStorage.setItem('timer-non-favorite-mistakes', 'true');
+  await click('Options');
+  const dialog = container.querySelector('dialog[aria-labelledby="options-title"]')!;
+  expect(dialog.textContent).not.toContain('Mark non-favorite algs as mistakes');
+  expect(dialog.textContent).not.toContain('Automatically find favorites');
+  expect(localStorage.getItem('timer-non-favorite-mistakes')).toBe('true');
+  expect(dialog.querySelector('input[aria-describedby="over-turn-penalty-help"]')).not.toBeNull();
+});
 function move(notation: string, hostTime: number, serial?: number) {
   jest.mocked(performance.now).mockReturnValue(hostTime);
   physicalFacelets = cube.facelets(cube.parse(physicalFacelets).applyMove(notation)); physicalSerial = serial;
@@ -887,7 +897,7 @@ async function timedApp(solves: Solve[] = []) {
   await act(async () => root.render(app()));
 }
 
-test('the first daily attempt shows an independently dismissible fire with current and best streaks, only once per day', async () => {
+test('daily notifications show the qualifying streak instead of the best streak', async () => {
   const previous = Array.from({ length: 7 }, (_, i) => ({
     ...historySolve(i, 1000, 2, i % 2 ? 'Other' : 'Default'),
     createdAt: new Date(2026, 9, 1 + i, 12).toISOString(),
@@ -902,11 +912,16 @@ test('the first daily attempt shows an independently dismissible fire with curre
   expect(streakStatistics).toHaveBeenCalledTimes(1);
   expect(notice.textContent).toContain('Congratulations!');
   expect(notice.textContent).toContain('Daily Streak: 1');
-  expect(notice.textContent).toContain('Best Streak: 7');
+  expect(notice.textContent).toContain('Sub-5 streak');
+  expect(notice.textContent).not.toContain('Best Streak');
   expect(notice.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
   expect(notice.querySelector('.streak-flame')).not.toBeNull();
   expect(notice.closest('.timer-panel')).toBeNull();
   expect(container.querySelector('[aria-label="Personal best"]')).not.toBeNull();
+  await click('View Sub-5 streak solves');
+  expect(container.querySelector('[aria-label="Selected solves"] tbody tr')).not.toBeNull();
+  expect(container.querySelector('dialog.average-dialog h2')?.textContent).toBe('Sub-5 daily streak solves');
+  await click('Close solves');
   await click('Dismiss daily streak');
   expect(container.querySelector('[aria-label="Daily streak"]')).toBeNull();
   expect(container.querySelector('[aria-label="Personal best"]')).not.toBeNull();
@@ -914,19 +929,19 @@ test('the first daily attempt shows an independently dismissible fire with curre
   await act(async () => resolveNext('F L2'));
   await act(async () => { move('F', 2000); move('L2', 2100); move('L2', 2200); move("F'", 2400); });
   await act(async () => jest.advanceTimersByTime(501));
-  expect(streakStatistics).toHaveBeenCalledTimes(1);
+  expect(streakStatistics).toHaveBeenCalledTimes(2);
   expect(container.querySelector('[aria-label="Daily streak"]')).toBeNull();
   jest.setSystemTime(new Date(2026, 10, 3, 12));
   await act(async () => { move('B', 3000); move('R2', 3100); move('R2', 3200); move("B'", 3400); });
   await act(async () => jest.advanceTimersByTime(501));
   expect(container.querySelector('[aria-label="Daily streak"]')?.textContent).toContain('Daily Streak: 2');
-  expect(container.querySelector('[aria-label="Daily streak"]')?.textContent).toContain('Best Streak: 7');
+  expect(container.querySelector('[aria-label="Daily streak"]')?.textContent).toContain('Sub-5 streak');
   await click('Dismiss daily streak');
   jest.setSystemTime(new Date(2026, 10, 5, 12));
   await act(async () => { move('B', 4000); move('R2', 4100); move('R2', 4200); move("B'", 4400); });
   await act(async () => jest.advanceTimersByTime(501));
   expect(container.querySelector('[aria-label="Daily streak"]')?.textContent).toContain('Daily Streak: 1');
-  expect(container.querySelector('[aria-label="Daily streak"]')?.textContent).toContain('Best Streak: 7');
+  expect(container.querySelector('[aria-label="Daily streak"]')?.textContent).toContain('Sub-5 streak');
 });
 
 test('active attempts do not notify, but the first DNF does count toward the daily streak', async () => {
@@ -942,7 +957,7 @@ test('active attempts do not notify, but the first DNF does count toward the dai
   expect(container.querySelector('[aria-label="Personal best"]')).toBeNull();
 });
 
-test.each(['reload', 'import'])('an existing DNF today in another session suppresses streak notifications after %s', async source => {
+test.each(['reload', 'import'])('a completed solve can earn a tougher streak after a DNF loaded by %s', async source => {
   await timedApp();
   jest.setSystemTime(new Date(2026, 10, 2, 12));
   const solve = { ...historySolve(1, 1000, 2, 'Other', 'incomplete'), createdAt: new Date(2026, 10, 2, 8).toISOString() };
@@ -957,7 +972,7 @@ test.each(['reload', 'import'])('an existing DNF today in another session suppre
   expect(container.querySelector('[aria-label="Daily streak"]')).toBeNull();
   await finishFirst();
   await act(async () => jest.advanceTimersByTime(501));
-  expect(container.querySelector('[aria-label="Daily streak"]')).toBeNull();
+  expect(container.querySelector('[aria-label="Daily streak"]')?.textContent).toContain('Sub-5 streak');
 });
 
 test('the penalty-window delay across midnight does not move the first attempt into the next day', async () => {
@@ -973,7 +988,7 @@ test('the penalty-window delay across midnight does not move the first attempt i
   const notices = container.querySelectorAll('[aria-label="Daily streak"]');
   expect(notices).toHaveLength(2);
   expect(notices[1].textContent).toContain('Daily Streak: 2');
-  expect(notices[1].textContent).toContain('Best Streak: 2');
+  expect(notices[1].textContent).toContain('Sub-5 streak');
 });
 
 test('new PB celebrations wait for the penalty window and stay until dismissed without shifting the timer', async () => {
@@ -1308,7 +1323,7 @@ test.each([5, 12, 100, 1000])('current and best Ao%s open their exact windows wi
     const start = kind === 'current' ? 2 : 0;
     expect(Array.from(rows, row => row.children[0].textContent)).toEqual(solves.slice(start, start + count).map(solve => solve.id));
     expect(Array.from(rows, row => row.children[1].textContent)).toEqual(solves.slice(start, start + count).map((solve, index) => {
-      const time = `${(solve.duration / 1000).toFixed(2)}s`;
+      const time = `${formatSeconds(solve.duration / 1000)}s`;
       return index < trim || index >= count - trim ? `(${time})` : time;
     }));
     await click(`Solve ${start + 1}, open replay`);
@@ -2232,7 +2247,7 @@ test('options change timer and CFOP precision immediately and remember the prefe
   expect(container.querySelectorAll('select[aria-label="Session"]')).toHaveLength(1);
   expect(dialog.querySelector<HTMLSelectElement>('select[aria-label="Session"]')?.value).toBe('Default');
   await openSiteOptions();
-  expect(dialog.querySelectorAll('select')).toHaveLength(1);
+  expect(dialog.querySelectorAll('select')).toHaveLength(2);
   const precision = container.querySelector<HTMLSelectElement>('select[aria-label="Time precision"]')!;
   expect(precision.value).toBe('2');
   await act(async () => { precision.value = '3'; precision.dispatchEvent(new Event('change', { bubbles: true })); });

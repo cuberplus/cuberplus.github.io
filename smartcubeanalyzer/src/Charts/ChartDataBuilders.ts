@@ -20,6 +20,7 @@ import { SEGMENT_COLORS } from './ChartColors';
 import { pairColors } from '../../../shared/cube/f2l';
 import { COLORS, EDGES } from '../../../scrambler/src/cube/cube';
 import { calendarDay } from '../../../shared/statistics/streaks';
+import { formatSeconds } from '../../../shared/display';
 
 type MovingCalcFn = (values: number[], windowSize: number) => number[];
 
@@ -205,7 +206,7 @@ export function buildInspectionData(
 ): LabelledChart<'bar'> {
     const chunks = splitIntoChunks(solves.slice(-windowSize).sort((a, b) => a.inspectionTime - b.inspectionTime), Const.InspectionGraphChunks);
     return singleSeries(
-        chunks.map(chunk => '~' + calculateAverage(chunk.map(solve => solve.inspectionTime)).toFixed(precision)),
+        chunks.map(chunk => '~' + formatSeconds(calculateAverage(chunk.map(solve => solve.inspectionTime)), precision)),
         `Solve time by inspection time (of recent ${windowSize})`,
         chunks.map(chunk => calculateAverage(chunk.map(solve => solve.time))));
 }

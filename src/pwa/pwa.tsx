@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { TOOLTIPS } from '../../shared/tooltips';
 
 type InstallOffer = Event & { prompt(): Promise<{ outcome: 'accepted' | 'dismissed' } | void> };
 type InstallState = { installPrompt: InstallOffer | null; installed: boolean; installError: string; waiting: ServiceWorker | null };
@@ -44,7 +45,7 @@ export function InstallControl() {
       <button className="btn btn-outline-secondary" disabled={!installPrompt} aria-describedby="install-help" onClick={() => void installApp()}>Install app</button>
       <p id="install-help" className="small text-secondary mt-2">{installPrompt ? 'Add CuberPlus to your home screen or apps.' : 'Use your browser menu to Install app, or Share > Add to Home Screen on iPhone/iPad.'}</p>
     </div>}
-    {waiting && <button className="btn btn-outline-secondary" title="Reload CuberPlus to update. This disconnects any connected cube." onClick={() => {
+    {waiting && <button className="btn btn-outline-secondary" title={TOOLTIPS.pwa.reloadCuberPlusToUpdateThisDisconnectsAnyConnectedCube} onClick={() => {
       navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true });
       waiting.postMessage('SKIP_WAITING');
     }}>Update (reload)</button>}

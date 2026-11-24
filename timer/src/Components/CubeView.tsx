@@ -1,8 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useContext, useEffect, useRef } from 'react';
+import { SettingsContext } from '@cuberplus/navigation';
 import { Alg, Move } from 'cubing/alg';
 import { TwistyPlayer, type ExperimentalMillisecondTimestamp } from 'cubing/twisty';
 import { Cube, crossRotation, locations } from '../Core/puzzle';
 import { cfopFrame } from '../Analysis/cfop';
+import type { PieceSelection } from '../Analysis/f2lSuggestions';
+import { highlightCubies } from './cubeHighlight';
 
 interface Animation {
   cube: Cube; moves: readonly string[]; rotation: string; colorFrame: string; length: number; leaves: Move[];
@@ -10,9 +13,10 @@ interface Animation {
 }
 const timestamp = (position: number) => position * 1000 as ExperimentalMillisecondTimestamp;
 
-export function CubeView({ cube, facelets, moves, position = moves.length, speed = 1, animateSeeks = false, playback = false, seekVersion = 0, cross = null, rotation = crossRotation(cross), colorFrame = '', height = 280, hidePLL = false }: {
-  cube: Cube; facelets: string; moves: readonly string[]; position?: number; speed?: number; animateSeeks?: boolean; playback?: boolean; seekVersion?: number; cross?: number | null; rotation?: string; colorFrame?: string; height?: number; hidePLL?: boolean;
+export function CubeView({ cube, facelets, moves, position = moves.length, speed = 1, animateSeeks = false, playback = false, seekVersion = 0, cross = null, rotation = crossRotation(cross), colorFrame = '', height = 280, hidePLL = false, highlight, focusEdge, coloredPieces, ready, camera }: {
+  cube: Cube; facelets: string; moves: readonly string[]; position?: number; speed?: number; animateSeeks?: boolean; playback?: boolean; seekVersion?: number; cross?: number | null; rotation?: string; colorFrame?: string; height?: number; hidePLL?: boolean; highlight?: PieceSelection; focusEdge?: number; coloredPieces?: PieceSelection; ready?: () => void; camera?: { latitude: number; longitude: number };
 }) {
+  const { highlightAura } = useContext(SettingsContext);
   const container = useRef<HTMLDivElement>(null);
   const player = useRef<TwistyPlayer | null>(null);
   const animation = useRef<Animation | null>(null);
@@ -28,6 +32,18 @@ export function CubeView({ cube, facelets, moves, position = moves.length, speed
     };
   }, [height]);
   useEffect(() => {
+    if (player.current && camera) { player.current.cameraLatitude = camera.latitude; player.current.cameraLongitude = camera.longitude; }
+  }, [camera, height]);
+  useEffect(() => {
+    const element = player.current;
+    if (!element || !highlight || !Object.values(highlight).some(pieces => pieces.length) || !element.experimentalCurrentThreeJSPuzzleObject) return;
+    let active = true, restore: (() => void) | undefined;
+    void element.experimentalCurrentThreeJSPuzzleObject().then(object => {
+      if (active) restore = highlightCubies(object, highlight, highlightAura);
+    }).catch(() => {});
+    return () => { active = false; restore?.(); };
+  }, [highlight, height, highlightAura]);
+  useEffect(() => {
     const element = player.current;
     if (!element) return;
     const frame = cube.solved().applyAlg(colorFrame).patternData;
@@ -36,11 +52,21 @@ export function CubeView({ cube, facelets, moves, position = moves.length, speed
       ...Object.fromEntries((['EDGES', 'CORNERS'] as const).map(orbit => [orbit, {
       pieces: locations[orbit].map((indices, piece) => {
         const position = frame[orbit].pieces.indexOf(piece);
-        return { facelets: indices.map((_, sticker) => hidePLL && position < 4 &&
+        const preserved = coloredPieces?.[orbit]?.includes(piece);
+        return { facelets: indices.map((_, sticker) => focusEdge !== undefined ? (orbit === 'EDGES' && piece === focusEdge) || preserved ? 'regular' as const : 'ignored' as const : hidePLL && position < 4 &&
           sticker !== (indices.length - frame[orbit].orientation[position]) % indices.length ? 'ignored' as const : 'regular' as const) };
       }),
     }])) } };
-  }, [cube, colorFrame, hidePLL, height]);
+  }, [cube, colorFrame, hidePLL, focusEdge, coloredPieces, height]);
+  useEffect(() => {
+    const element = player.current;
+    if (!element || !ready) return;
+    let active = true;
+    void element.experimentalCurrentThreeJSPuzzleObject().then(() => {
+      requestAnimationFrame(() => { if (active) ready(); });
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [ready, height]);
   useEffect(() => {
     const element = player.current;
     if (!element) return;

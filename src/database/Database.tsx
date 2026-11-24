@@ -10,6 +10,7 @@ import { formatAlgorithm } from './formatAlgorithm';
 import { caseKeyLabel, caseLabel, caseNumber } from './caseLabels';
 import { AlgorithmNotification, DiscoverAlgorithms, type AlgorithmNotice } from './DiscoverAlgorithms';
 import './database.css';
+import { TOOLTIPS } from '../../shared/tooltips';
 
 const categoryName = (category: Category) => category === 'AF2L' ? 'Advanced F2L' : category === 'OF2L' ? 'Other F2L' : category;
 export default function Database({ caseKey }: { caseKey?: string } = {}) {
@@ -223,17 +224,17 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
                   return <div className={`database-algorithm${custom ? ' database-algorithm--custom' : ''}`} key={algorithm}>
                     <button className="database-star" type="button" aria-pressed={favorite}
                       aria-label={`${favorite ? 'Unfavorite' : 'Favorite'} ${label} algorithm ${index + 1}`}
-                      onClick={() => toggleFavorite(id)} title={favorite ? 'Remove favorite' : 'Mark as favorite'}>
+                      onClick={() => toggleFavorite(id)} title={favorite ? TOOLTIPS.database.favoriteAction : TOOLTIPS.database.favoriteActionAlternative}>
                       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z" /></svg>
                     </button>
                     {custom && <button className="database-delete" type="button"
-                      aria-label={`Delete ${label} algorithm ${index + 1}`} title="Delete your algorithm"
+                      aria-label={`Delete ${label} algorithm ${index + 1}`} title={TOOLTIPS.database.deleteYourAlgorithm}
                       onClick={() => deleteAlgorithm(key, algorithm)}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7" /></svg>
                     </button>}
                     <button className="database-unlearn" type="button" aria-pressed={unlearn.has(id)}
                       aria-label={`${unlearn.has(id) ? 'Keep' : 'Unlearn'} ${label} algorithm ${index + 1}`}
-                      title={unlearn.has(id) ? 'Stop marking this algorithm as a mistake' : 'Unlearn alg: mark its use as a mistake'}
+                      title={unlearn.has(id) ? TOOLTIPS.database.unlearnAction : TOOLTIPS.database.unlearnActionAlternative}
                       onClick={() => { const next = new Set(unlearn); if (next.has(id)) next.delete(id); else next.add(id); setUnlearn(next); }}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="m6 18 12-12" /></svg>
                     </button>

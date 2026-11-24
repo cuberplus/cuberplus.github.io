@@ -10,6 +10,6 @@ export function SettingsSection({ title, help, children, id, className = '' }: {
         <span aria-hidden="true">{open ? '\u25be' : '\u25b8'}</span> {title}
       </button>{help}
     </h2>
-    <div id={contentId} hidden={!open}>{children}</div>
+    <div id={contentId} className="settings-section-content" hidden={!open}>{children}</div>
   </section>;
 }

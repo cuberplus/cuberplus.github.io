@@ -3,12 +3,13 @@ import { solveTime, type Solve } from '../Core/engine';
 import { averageDetails, numberedSolves, turns } from '../Data/storage';
 import { AverageDialog, type AverageRow } from './AverageDialog';
 
-export function AverageDetails({ details, history, precision, view, close }: {
+export function AverageDetails({ details, history, precision, view, close, title }: {
   details: NonNullable<ReturnType<typeof averageDetails>>;
   history: Solve[];
   precision: 2 | 3;
   view: (solve: Solve) => void;
   close: () => void;
+  title?: string;
 }) {
   const rows = useMemo(() => {
     const numbers = new Map(numberedSolves(history)
@@ -23,5 +24,5 @@ export function AverageDetails({ details, history, precision, view, close }: {
       };
     });
   }, [details, history]);
-  return <AverageDialog rows={rows} time={details.time === 'DNF' ? 'DNF' : details.time / 1000} precision={precision} view={view} close={close} />;
+  return <AverageDialog rows={rows} time={details.time === 'DNF' ? 'DNF' : details.time / 1000} precision={precision} view={view} close={close} title={title} />;
 }

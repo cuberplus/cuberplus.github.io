@@ -3,6 +3,7 @@ import type { Solve } from '../Core/engine';
 import type { Cube } from '../Core/puzzle';
 import { analyzeCFOP, CFOP_STEPS, cfopTiming } from '../Analysis/cfop';
 import { formatTime } from '../Data/storage';
+import { TOOLTIPS } from '../../../shared/tooltips';
 
 // Analyzer's Cross/OLL/PLL hues, with the same dark purple for every F2L pair.
 const colors = ['rgb(100, 200, 255)', 'rgb(156, 115, 220)', 'rgb(156, 115, 220)', 'rgb(156, 115, 220)', 'rgb(156, 115, 220)', 'rgb(255, 230, 150)', 'rgb(80, 220, 220)'];
@@ -70,7 +71,7 @@ export function SolveTimeline({ cube, solve, history, elapsed, precision, open, 
       <svg aria-hidden="true" viewBox={`0 0 ${area} ${height}`} preserveAspectRatio="none">
         {labels.filter(label => label.timing).map(({ key, i, row, anchor, position }) => <line key={key} x1={position} y1={bottom ? row * 24 + 12 : (row + 1) * 24} x2={anchor} y2={bottom ? 0 : height} stroke={colors[i]} />)}
       </svg>
-      {labels.map(({ key, name, caption, i, timing, done, text, row, position }) => <span key={key} className="trail-duration" data-step={key} data-duration={timing?.time} data-status={!timing ? 'unreached' : done ? 'done' : 'pending'} role="img" aria-label={`${name}: ${text} (${!timing ? 'not reached' : done ? 'complete' : 'in progress'})`} title={timing ? `${name}: ${text}; ${formatTime(timing.recognition, precision)}s recognition / ${formatTime(timing.execution, precision)}s execution` : `${name}: not reached`} style={{ left: `${position / area * 100}%`, top: row * 24 + (bottom ? 12 : 0), width: labelWidth, [bottom ? 'borderTopColor' : 'borderBottomColor']: colors[i] }}><strong>{caption}</strong> {text}</span>)}
+      {labels.map(({ key, name, caption, i, timing, done, text, row, position }) => <span key={key} className="trail-duration" data-step={key} data-duration={timing?.time} data-status={!timing ? 'unreached' : done ? 'done' : 'pending'} role="img" aria-label={`${name}: ${text} (${!timing ? 'not reached' : done ? 'complete' : 'in progress'})`} title={timing ? TOOLTIPS.solveTimeline.stepTiming(name, text, formatTime(timing.recognition, precision), formatTime(timing.execution, precision)) : TOOLTIPS.solveTimeline.stepTimingAlternative(name)} style={{ left: `${position / area * 100}%`, top: row * 24 + (bottom ? 12 : 0), width: labelWidth, [bottom ? 'borderTopColor' : 'borderBottomColor']: colors[i] }}><strong>{caption}</strong> {text}</span>)}
     </div>;
   }
   return <div className={`mt-3 mb-3${compact ? ' timer-timeline' : ''}`} role={open ? 'button' : 'group'} aria-label={open ? 'View most recent solve' : 'Solve timeline'} tabIndex={open ? 0 : undefined} onClick={open} onKeyDown={event => { if (open && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); open(); } }} style={open ? { cursor: 'pointer' } : undefined}>
@@ -79,7 +80,7 @@ export function SolveTimeline({ cube, solve, history, elapsed, precision, open, 
       aria-label={seek ? 'Replay move' : undefined} aria-valuemin={seek ? 0 : undefined} aria-valuemax={seek ? solve.moves.length : undefined} aria-valuenow={seek ? position : undefined}
       onClick={event => { if (seek) { const rect = event.currentTarget.getBoundingClientRect(); seek(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * scale); } }}
       onKeyDown={event => { if (!seek) return; const next = event.key === 'ArrowRight' ? (position ?? 0) + 1 : event.key === 'ArrowLeft' ? (position ?? 0) - 1 : event.key === 'Home' ? 0 : event.key === 'End' ? solve.moves.length : null; if (next !== null) { event.preventDefault(); if (seekMove) seekMove(Math.max(0, Math.min(next, solve.moves.length))); else seek(next <= 0 ? -1 : solve.moves[Math.min(next, solve.moves.length) - 1].elapsed); } }}>
-      {segments.map(({ name, i, phase, start, end }) => <span key={`${i}-${phase}`} className={`trail-segment ${phase}`} data-step={i} data-phase={phase} data-start={start} data-end={end} role="img" aria-label={`${name} ${phase}: ${formatTime(end - start, precision)}s`} title={`${name} ${phase}: ${formatTime(end - start, precision)}s`} style={{ left: `${start / scale * 100}%`, width: `${(end - start) / scale * 100}%`, backgroundColor: colors[i] }} />)}
+      {segments.map(({ name, i, phase, start, end }) => <span key={`${i}-${phase}`} className={`trail-segment ${phase}`} data-step={i} data-phase={phase} data-start={start} data-end={end} role="img" aria-label={`${name} ${phase}: ${formatTime(end - start, precision)}s`} title={TOOLTIPS.solveTimeline.phaseTime(name, phase, formatTime(end - start, precision))} style={{ left: `${start / scale * 100}%`, width: `${(end - start) / scale * 100}%`, backgroundColor: colors[i] }} />)}
       {solve.status === 'active' && <span className="trail-tip" aria-hidden="true" style={{ left: `${time / scale * 100}%` }} />}
       {seek && <span className="trail-tip" aria-hidden="true" style={{ left: `${(cursor ?? (position ? solve.moves[position - 1].elapsed : 0)) / scale * 100}%` }} />}
     </div>
@@ -89,7 +90,7 @@ export function SolveTimeline({ cube, solve, history, elapsed, precision, open, 
       const average = averages[i], difference = timing && average !== undefined ? Number((timing.time / 1000).toFixed(precision)) - Number(average.toFixed(precision)) : null;
       const comparison = difference === null ? '' : difference < 0 ? 'faster' : difference > 0 ? 'slower' : 'equal';
       return <span key={i} className={comparison ? `split-${comparison}` : undefined} data-comparison={comparison || undefined}
-        aria-label={`${name}: ${timing ? formatTime(timing.time, precision) + 's' : 'not reached'}${comparison ? `, ${comparison} compared with recent 1000 average of ${average!.toFixed(precision)}s` : ''}`}>
+        aria-label={`${name}: ${timing ? formatTime(timing.time, precision) + 's' : 'not reached'}${comparison ? `, ${comparison} compared with recent 1000 average of ${formatTime(average! * 1000, precision)}s` : ''}`}>
         {name.replace('F2L Pair ', 'F2L ')}<strong>{timing ? formatTime(timing.time, precision) : '--'}</strong></span>;
     })}</div>}
   </div>;

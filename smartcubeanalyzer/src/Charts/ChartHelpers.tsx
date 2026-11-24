@@ -6,9 +6,8 @@ import { ChartType, StepName } from "../Models/Types";
 import { DARK_AXIS_COLORS } from "./ChartColors";
 import { Const } from "../Models/Constants";
 import caseImages from '../../../src/database/caseImages.json';
-
-/** The total is not one of the stacked segments, so it gets its own neutral marker. */
-const TOTAL_SQUARE = "\u25A0";
+import { formatSeconds } from '../../../shared/display';
+import { TOOLTIPS } from '../../../shared/tooltips';
 
 /** Only known cases from user-supplied CSVs get database links; skipped steps do not. */
 export function databaseCaseUrl(step: StepName, caseName: string): string | null {
@@ -21,9 +20,7 @@ export function databaseCaseUrl(step: StepName, caseName: string): string | null
     return `/database/#${step.startsWith('F2L') ? 'F2L' : step}-${caseName}`;
 }
 
-export function createTooltip(description: string) {
-    return <Tooltip id="tooltip">{description}</Tooltip>;
-}
+export function createTooltip(description: string) { return <Tooltip id="tooltip">{description}</Tooltip>; }
 
 export function ChartCard({ children, title, tooltip, label = title, scrollable = false, explorer }: {
     children: ReactNode; title: string; tooltip?: string; label?: string; scrollable?: boolean; explorer?: ReactNode;
@@ -50,7 +47,7 @@ export function buildChartHtml(chart: JSX.Element, title: string, tooltip: strin
 
 interface ScaleTitle { display?: boolean; text?: string; color?: string; }
 interface ScaleGrid { color?: string; }
-interface ScaleTicks { autoSkip?: boolean; maxRotation?: number; color?: string; precision?: number; }
+interface ScaleTicks { autoSkip?: boolean; maxRotation?: number; color?: string; precision?: number; callback?: (value: string | number) => string; }
 
 interface ScaleOptions {
     title?: ScaleTitle;
@@ -118,10 +115,9 @@ export function withCaseTooltip(options: CubeChartOptions, precision = 3): CaseC
                     beforeBody: (items: TooltipItem<'bar'>[]) => {
                         let total = 0;
                         for (const item of items) total += Number(item.parsed.y);
-                        return `${TOTAL_SQUARE} Total: ${total.toFixed(precision)}s`;
+                        return TOOLTIPS.chartHelpers.totalTime(formatSeconds(total, precision));
                     },
-                    label: (item: TooltipItem<'bar'>) =>
-                        `${shortSegmentName(item.dataset.label ?? '')}: ${Number(item.parsed.y).toFixed(precision)}s`,
+                    label: (item: TooltipItem<'bar'>) => TOOLTIPS.chartHelpers.segmentTime(shortSegmentName(item.dataset.label ?? ''), formatSeconds(Number(item.parsed.y), precision)),
                 },
             },
         },
@@ -157,6 +153,8 @@ export function createOptions(chartType: ChartType, xAxis: string, yAxis: string
 
     let x: ScaleOptions = { title: { display: true, text: xAxis } };
     const y: ScaleOptions = { title: { display: true, text: yAxis } };
+    if (xAxis.endsWith('(s)')) x.ticks = { callback: function(this: { getLabelForValue(value: number): string }, value) { const label = this.getLabelForValue(Number(value)); return Number.isFinite(Number(label)) ? formatSeconds(Number(label)) : label; } };
+    if (yAxis.endsWith('(s)')) y.ticks = { callback: value => formatSeconds(Number(value)) };
 
     if (chartType === ChartType.Line) {
         chartOptions.spanGaps = true;
@@ -165,7 +163,7 @@ export function createOptions(chartType: ChartType, xAxis: string, yAxis: string
         } else if (xAxis === 'Solve Number') { x = { ...x, type: 'linear', bounds: 'data', ticks: { precision: 0 } }; }
     } else {
         x.stacked = isStacked;
-        x.ticks = { autoSkip: true, maxRotation: 45 };
+        x.ticks = { ...x.ticks, autoSkip: true, maxRotation: 45 };
         y.stacked = isStacked;
     }
 

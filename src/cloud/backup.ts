@@ -11,6 +11,7 @@ type CloudBackup = {
 const progressKey = 'cuberplus-cloud-progress';
 const providerKey = 'cuberplus-cloud-provider';
 const changed = 'cuberplus-cloud-changed';
+const flashcardsKey = 'cuberplus-orientation-attempts-v1';
 let busy = false, message = '', error = false;
 const read = (key: string): string | null => { try { return localStorage.getItem(key); } catch { return null; } };
 const selectedProvider = (): Provider => read(providerKey) === 'microsoft' ? 'microsoft' : 'google';
@@ -109,6 +110,14 @@ export async function decodeCloudBackup(content: Blob): Promise<{ solves: Solve[
   const timer = { ...backup.timer, solves: dedupeById(backup.timer.solves) };
   return { solves: validateBackupData(timer, await loadCube()), settings };
 }
+function mergeFlashcardHistory(previous: Settings, incoming: Settings): Settings {
+  const older = previous[flashcardsKey], newer = incoming[flashcardsKey];
+  if (!older || !newer) return incoming;
+  validateSettings({ [flashcardsKey]: older });
+  const rows = dedupeById(JSON.parse(older) as { id: string; date: string }[], JSON.parse(newer) as { id: string; date: string }[])
+    .sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+  return { ...incoming, [flashcardsKey]: JSON.stringify(rows) };
+}
 async function backUp(provider: Provider): Promise<void> {
   const { readSolves, backupData } = await import('../../timer/src/Data/storage');
   // Retry a conditional-write conflict with a fresh cloud snapshot, never a blind overwrite.
@@ -119,10 +128,12 @@ async function backUp(provider: Provider): Promise<void> {
     const observed = progress();
     const local = (await readSolves()).filter(solve => solve.status !== 'active');
     const solves = dedupeById(previous.solves, local), savedAt = new Date().toISOString();
+    const settings = { ...previous.settings, ...readSettings() };
+    settings[flashcardsKey] ??= previous.settings[flashcardsKey] ?? null;
     const content = await encodeCloudBackup({
       format: 'cuberplus-cloud-v1', savedAt,
       timer: backupData(solves),
-      settings: { ...previous.settings, ...readSettings() },
+      settings: mergeFlashcardHistory(previous.settings, settings),
     });
     try { await writeRemote(provider, content, remote); }
     catch (failure) {
@@ -145,7 +156,7 @@ async function restore(provider: Provider): Promise<void> {
   const local = await readSolves();
   if (local.some(solve => solve.status === 'active')) throw new Error('Finish or stop your current Timer solve before restoring a backup.');
   const merged = dedupeById(local, incoming.solves);
-  await restoreSettings(incoming.settings, () => saveSolves(merged));
+  await restoreSettings(mergeFlashcardHistory({ [flashcardsKey]: localStorage.getItem(flashcardsKey) }, incoming.settings), () => saveSolves(merged));
   message = `Restored ${incoming.solves.length.toLocaleString()} cloud solves; ${merged.length.toLocaleString()} unique solves are saved locally.`;
 }
 async function operate(action: 'backup' | 'restore'): Promise<boolean> {

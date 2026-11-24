@@ -25,7 +25,7 @@ describe('specific mistake reasons', () => {
         expect(JSON.stringify(solves)).toBe(expected);
         expect(solves.at(-1)!.mistakes).toBe(reasons);
         markMistakes(solves, 10, true);
-        expect(solves[0].mistakeContext).toMatch(/^3:10:/);
+        expect(solves[0].mistakeContext).toMatch(/^4:10:/);
         const combined = [...solves, ...markMistakes(makeSolves(5), 10)];
         const reference = JSON.parse(JSON.stringify(combined)) as Solve[];
         reference.forEach(solve => { solve.date = new Date(solve.date); });

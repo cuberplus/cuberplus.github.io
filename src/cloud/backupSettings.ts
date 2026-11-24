@@ -1,4 +1,5 @@
 import { validBreakSettings } from '../../timer/src/Core/breakReminder';
+import { MISTAKES } from '../../shared/mistakes';
 
 // Only app-owned user data belongs here: never copy arbitrary origin storage or OAuth caches.
 export type BackupValue = null | boolean | number | string | BackupValue[] | { [key: string]: BackupValue | undefined };
@@ -24,12 +25,14 @@ const json = (check: Check): Check => value => {
 };
 const flag = oneOf('true', 'false');
 const color = oneOf('White', 'Red', 'Green', 'Yellow', 'Orange', 'Blue');
+const colorOption: Check = value => value === 'Random' || color(value);
+const colorFrame: Check = value => typeof value === 'string' && /^(?:[xz](?:2|')?)?(?: ?y(?:2|')?)?$/.test(value);
 const auf = oneOf('', 'U', 'U2', "U'");
 const trainerSettings = fields({
   upcomingCases: optional(boolean), caseNames: optional(boolean), solutionAlgorithms: optional(boolean),
   randomPreAuf: optional(boolean), randomPostAuf: optional(boolean), hidePLL: optional(boolean),
-  crossColor: optional(oneOf('White', 'Red', 'Green', 'Yellow', 'Orange', 'Blue', 'Random')),
-  frontColor: optional(oneOf('White', 'Red', 'Green', 'Yellow', 'Orange', 'Blue', 'Random')),
+  crossColor: optional(colorOption),
+  frontColor: optional(colorOption),
 });
 const permutation: Check = value => {
   const pieces: Check = value => Array.isArray(value) && value.length === 4 && [...value].sort().join() === '0,1,2,3' && value.every(Number.isInteger);
@@ -42,7 +45,7 @@ const splitFields = fields({
   caseId: string, milliseconds: time, dnf: optional(boolean), retry: optional(boolean),
   recognitionMilliseconds: optional(time), executionMilliseconds: optional(time),
   auf: optional(auf), preAuf: optional(auf), postAuf: optional(auf),
-  colorFrame: optional(value => typeof value === 'string' && /^(?:[xz](?:2|')?)?(?: ?y(?:2|')?)?$/.test(value)),
+  colorFrame: optional(colorFrame),
   crossColor: optional(color), frontColor: optional(color), permutation: optional(permutation),
 });
 const split: Check = value => splitFields(value) && object(value) && (!value['retry'] || value['dnf'] === true) &&
@@ -54,6 +57,11 @@ const split: Check = value => splitFields(value) && object(value) && (!value['re
 const validators = {
   theme: oneOf('light', 'dark', 'aurora', 'disco', 'inferno', '90s'),
   'timer-time-precision': oneOf('2', '3'),
+  'show-minutes': flag,
+  'font-size': oneOf('small', 'normal', 'large'),
+  'disabled-mistakes': json(array(oneOf(...Object.keys(MISTAKES), 'nonFavorite', 'unlearn'))),
+  'replay-highlight': oneOf('none', 'current', 'suggested'),
+  'highlight-aura': oneOf('black', 'white', 'color'),
   'timer-last-cube-mac': value => typeof value === 'string' && (value === '' || /^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(value)),
   'recent-solve-limit': value => typeof value === 'string' && /^\d+$/.test(value) && Number.isSafeInteger(Number(value)),
   'timer-inspection': flag,
@@ -75,6 +83,13 @@ const validators = {
   'cuberplus-cloud-auto-100': flag,
   'cuberplus-cloud-auto-pb': flag,
   'cuberplus-trainer-settings-v1': json(trainerSettings),
+  'cuberplus-orientation-settings-v1': json(fields({ stage: oneOf('scrambled', 'cross-solved', 'f2l-solved'), gray: boolean, topColor: optional(colorOption), frontColor: optional(colorOption) })),
+  'cuberplus-orientation-attempts-v1': json(array(fields({
+    id: string, date, stage: oneOf('scrambled', 'cross-solved', 'f2l-solved'), facelets: value => typeof value === 'string' && /^[URFDLB]{54}$/.test(value),
+    edge: value => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < 12,
+    position: value => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < 12,
+    caseKey: string, oriented: boolean, answer: boolean, correct: boolean, milliseconds: time, gray: boolean, colorFrame: optional(colorFrame),
+  }))),
   'cuberplus-trainer-blitz-v1': json(array(fields({
     id: string, kind: oneOf('OLL', 'PLL'), date, milliseconds: time, dnf: optional(boolean),
     splits: array(split), settings: optional(trainerSettings),

@@ -16,6 +16,8 @@ import { CalculateAllSessionOptions, CalculateBenchmarkTimes, CalculateWindowSiz
 import ReactSwitch from "react-switch";
 import { PageVisible } from '@cuberplus/navigation';
 import { DEFAULT_SOLVE_LIMIT, latestSolves } from '../../../shared/Components/SolveLimit';
+import { readDisabledMistakes } from '../../../shared/mistakes';
+import { TOOLTIPS } from '../../../shared/tooltips';
 
 /** react-bootstrap's FormControl accepts input, select and textarea events, so borrow its own handler type. */
 type FormControlChangeHandler = NonNullable<React.ComponentProps<typeof FormControl>['onChange']>;
@@ -108,38 +110,38 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         return !this.filterExclusion(solve, filters);
     }
     static filterExclusion(solve: Solve, filters: Filters): string {
-        if (solve.isCorrupt) return 'Invalid source data';
-        if (solve.method != filters.method) return 'Solving method';
-        if (filters.sources.indexOf(solve.source) < 0) return 'Source';
-        if (filters.crossColors.indexOf(solve.crossColor) < 0) return 'Cross color';
-        if (solve.date < filters.startDate || solve.date > filters.endDate) return 'Date range';
-        if (!solve.dnf && (solve.time < filters.fastestTime || solve.time > filters.slowestTime)) return 'Solve time';
+        if (solve.isCorrupt) return TOOLTIPS.filterPanel.invalidSourceData;
+        if (solve.method != filters.method) return TOOLTIPS.filterPanel.solvingMethod;
+        if (filters.sources.indexOf(solve.source) < 0) return TOOLTIPS.filterPanel.source;
+        if (filters.crossColors.indexOf(solve.crossColor) < 0) return TOOLTIPS.filterPanel.crossColor;
+        if (solve.date < filters.startDate || solve.date > filters.endDate) return TOOLTIPS.filterPanel.dateRange;
+        if (!solve.dnf && (solve.time < filters.fastestTime || solve.time > filters.slowestTime)) return TOOLTIPS.filterPanel.solveTime;
         // Acubemy exports may not report inspection time. Those solves should not be excluded by inspection filters.
-        if (solve.inspectionTime != null && (solve.inspectionTime < filters.lowestInspection || solve.inspectionTime > filters.highestInspection)) return 'Inspection time';
-        if (filters.sessions.length > 0 && !filters.sessions.includes(solve.session || 'Default')) return 'Session';
+        if (solve.inspectionTime != null && (solve.inspectionTime < filters.lowestInspection || solve.inspectionTime > filters.highestInspection)) return TOOLTIPS.filterPanel.inspectionTime;
+        if (filters.sessions.length > 0 && !filters.sessions.includes(solve.session || 'Default')) return TOOLTIPS.filterPanel.session;
 
         // Only filter by case when the export reported one. Free-tier exports leave
         // step_N_case blank, and filtering on "" would reject the whole export.
         const pllStep = getStep(solve, StepName.PLL);
-        if (solve.method == MethodName.CFOP && pllStep?.case && filters.pllCases.indexOf(pllStep.case) < 0) return 'PLL case';
+        if (solve.method == MethodName.CFOP && pllStep?.case && filters.pllCases.indexOf(pllStep.case) < 0) return TOOLTIPS.filterPanel.pllCase;
         const ollStep = getStep(solve, StepName.OLL);
-        if (solve.method == MethodName.CFOP && ollStep?.case && filters.ollCases.indexOf(ollStep.case) < 0) return 'OLL case';
+        if (solve.method == MethodName.CFOP && ollStep?.case && filters.ollCases.indexOf(ollStep.case) < 0) return TOOLTIPS.filterPanel.ollCase;
 
         // Detailed mistake reasons drive the same clean/mistake filter.
-        if (filters.solveCleanliness.indexOf(solve.isMistake ? SolveCleanliness.Mistake : SolveCleanliness.Clean) < 0) return 'Solve cleanliness';
-        if (filters.solveLuckiness.indexOf(solve.isFullStep ? SolveLuckiness.FullStep : SolveLuckiness.Skip) < 0) return 'Solve luckiness';
+        if (filters.solveCleanliness.indexOf((solve.mistakes ? solve.mistakes.some(item => !readDisabledMistakes().includes(item.kind)) : solve.isMistake) ? SolveCleanliness.Mistake : SolveCleanliness.Clean) < 0) return TOOLTIPS.filterPanel.solveCleanliness;
+        if (filters.solveLuckiness.indexOf(solve.isFullStep ? SolveLuckiness.FullStep : SolveLuckiness.Skip) < 0) return TOOLTIPS.filterPanel.solveLuckiness;
 
         return '';
     }
     static exclusionSummary(solves: Solve[], filters: Filters, limit = 0, sessionFirst = false): string {
         const counts = new Map<string, number>();
-        if (sessionFirst && filters.sessions.length) { const total = solves.length; solves = solves.filter(solve => filters.sessions.includes(solve.session || 'Default')); if (solves.length < total) counts.set('Session', total - solves.length); }
-        if (limit > 0 && solves.length > limit) counts.set('Outside recent window', solves.length - limit);
+        if (sessionFirst && filters.sessions.length) { const total = solves.length; solves = solves.filter(solve => filters.sessions.includes(solve.session || 'Default')); if (solves.length < total) counts.set(TOOLTIPS.filterPanel.session, total - solves.length); }
+        if (limit > 0 && solves.length > limit) counts.set(TOOLTIPS.filterPanel.outsideRecentWindow, solves.length - limit);
         for (const solve of latestSolves(solves, limit, solve => solve.date.getTime())) {
             const reason = this.filterExclusion(solve, filters);
             if (reason) counts.set(reason, (counts.get(reason) ?? 0) + 1);
         }
-        return counts.size ? [...counts].map(([reason, count]) => `${reason}: ${count}`).join('; ') + '. Each excluded solve is counted once.' : 'All loaded solves match the current filters.';
+        return TOOLTIPS.filterPanel.exclusionSummary(counts);
     }
 
     static getMistakeMap = getMistakeMap;
@@ -192,7 +194,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         const inputsUnchanged =
             nextProps.solves === prevState.lastAppliedSolves &&
             prevState.filters === prevState.lastAppliedFilters &&
-            prevState.windowSize === prevState.lastAppliedWindowSize && solveLimit === prevState.lastAppliedSolveLimit && !scopeChanged;
+            prevState.windowSize === prevState.lastAppliedWindowSize && solveLimit === prevState.lastAppliedSolveLimit && !scopeChanged && nextProps.mistakePreferences === prevState.lastMistakePreferences;
 
         // Everything carries over; only the incoming solves and whatever depends
         // on them is recomputed below.
@@ -241,6 +243,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
         newState.lastAppliedWindowSize = newState.windowSize;
         newState.lastAppliedSolveLimit = solveLimit;
         newState.lastAppliedSession = nextProps.sessionScope;
+        newState.lastMistakePreferences = nextProps.mistakePreferences;
         return newState;
     }
     componentDidMount() { this.props.onStepsChange?.(this.state.filters.steps); this.props.onSessionsChange?.(this.state.filters.sessions, false); }
@@ -396,67 +399,67 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                     {this.createFilterHtml(
                         <></>,
                         `Showing ${this.state.filteredSolves.length} / ${this.state.allSolves.length} solves`,
-                        this.state.showFilters ? FilterPanel.exclusionSummary(this.state.allSolves, this.state.filters, this.props.solveLimit ?? DEFAULT_SOLVE_LIMIT, this.props.sessionScope !== undefined) : 'Open filters to see why solves are excluded.'
+                        this.state.showFilters ? FilterPanel.exclusionSummary(this.state.allSolves, this.state.filters, this.props.solveLimit ?? DEFAULT_SOLVE_LIMIT, this.props.sessionScope !== undefined) : TOOLTIPS.filterPanel.openFilters
                     )}
 
                     <details open className="filter-group"><summary>Basics</summary>
-                    {this.createFilterHtml(<Select classNamePrefix="method-select" aria-labelledby={filterId('Which Method?')} options={this.getMethodOptions()} value={this.state.method} onChange={this.methodChanged.bind(this)} />, "Which Method?", "Choose the solving method.")}
-                    {this.multiFilter(this.getSessionOptions(), 'sessions', "Which Sessions?", "Choose sessions to include.")}
-                    {this.multiFilter(SOURCE_OPTIONS, 'sources', "Source", "Include CuberPlus, Cubeast or Acubemy solves.")}
+                    {this.createFilterHtml(<Select classNamePrefix="method-select" aria-labelledby={filterId('Which Method?')} options={this.getMethodOptions()} value={this.state.method} onChange={this.methodChanged.bind(this)} />, "Which Method?", TOOLTIPS.filterPanel.whichMethod)}
+                    {this.multiFilter(this.getSessionOptions(), 'sessions', "Which Sessions?", TOOLTIPS.filterPanel.whichSessions)}
+                    {this.multiFilter(SOURCE_OPTIONS, 'sources', "Source", TOOLTIPS.filterPanel.source2)}
                     {([['startDate', 'Start'], ['endDate', 'End']] as const).map(([field, label]) => <React.Fragment key={field}>{this.createFilterHtml(
                         <><label id={`filter-${field}`} htmlFor={field}>{label} date</label><DebouncedDate id={field} value={this.state.filters[field]} onChange={date => this.setFilter(field, date)} container={container} /></>,
-                        `Pick ${label} Date`, `Choose ${label.toLowerCase()} date`
+                        `Pick ${label} Date`, TOOLTIPS.filterPanel.chooseDate(label.toLowerCase())
                     )}</React.Fragment>)}
                     {this.createFilterHtml(
                         <MultiSelect options={FilterPanel.getStepOptionsForMethod(this.state.filters.method)} value={this.state.chosenSteps} onChange={this.chosenStepsChanged.bind(this)} labelledBy={filterId('Which step to drill down?')} />,
                         "Which step to drill down?",
-                        "Choose which steps to analyze across the dashboard."
+                        TOOLTIPS.filterPanel.whichStepToDrillDown
                     )}
                     </details>
 
                     <details className="filter-group"><summary>Cases and solve quality</summary>
-                    {this.groupedMultiFilter(Const.PllGroups, 'pllCases', "PLL Cases", "Choose PLL cases. Re-analyze saved recordings in Options to reconstruct missing cases.")}
-                    {this.groupedMultiFilter(Const.OllGroups, 'ollCases', "OLL Cases", "Choose OLL cases. Re-analyze saved recordings in Options to reconstruct missing cases.")}
-                    {this.multiFilter(Const.solveCleanliness, 'solveCleanliness', "Solve Cleanliness", "Clean means no detected mistake signals. See the Mistakes chart for the exact rules; missing data cannot prove a solve was clean.")}
-                    {this.multiFilter(Const.solveLuckiness, 'solveLuckiness', "Solve Luckiness", "Choose fullstep solves or solves with skips.")}
-                    {this.multiFilter(COLOR_OPTIONS, 'crossColors', "Cross Color", "Pick the starting cross color")}
+                    {this.groupedMultiFilter(Const.PllGroups, 'pllCases', "PLL Cases", TOOLTIPS.filterPanel.pllCases)}
+                    {this.groupedMultiFilter(Const.OllGroups, 'ollCases', "OLL Cases", TOOLTIPS.filterPanel.ollCases)}
+                    {this.multiFilter(Const.solveCleanliness, 'solveCleanliness', "Solve Cleanliness", TOOLTIPS.filterPanel.solveCleanliness2)}
+                    {this.multiFilter(Const.solveLuckiness, 'solveLuckiness', "Solve Luckiness", TOOLTIPS.filterPanel.solveLuckiness2)}
+                    {this.multiFilter(COLOR_OPTIONS, 'crossColors', "Cross Color", TOOLTIPS.filterPanel.crossColor2)}
 
                     {this.rangeFilter("300", [['fastestTime', 'fastestSolve'], ['slowestTime', 'slowestSolve']],
                         "Solve Times",
-                        "Choose slowest and fastest solves to keep"
+                        TOOLTIPS.filterPanel.solveTimes
                     )}
 
                     {this.rangeFilter("100000", [['lowestInspection', 'lowestInspection'], ['highestInspection', 'highestInspection']],
                         "Inspection Time",
-                        "Choose lowest and highest inspection times to keep"
+                        TOOLTIPS.filterPanel.inspectionTime2
                     )}
                     </details>
 
                     <details className="filter-group"><summary>Chart settings</summary>
                     {this.autoFilter('autoWindowSize', ['windowSize'], "5", "10000",
                         "Sliding Window Size",
-                        "Choose the sliding window size. When Auto is enabled, the size is chosen automatically based on how many solves are shown. If you see no data, try lowering this value."
+                        TOOLTIPS.filterPanel.slidingWindowSize
                     )}
 
                     {this.createFilterHtml(
                         <DebouncedNumber min="5" max="10000" id="pointsPerGraph" aria-labelledby={filterId('Points Per Graph')} value={this.state.pointsPerGraph} onChange={e => this.setNumberField('pointsPerGraph', e)} />,
                         "Points Per Graph",
-                        "Choose how many points to show on each chart. If this value is set too high, you may see performance issues."
+                        TOOLTIPS.filterPanel.pointsPerGraph
                     )}
 
                     {this.switchFilter("useLogScale", this.state.useLogScale, checked => this.setField('useLogScale', checked),
                         "Use Logarithmic Scale",
-                        "Use a Logarithmic Scale for the Y axis. If you are unsure what this means, leave it disabled"
+                        TOOLTIPS.filterPanel.useLogarithmicScale
                     )}
 
                     {this.switchFilter("use4SegmentTiming", this.state.use4SegmentTiming, checked => this.setField('use4SegmentTiming', checked),
                         "4-Segment Timing",
-                        "Show recognition, pre-AUF, execution, and post-AUF as separate segments in timing charts. When off, shows only recognition and execution."
+                        TOOLTIPS.filterPanel.segmentTiming
                     )}
 
                     {this.autoFilter('autoBenchmarks', ['goodTime', 'badTime'], "0", "300",
                         "Benchmarks",
-                        "Choose what you consider a 'good' solve and a 'bad' solve. When Auto is enabled, good/bad are calculated from your current Ao100 and +25% for bad."
+                        TOOLTIPS.filterPanel.benchmarks
                     )}
 
                     {this.createFilterHtml(
@@ -465,7 +468,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                             <div className="col"><DebouncedNumber id="chopPercentage" aria-label="Chop percentage per end" min="0" max="49" step="1" value={this.state.chopPercentage} disabled={!this.state.chopAverages} onChange={event => this.setNumberField('chopPercentage', event)} /></div>
                         </div>,
                         "Chop Rolling Average",
-                        "Remove this percentage of the fastest and slowest solves from each rolling-average window, rounded up. At least one solve is retained. Does not change standard Ao5/Ao12/Ao100/Ao1000 records."
+                        TOOLTIPS.filterPanel.chopRollingAverage
                     )}
 
                     </details>
@@ -533,7 +536,7 @@ export class FilterPanel extends React.Component<FilterPanelProps, FilterPanelSt
                     {loading}
                     {this.state.allSolves.length > 0 && <>
                         <div className="analysis-summary">
-                            <div className="analysis-context"><span className={demo ? 'analysis-demo' : ''}>{demo ? <>Demo<InfoTip icon={'\u26a0'}>These are not your solves. This is demo data.</InfoTip></> : source}</span><strong>{this.state.filteredSolves.length.toLocaleString()} / {this.state.allSolves.length.toLocaleString()} solves</strong><InfoTip>{demo ? `${source}. Demo data is temporary. Your saved solves are unchanged.` : `${source}. Session and recent-solves scope are shared across pages. Override the session in Filters, or show all sessions in Options. Session filters also scope all-time records; other filters affect charts only.`}</InfoTip></div>
+                            <div className="analysis-context"><span className={demo ? 'analysis-demo' : ''}>{demo ? <>Demo<InfoTip icon={'\u26a0'}>{TOOLTIPS.filterPanel.demo}</InfoTip></> : source}</span><strong>{this.state.filteredSolves.length.toLocaleString()} / {this.state.allSolves.length.toLocaleString()} solves</strong><InfoTip>{demo ? TOOLTIPS.filterPanel.scope(source) : TOOLTIPS.filterPanel.scopeAlternative(source)}</InfoTip></div>
                             <button className="btn btn-primary" aria-label={activeFilters ? `Open filters, ${activeFilters} active` : 'Open filters'} onClick={() => this.showFilters()}>Edit filters{activeFilters > 0 && ` (${activeFilters})`}</button>
                         </div>
                         {this.props.presets}

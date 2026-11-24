@@ -4,6 +4,7 @@ import { cubeConnection, useCubeConnection } from '../cube/connection';
 import { InfoTip } from './InfoTip';
 import { MacAddressHelp } from './MacAddressHelp';
 import { SettingsSection } from './SettingsSection';
+import { TOOLTIPS } from '../tooltips';
 
 export function CubeButton({ connected, open }: { connected: boolean; open: () => void }) {
   const { cubes, selected, connection } = useCubeConnection();
@@ -17,7 +18,7 @@ export function CubeConnectionMenu() {
   useEffect(() => { if (connection) dialog.current?.close(); }, [connection]);
   return <><CubeButton connected={!!connection} open={() => dialog.current?.showModal()} />
     <dialog ref={dialog} className="page-options-dialog" aria-labelledby="trainer-cube-title">
-      <div className="page-heading"><h2 id="trainer-cube-title">Bluetooth cube setup <InfoTip>Choose a saved cube or connect another device. Manage saved cubes and Bluetooth addresses in the site Options. Bluetooth requires HTTPS and a supported browser, such as Chrome or Edge.</InfoTip></h2><button ref={button => { if (button) button.autofocus = true; }} type="button" className="btn-close" aria-label="Close cube setup" onClick={() => dialog.current?.close()} /></div>
+      <div className="page-heading"><h2 id="trainer-cube-title">Bluetooth cube setup <InfoTip>{TOOLTIPS.cubeConnection.chooseCube}</InfoTip></h2><button ref={button => { if (button) button.autofocus = true; }} type="button" className="btn-close" aria-label="Close cube setup" onClick={() => dialog.current?.close()} /></div>
       <CubeConnectionControls />
       <MacAddressHelp />
       {(!navigator.bluetooth || !window.isSecureContext) && <p className="mt-3 mb-0">Bluetooth needs a supported browser and HTTPS or localhost.</p>}
@@ -35,7 +36,7 @@ export function CubeConnectionControls() {
   const { connection, connecting, calibrating, battery, error, status } = useCubeConnection();
   return <div className="cuberplus-header-controls">
     <CubePicker disabled={!!connection || connecting} />
-    {connection ? <button className="btn btn-outline-secondary" title={`Connected: ${connection.deviceName}`} onClick={() => void cubeConnection.disconnect().catch(() => {})}>Disconnect</button> :
+    {connection ? <button className="btn btn-outline-secondary" title={TOOLTIPS.cubeConnection.connectedDevice(connection.deviceName)} onClick={() => void cubeConnection.disconnect().catch(() => {})}>Disconnect</button> :
       <button className="btn btn-primary" disabled={connecting || !navigator.bluetooth || !window.isSecureContext}
         onClick={() => void cubeConnection.connect().catch(() => {})}>{connecting ? 'Connecting...' : 'Connect cube'}</button>}
     {battery !== null && <span className="badge text-bg-secondary">{battery}% battery</span>}
@@ -48,13 +49,13 @@ export function CubeStateControls({ busy, read, calibrate }: { busy: boolean; re
   return <div className="d-flex flex-wrap gap-2 align-items-center mt-3">
     <button type="button" className="btn btn-outline-secondary" disabled={busy} onClick={read}>Read cube state</button>
     <span><button type="button" className="btn btn-outline-secondary" disabled={busy} onClick={calibrate}>Recalibrate as solved ((R R') x3)</button>
-      <InfoTip>With the cube physically solved in its calibrated orientation, perform R R' R R' R R' (three R / R' pairs), or choose Recalibrate as solved. This declares the current position solved and aborts any active solve. Read cube state requests the cube's current physical state without declaring it solved.</InfoTip></span>
+      <InfoTip>{TOOLTIPS.cubeConnection.calibration}</InfoTip></span>
   </div>;
 }
 export function MyCubes() {
   const { cubes, connection, connecting } = useCubeConnection();
   const [name, setName] = useState(''), [mac, setMac] = useState('');
-  return <SettingsSection title="Connect cube" help={<InfoTip>One Bluetooth connection is shared across pages. Choose a saved cube or connect another device. Expand a saved cube to edit its name or optional Bluetooth MAC. The browser may still ask you to select the device. Bluetooth requires a secure connection and a supported browser, such as Chrome or Edge.</InfoTip>}>
+  return <SettingsSection title="Connect cube" help={<InfoTip>{TOOLTIPS.cubeConnection.savedCubes}</InfoTip>}>
     <div className="settings-status">
       <span className="backup-status" role="status">{connection ? `Connected to ${connection.deviceName}` : connecting ? 'Connecting...' : !navigator.bluetooth || !window.isSecureContext ? 'Bluetooth unavailable in this browser' : 'No cube connected'}</span>
       <CubeConnectionControls />

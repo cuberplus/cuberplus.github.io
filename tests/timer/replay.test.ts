@@ -12,10 +12,12 @@ import { algorithms } from '../../src/database/algorithms';
 import { favoriteId, FAVORITES_KEY, MISTAKES_KEY, CATEGORIES_KEY, UNLEARN_KEY } from '../../src/database/favorites';
 import { solveAnalysis } from '../../timer/src/Analysis/analysis';
 import { waitFor } from '@testing-library/react';
+import { SettingsProvider } from '@cuberplus/navigation';
+import type { PieceSelection } from '../../timer/src/Analysis/f2lSuggestions';
 await jest.unstable_mockModule('../../timer/src/Bluetooth/bluetooth', () => ({ BluetoothCube: class {} }));
 const { cubeConnection } = await import('../../shared/cube/connection');
 await jest.unstable_mockModule('../../timer/src/Components/CubeView', () => ({
-  CubeView: ({ facelets, cross, rotation, seekVersion, playback }: { facelets: string; cross: number | null; rotation: string; seekVersion: number; playback: boolean }) => createElement('div', { 'data-facelets': facelets, 'data-cross': cross, 'data-rotation': rotation, 'data-seek-version': seekVersion, 'data-playback': playback, 'aria-label': 'Replay cube' }),
+  CubeView: ({ facelets, cross, rotation, seekVersion, playback, highlight }: { facelets: string; cross: number | null; rotation: string; seekVersion: number; playback: boolean; highlight?: PieceSelection }) => createElement('div', { 'data-facelets': facelets, 'data-cross': cross, 'data-rotation': rotation, 'data-seek-version': seekVersion, 'data-playback': playback, 'data-highlight': JSON.stringify(highlight), 'aria-label': 'Replay cube' }),
 }));
 const { Replay } = await import('../../timer/src/Components/Replay');
 const { default: AnalyzerReplay } = await import('../../timer/src/Components/analyzer-replay');
@@ -133,6 +135,22 @@ async function click(text: string) {
 const groups = () => Array.from(container.querySelectorAll('[aria-label="Solution steps"] > [role="group"]'));
 const position = () => container.querySelector('[aria-label="Replay move"]')!.getAttribute('aria-valuenow');
 const facelets = () => container.querySelector('[aria-label="Replay cube"]')!.getAttribute('data-facelets');
+test.each(['current', 'suggested'])('%s replay highlighting stops before OLL and PLL and has no modal setting', async mode => {
+  localStorage.setItem('replay-highlight', mode);
+  const solve = { ...recording(scramble, scramble.split(' ').reverse().map(inverse).join(' ')), crossOverride: 3 };
+  await act(async () => root.render(createElement(SettingsProvider, null, createElement(Replay, { cube, solve, close }))));
+  const highlighted = () => JSON.parse(container.querySelector('[aria-label="Replay cube"]')!.getAttribute('data-highlight')!) as PieceSelection;
+  expect(highlighted().EDGES?.length).toBeGreaterThan(0);
+  expect(container.querySelector('[aria-label="Replay highlight"]')).toBeNull();
+  const ollMove = container.querySelector<HTMLButtonElement>('[aria-label="OLL solution"] button.move')!;
+  expect(ollMove).not.toBeNull();
+  await act(async () => ollMove.click());
+  expect(highlighted()).toEqual({});
+  const pllMove = container.querySelector<HTMLButtonElement>('[aria-label="PLL solution"] button.move')!;
+  expect(pllMove).not.toBeNull();
+  await act(async () => pllMove.click());
+  expect(highlighted()).toEqual({});
+});
 
 test('manual penalties are reversible, preserve automatic reasons, and do not change the raw timeline', async () => {
   let solve: Solve = { ...recording('R U', "U' R'"), penalty: 4000, penaltyReason: 'inspection, over-turn' };

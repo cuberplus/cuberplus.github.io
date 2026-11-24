@@ -220,8 +220,9 @@ try {
   await page.getByRole('link', { name: 'Trainer', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Bluetooth cube setup', exact: true })).toContainText('Desk cube');
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Blitz history', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Blitz history', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: /OLL Blitz/ }).click();
+  await expect(page.getByRole('heading', { name: 'Blitz history', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Options', exact: true }).click();
   await expect(page.getByLabel('Upcoming cases', { exact: true })).not.toBeChecked();
   await expect(page.getByLabel('Case names shown', { exact: true })).not.toBeChecked();

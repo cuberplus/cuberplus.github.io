@@ -97,6 +97,9 @@ body { margin: 0; background: var(--cp-bg); color: var(--cp-text); font-family: 
   .theme-dots { gap: .25rem; }
 }
 .info-tip { min-width: 28px; min-height: 28px; }
+.info-tooltip { --bs-tooltip-max-width: min(calc(28rem * var(--info-tooltip-zoom, 1)), calc(100vw - 24px)); z-index: 2147483647; zoom: calc(1 / var(--info-tooltip-zoom, 1)); font-size: calc(var(--bs-tooltip-font-size) * var(--info-tooltip-zoom, 1)); }
+.info-tooltip[popover] { inset: auto; margin: 0; border: 0; padding: 0; background: transparent; color: inherit; overflow: visible; }
+.info-tooltip-content { max-block-size: min(var(--info-tooltip-space), calc(100dvh - 40px)); overflow: auto; overscroll-behavior: contain; overflow-wrap: anywhere; white-space: normal; }
 @media (pointer: coarse) {
   .btn, .info-tip { min-height: 44px; }
   .info-tip, .theme-dots button { min-width: 44px; min-height: 44px; }
@@ -145,7 +148,9 @@ a, a:hover { color: var(--cp-accent); }
 .settings-section > h3, .options-general h3 { margin-block: 0 1rem; font-size: 1.15rem; }
 .settings-heading { display: flex; align-items: center; margin: 0; font-size: 1.15rem; }
 .settings-toggle { padding: 0; color: inherit; font: inherit; text-decoration: none; text-align: start; }
-.settings-heading:has([aria-expanded="true"]) { margin-bottom: 1rem; }
+.settings-heading:has(> .settings-toggle[aria-expanded="true"]) { margin-bottom: 1rem; }
+.settings-section-content { padding-inline-start: clamp(1.5rem, 4vw, 3rem); min-inline-size: 0; }
+.options-page :is(.form-select, .form-control), .options-dialog :is(.form-select, .form-control) { max-inline-size: 24rem; }
 .settings-section > [hidden] { display: none; }
 .settings-section > summary { font-size: 1.15rem; font-weight: 500; line-height: 1.2; cursor: pointer; }
 .settings-section > :last-child { margin-bottom: 0; }

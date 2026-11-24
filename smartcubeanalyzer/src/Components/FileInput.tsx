@@ -11,6 +11,7 @@ import { CalculateMostUsedMethod, CalculateWindowSize, CalculateAllSessionOption
 import ReactGA from 'react-ga4';
 import { DEFAULT_SOLVE_LIMIT } from '../../../shared/Components/SolveLimit';
 import { InfoTip } from '../../../shared/Components/InfoTip';
+import { TOOLTIPS } from '../../../shared/tooltips';
 
 function ScopeSync({ limit, session, change }: { limit: number; session: string; change: (limit: number, session: string) => void }) {
     React.useLayoutEffect(() => change(limit, session), [limit, session, change]);
@@ -168,7 +169,7 @@ export class FileInput extends React.Component<Record<string, never>, FileInputS
                     <DataDialog dialog={this.dataDialogRef}>
                         <div className="d-grid gap-3">
                             <Button variant="outline-primary" onClick={() => this.showTimerData()}>My saved solves</Button>
-                            <label>Preview CSV<InfoTip>Analyze CSVs temporarily without changing saved solves. To keep them, use Import solves in Options.</InfoTip>
+                            <label>Preview CSV<InfoTip>{TOOLTIPS.fileInput.preview}</InfoTip>
                                 <FormControl type="file" id="uploaded_data" aria-label="CSV files" disabled={this.state.isParsing} accept=".csv" multiple onChange={event => this.showFileData(Array.from((event.currentTarget as HTMLInputElement).files ?? []))} />
                                 {this.state.csvFileNames && <span className="small text-break">{this.state.csvFileNames}</span>}
                             </label>
@@ -179,7 +180,7 @@ export class FileInput extends React.Component<Record<string, never>, FileInputS
                     </DataDialog>
                     {(!!this.state.unloadedCount || this.state.savedAnalysisChanged) && <Alert variant="warning">{this.state.savedAnalysisChanged ? 'Saved solve analysis has changed.' : `${this.state.unloadedCount} saved solves are not loaded.`} Your current data has been kept. <Button variant="outline-primary" disabled={this.state.isParsing} onClick={() => this.showTimerData()}>Reload all solves</Button></Alert>}
                     {this.state.loadError && <Alert variant="warning">{this.state.loadError}</Alert>}
-                    <SettingsContext.Consumer>{({ solveLimit, session, allSessions }) => <><ScopeSync limit={solveLimit} session={allSessions ? '' : session} change={this.changeScope} /><FilterPanel
+                    <SettingsContext.Consumer>{({ solveLimit, session, allSessions, disabledMistakes }) => <><ScopeSync limit={solveLimit} session={allSessions ? '' : session} change={this.changeScope} /><FilterPanel mistakePreferences={disabledMistakes.join(',')}
                         ref={this.filterPanelRef}
                         solves={this.state.solves} solveLimit={solveLimit} sessionScope={this.state.source?.startsWith('Demo:') || this.state.source === 'Temporary CSV preview' ? undefined : allSessions ? '' : session} onSessionsChange={this.changeSessions}
                         preparedSolves={this.preparedSolves}

@@ -142,6 +142,7 @@ export interface Solve extends StepTotals {
     session: string,
     isMistake: boolean,
     mistakes?: Mistake[],
+    pairChoices?: { step: StepName; wastedMoves: number }[],
     mistakeContext?: string,
     isFullStep: boolean
 }
@@ -156,7 +157,7 @@ export const caseCategory = (steps: StepName[]): StepName | undefined => steps.l
 
 export interface FilterPanelProps {
     solves: Solve[], solveLimit?: number, sessionScope?: string, onSessionsChange?: (sessions: string[], userInitiated?: boolean) => void,
-    preparedSolves?: Solve[],
+    preparedSolves?: Solve[], mistakePreferences?: string,
     suggestedMethod?: Option<MethodName>,
     suggestedSessions?: Option[],
     suggestedWindowSize?: number,
@@ -182,7 +183,7 @@ export interface FilterPanelState extends ChartSettings {
     lastAppliedSolves: Solve[],
     lastAppliedFilters: Filters | null,
     lastAppliedWindowSize: number,
-    lastAppliedSolveLimit: number, lastAppliedSession?: string, sessionOverride?: boolean,
+    lastAppliedSolveLimit: number, lastAppliedSession?: string, sessionOverride?: boolean, lastMistakePreferences?: string,
     filters: Filters,
 
     // Keep click order for the picker while analysis steps follow method order.

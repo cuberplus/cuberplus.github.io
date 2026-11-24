@@ -1,5 +1,5 @@
-import { useCallback, useContext, useEffect, useId, useReducer, useRef, useState } from 'react';
-import { PageVisible } from '@cuberplus/navigation';
+import { useCallback, useContext, useEffect, useId, useReducer, useRef, useState, type RefObject } from 'react';
+import { PageVisible, SettingsContext, usePageDialog } from '@cuberplus/navigation';
 import type { Cube } from '../../timer/src/Core/puzzle';
 import { cfopFrame } from '../../timer/src/Analysis/cfop';
 import { CubeView } from '../../timer/src/Components/CubeView';
@@ -15,12 +15,26 @@ import { Practice, readAttempts, readTrainings, saveAttempt, TRAININGS_STORAGE, 
 import { caseKey, findTrainingCase } from './cases';
 import { SolutionProgress } from './SolutionProgress';
 import { relativeTime } from '../../timer/src/Data/relativeTime';
+import { formatMilliseconds } from '../../shared/display';
+import { smartDrillCases, type SmartCriterion, type SmartStage } from './smartDrill';
+import { dataTask } from '../../shared/workers/dataClient';
+import { DrillSettings } from './DrillSettings';
+import { TOOLTIPS } from '../../shared/tooltips';
+import { DrillTable } from './DrillTable';
 
-const seconds = (time: number) => `${(time / 1000).toFixed(2)}s`;
-export function CasePractice({ cube, mode, initialCase, settings, back, fixedCase = false }: {
-  cube: Cube | null; mode: 'single' | 'custom'; initialCase: string; settings: BlitzSettings; back: () => void; fixedCase?: boolean;
+const seconds = (time: number) => `${formatMilliseconds(time)}s`;
+export function CasePractice({ cube, mode, initialCase, settings, back, fixedCase = false, changeSettings, optionsDialog }: {
+  cube: Cube | null; mode: 'single' | 'custom'; initialCase: string; settings: BlitzSettings; back: () => void; fixedCase?: boolean; changeSettings?: (settings: BlitzSettings) => void; optionsDialog?: RefObject<HTMLDialogElement>;
 }) {
+  const localOptions = useRef<HTMLDialogElement>(null), options = optionsDialog ?? localOptions;
+  usePageDialog(options, false);
   const visible = useContext(PageVisible), { connection } = useCubeConnection();
+  const { solveLimit, session, allSessions } = useContext(SettingsContext);
+  const [smart, setSmart] = useState(false), [generating, setGenerating] = useState(false);
+  const [smartStages, setSmartStages] = useState<SmartStage[]>(['F2L', 'OLL', 'PLL']);
+  const [smartCount, setSmartCount] = useState('5'), [criterion, setCriterion] = useState<SmartCriterion>('failed');
+  const generation = useRef<ReturnType<typeof dataTask> | null>(null);
+  useEffect(() => () => generation.current?.cancel(), []);
   const id = useId();
   const [selected, setSelected] = useState(initialCase), [algorithm, setAlgorithm] = useState('own');
   const [pendingStart, setPendingStart] = useState(!!initialCase);
@@ -83,9 +97,17 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
         if (mode !== 'single' || !selected || fixedCase) { back(); return; }
         drill.current = null; setSelected(''); setPendingStart(false); setError('');
       }}>Back</button>
-      <h2 ref={heading} tabIndex={-1} className="mb-0">{mode === 'single' ? entry ? `${caseLabel(entry)} drill` : 'Single-case drill' : 'Make your own drill'} <InfoTip>Smart-cube turns control the displayed virtual case. Do not scramble or reset your physical cube between cases. Recognition runs until your first turn; execution ends when the case is solved. Practice repeats until you stop, saving each completed attempt.</InfoTip></h2>
+      <h2 ref={heading} tabIndex={-1} className="mb-0">{mode === 'single' ? entry ? `${caseLabel(entry)} drill` : 'Single-case drill' : 'Make your own drill'} <InfoTip>{TOOLTIPS.casePractice.overview}</InfoTip></h2>
     </div>
-    <fieldset hidden={running || mode === 'single' && !!entry} disabled={running} className={running || mode === 'single' && entry ? '' : 'd-grid gap-3 mb-3'}>
+    {changeSettings && <dialog ref={options} className="panel options-dialog" aria-labelledby={`${id}-options-title`}>
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h2 id={`${id}-options-title`} className="mb-0">{mode === 'single' ? entry ? `${caseLabel(entry)} drill` : 'Single-case drill' : 'Custom drill'} options</h2>
+        <button type="button" className="btn-close" aria-label="Close options" onClick={() => options.current?.close()} />
+      </div>
+      <DrillSettings settings={settings} change={changeSettings} disabled={running || generating}
+        hidePLL={mode === 'single' ? entry?.category === 'OLL' : (editing ? chosen : training?.cases ?? []).some(key => findTrainingCase(key)?.category === 'OLL')} />
+    </dialog>}
+    <fieldset hidden={running || mode === 'single' && !!entry} disabled={running || generating} className={running || mode === 'single' && entry ? '' : 'd-grid gap-3 mb-3'}>
       <legend className="visually-hidden">Choose practice cases</legend>
       {mode === 'single' ? <>
         <CasePicker selected={[]} single change={key => { setSelected(key); setAlgorithm('own'); setPendingStart(true); }} />
@@ -95,11 +117,32 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
         </select>
         <div className="d-flex flex-wrap gap-2">
           <button className="btn btn-outline-primary" onClick={() => { editingId.current = null; setName(''); setChosen([]); setEditing(true); }}>Create training</button>
+          <button className="btn btn-outline-primary" onClick={() => setSmart(value => !value)} aria-expanded={smart}>Create smart drill</button>
           {training && <><button className="btn btn-outline-secondary" onClick={() => { editingId.current = training.id; setName(training.name); setChosen(training.cases); setEditing(true); }}>Edit training</button>
             <button className="btn btn-outline-danger" onClick={() => { if (storeTrainings(trainings.filter(item => item.id !== trainingId))) { setTrainingId(''); setEditing(false); } }}>Delete training</button></>}
         </div>
       </>}
     </fieldset>
+    {smart && mode === 'custom' && !running && <form className="card p-3 mb-3 d-grid gap-3" aria-label="Smart drill" onSubmit={event => {
+      event.preventDefault(); setGenerating(true); setError('');
+      const task = dataTask({ type: 'local', solveLimit, sessions: allSessions ? undefined : [session] }); generation.current = task;
+      void task.promise.then(result => {
+        if (!('solves' in result)) throw new Error('Solve history could not be loaded.');
+        const keys = smartDrillCases(result.solves.filter(solve => allSessions || (solve.session || 'Default') === session).slice(solveLimit ? -solveLimit : 0), smartStages, Number(smartCount), criterion);
+        if (!keys.length) throw new Error('No matching case history found. Try Slowest, include another stage, or record more smart-cube solves.');
+        editingId.current = null; setName('Smart drill'); setChosen(keys); setEditing(true); setSmart(false);
+      }).catch(failure => setError((failure as Error).message)).finally(() => { generation.current = null; setGenerating(false); });
+    }}>
+      <div className="d-flex align-items-center gap-2"><h3 className="h5 mb-0">Smart drill</h3><InfoTip>{TOOLTIPS.casePractice.smartDrill}</InfoTip></div>
+      <fieldset disabled={generating}><legend className="h6">Include stages</legend><div className="d-flex flex-wrap gap-3">
+        {(['F2L', 'OLL', 'PLL'] as const).map(stage => <label key={stage} className="form-check"><input className="form-check-input" type="checkbox" checked={smartStages.includes(stage)} onChange={event => setSmartStages(items => event.target.checked ? [...items, stage] : items.filter(item => item !== stage))} />{stage}</label>)}
+      </div></fieldset>
+      <label>Cases per stage<input className="form-control" type="number" min="1" step="1" required value={smartCount} disabled={generating} onChange={event => setSmartCount(event.target.value)} /></label>
+      <label>Choose cases by<select aria-label="Choose cases by" className="form-select" value={criterion} disabled={generating} onChange={event => setCriterion(event.target.value as SmartCriterion)}>
+        <option value="failed">Most frequently failed</option><option value="slowest">Slowest</option><option value="both">Both</option>
+      </select></label>
+      <button className="btn btn-primary" disabled={generating || !smartStages.length}>{generating ? 'Analyzing history...' : 'Generate smart drill'}</button>
+    </form>}
     {editing && mode === 'custom' && <form className="card p-3 mb-3" onSubmit={event => {
       event.preventDefault();
       const id = editingId.current ?? crypto.randomUUID(), next = { id, name: name.trim(), cases: chosen };
@@ -116,7 +159,7 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
         {shown && <><button type="button" className="btn btn-outline-secondary" onClick={() => { record(current!.retry(performance.now())); render(); }}>Retry case</button>
           <button type="button" className="btn btn-outline-secondary" onClick={() => { record(current!.skip(performance.now())); render(); }}>Skip case</button></>}
         <button type="button" className="btn btn-danger" onClick={() => { current!.phase = 'cancelled'; render(); }}>Stop drill</button>
-        <InfoTip>Retry records a DNF attempt and resets this virtual case. Skip records a DNF attempt and loads the next case. Keep turning your physical cube without resetting it.</InfoTip>
+        <InfoTip>{TOOLTIPS.casePractice.retryAndSkip}</InfoTip>
       </div>}
       {shown && <>
         {settings.caseNames && <h3>{caseLabel(shown)}</h3>}
@@ -130,14 +173,14 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
             {settings.caseNames && <strong>{caseLabel(item)}</strong>}</div>)}
         </div>}
       </>}
-      {!running && entry && <><CaseImage category={entry.category} id={entry.id} />
+      {!running && entry && <><div className="trainer-practice-case-image"><CaseImage category={entry.category} id={entry.id} /></div>
         <label htmlFor={`${id}-algorithm`}>Solution</label><select id={`${id}-algorithm`} className="form-select" value={algorithm} onChange={event => setAlgorithm(event.target.value)}>
           <option value="own">Use my own solution</option>
           {entry.options.map(alg => <option key={alg} value={alg}>{alg}</option>)}
         </select></>}
       <PracticeClock practice={current} changed={render} />
       {!running && <><p role="status">{!connection ? 'Connect a smart cube above to practice.' : !cube ? 'Loading puzzle tools...' : 'Ready to practice.'}</p>
-          <button className="btn btn-primary align-self-center" disabled={!connection || !cube || (mode === 'single' ? !entry : !training) || editing}
+          <button className="btn btn-primary align-self-center" disabled={!connection || !cube || (mode === 'single' ? !entry : !training) || editing || generating}
             onClick={() => {
               const cases = mode === 'single' ? entry ? [entry] : [] : (training?.cases ?? []).flatMap(key => findTrainingCase(key) ?? []);
               setPendingStart(false); startPractice(cases, historyId, mode === 'single' && algorithm !== 'own' ? algorithm : null);
@@ -148,12 +191,15 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
       try { unsaved.forEach(saveAttempt); setUnsaved([]); setError(''); } catch { setError('Timings still could not be saved.'); }
     }}>Retry saving timings</button>}
     {!!history.length && <section className="mt-4"><h3>Practice timings ({history.length})</h3>
-      <div className="table-responsive"><table className="table"><caption className="visually-hidden">Completed practice attempts</caption>
-        <thead><tr>{['Case', 'Recognition', 'Execution', 'Result', 'Date'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
-        <tbody>{history.map(attempt => <tr key={attempt.id}><td>{caseKeyLabel(attempt.caseKey)}</td><td>{seconds(attempt.recognitionMilliseconds)}</td>
-          <td>{seconds(attempt.executionMilliseconds)}</td><td>{attempt.dnf ? 'DNF' : seconds(attempt.recognitionMilliseconds + attempt.executionMilliseconds)}</td>
-          <td><time dateTime={attempt.date} title={new Date(attempt.date).toLocaleString()}>{relativeTime(attempt.date)}</time></td></tr>)}</tbody>
-      </table></div>
+      <DrillTable rows={history} rowKey={row => row.id} caption="Completed practice attempts" initialSort={{ column: 'date', ascending: false }} columns={[
+        { key: 'case', label: 'Case', value: row => caseKeyLabel(row.caseKey) },
+        { key: 'recognition', label: 'Recognition', numeric: true, value: row => row.recognitionMilliseconds, render: row => seconds(row.recognitionMilliseconds) },
+        { key: 'execution', label: 'Execution', numeric: true, value: row => row.executionMilliseconds, render: row => seconds(row.executionMilliseconds) },
+        { key: 'result', label: 'Result', numeric: true, value: row => row.dnf ? Infinity : row.recognitionMilliseconds + row.executionMilliseconds,
+          render: row => row.dnf ? 'DNF' : seconds(row.recognitionMilliseconds + row.executionMilliseconds) },
+        { key: 'date', label: 'Date', numeric: true, value: row => Date.parse(row.date),
+          render: row => <time dateTime={row.date} title={new Date(row.date).toLocaleString()}>{relativeTime(row.date)}</time> },
+      ]} />
     </section>}
   </section>;
 }

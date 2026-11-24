@@ -2,6 +2,11 @@ import type { Settings } from '../../src/cloud/backupSettings';
 import { breakDefaults } from '../../timer/src/Core/breakReminder';
 
 const trainer = { upcomingCases: false, caseNames: false, solutionAlgorithms: false, randomPreAuf: false, randomPostAuf: true, hidePLL: true, crossColor: 'White', frontColor: 'Blue' };
+const orientationFacelets = 'UUUUUUUUUBBBRRRRRRRRRFFFFFFDDDDDDDDDFFFLLLLLLLLLBBBBBB';
+export const orientationAttempt = {
+  id: 'orientation-1', date: '2026-11-22T12:00:00.000Z', stage: 'f2l-solved', facelets: orientationFacelets,
+  edge: 1, position: 0, caseKey: `${orientationFacelets}:1`, oriented: true, answer: true, correct: true, milliseconds: 432.1, gray: true,
+};
 export const userSettings: Settings = {
   theme: '90s',
   'timer-time-precision': '3',
@@ -26,6 +31,8 @@ export const userSettings: Settings = {
   'cuberplus-cloud-auto-100': 'true',
   'cuberplus-cloud-auto-pb': 'true',
   'cuberplus-trainer-settings-v1': JSON.stringify(trainer),
+  'cuberplus-orientation-settings-v1': JSON.stringify({ stage: 'f2l-solved', gray: true }),
+  'cuberplus-orientation-attempts-v1': JSON.stringify([orientationAttempt]),
   'cuberplus-trainer-blitz-v1': JSON.stringify([{
     id: 'blitz-1', kind: 'PLL', date: '2026-11-13T12:34:56Z', milliseconds: 3000, dnf: true, settings: trainer,
     splits: [

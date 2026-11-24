@@ -1,5 +1,6 @@
 import { useContext, useEffect, useRef, useState } from 'react';
-import { PageVisible } from '@cuberplus/navigation';
+import { PageVisible, SettingsContext } from '@cuberplus/navigation';
+import { formatSeconds } from '../../../shared/display';
 import { MISTAKES, mistakeKey, mistakeLabel, rankedMistakes } from '../../../smartcubeanalyzer/src/Analysis/MistakeAnalysis';
 import { StepName, type Solve as AnalyzedSolve } from '../../../smartcubeanalyzer/src/Models/Types';
 import { type Solve } from '../Core/engine';
@@ -13,18 +14,20 @@ import { solveFeedback } from '../../../shared/workers/dataClient';
 import { mistakeTrainingKey, potentialGain } from '../Analysis/mistakeSummary';
 import { PracticeDialog } from '../../../src/trainer/PracticeDialog';
 import { caseKeyLabel } from '../../../src/database/caseLabels';
+import { TOOLTIPS } from '../../../shared/tooltips';
 
 const emptyHistory: Solve[] = [];
 export function SolveMistakes({ solve, cube, history = emptyHistory, brief = false }: { solve: Solve; cube: Cube; history?: Solve[] | (() => Promise<Solve[]>); brief?: boolean }) {
   const feedback = useRef<HTMLElement>(null);
   const visible = useContext(PageVisible);
+  const { disabledMistakes } = useContext(SettingsContext);
   const { favorites, unlearn, enabled, categories } = useAlgorithmPreferences();
   const [result, setResult] = useState<{ solve: Solve; analysis: AnalyzedSolve; nonFavorites: AlgorithmUse[]; unlearned: AlgorithmUse[]; observed: { step: string; caseKey: string }[] } | null>(null);
   const [failure, setFailure] = useState<Solve | null>(null);
   const [practice, setPractice] = useState<string | null>(null);
   const practiceButton = (key: string, label: string) => <button type="button" className="btn btn-link p-0 border-0 text-start align-baseline" style={{ font: 'inherit' }} onClick={() => setPractice(key)}>{label}</button>;
   const analysis = result?.solve === solve ? result.analysis : null;
-  const nonFavorites = result?.solve === solve ? result.nonFavorites : [], unlearned = result?.solve === solve ? result.unlearned : [];
+  const nonFavorites = result?.solve === solve && !disabledMistakes.includes('nonFavorite') ? result.nonFavorites : [], unlearned = result?.solve === solve && !disabledMistakes.includes('unlearn') ? result.unlearned : [];
   const favoriteLabel = (use: typeof nonFavorites[number]) => `${CFOP_STEPS[use.step]}: Non-favorite algorithm (${caseKeyLabel(use.caseKey)})`;
   useEffect(() => {
     if (!visible || solve.status !== 'complete') return;
@@ -41,7 +44,7 @@ export function SolveMistakes({ solve, cube, history = emptyHistory, brief = fal
     void analyze().catch(() => { if (active) setFailure(solve); });
     return () => { active = false; };
   }, [solve, solve.status, solve.penalty, cube, history, favorites, enabled, categories, unlearn, visible]);
-  const mistakes = analysis ? rankedMistakes(analysis) : [];
+  const mistakes = analysis ? rankedMistakes(analysis).filter(mistake => !disabledMistakes.includes(mistake.kind)) : [];
   const trainingKey = (mistake: typeof mistakes[number]) => analysis ? mistakeTrainingKey(analysis, mistake, result?.observed) : null;
   const cost = (use: AlgorithmUse, avoid = false) => algorithmTimeCost(use, analysis?.steps[use.step], cube, avoid
     ? getAlgorithms().filter(entry => use.caseKeys.includes(`${entry.category}-${entry.id}`)).flatMap(entry =>
@@ -55,12 +58,12 @@ export function SolveMistakes({ solve, cube, history = emptyHistory, brief = fal
     ...mistakes.map(mistake => ({ seconds: mistake.estimatedSeconds ?? 0, label: mistakeLabel(mistake), caseKey: trainingKey(mistake) }))]
     .sort((a, b) => b.seconds - a.seconds)[0];
   const steps = [StepName.Cross, StepName.F2L_1, StepName.F2L_2, StepName.F2L_3, StepName.F2L_4, StepName.OLL, StepName.PLL];
-  const totalGain = analysis ? potentialGain(analysis, algorithmCosts.map(({ use, seconds }) => ({ step: steps[use.step], seconds }))) : 0;
-  const loss = (seconds: number) => `~${seconds.toFixed(2)}s estimated loss`;
+  const totalGain = analysis ? potentialGain({ ...analysis, mistakes }, algorithmCosts.map(({ use, seconds }) => ({ step: steps[use.step], seconds }))) : 0;
+  const loss = (seconds: number) => `~${formatSeconds(seconds)}s estimated loss`;
   return <section ref={feedback} className="mt-3" aria-label="Solve mistakes" aria-live="polite">
     <p className="mb-1">{solve.status !== 'complete' ? 'Incomplete solve - mistakes could not be fully assessed.' : failure === solve ? 'Solve mistakes could not be assessed.' : !analysis ? 'Analyzing solve mistakes...' : unlearned.length || nonFavorites.length || mistakes.length
       ? brief ? <><strong>Worst mistake: </strong>{worst.caseKey ? practiceButton(worst.caseKey, worst.label) : worst.label} ({loss(worst.seconds)})</>
-        : <><strong>Potential time gain: </strong>~{totalGain.toFixed(2)}s <InfoTip>Only the largest estimated loss per step is counted, excluding unusually slow solve. The estimate is capped at the solve time. Estimates use excess recognition time, wasted moves at your recorded execution speed, or time above your rolling baseline. Algorithm preferences use potential move savings, not an assumed speed advantage.</InfoTip></> : 'No clear mistakes detected.'}</p>
+        : <><strong>Potential time gain: </strong>~{formatSeconds(totalGain)}s <InfoTip>{TOOLTIPS.solveMistakes.estimatedLoss}</InfoTip></> : 'No clear mistakes detected.'}</p>
     {!brief && !!(unlearned.length || nonFavorites.length || mistakes.length) && <ul>
       {unlearned.map(use => <li key={`unlearn-${use.step}`}><strong>{practiceButton(use.caseKey, `${CFOP_STEPS[use.step]}: Unlearn algorithm (${caseKeyLabel(use.caseKey)})`)}</strong> ({loss(cost(use, true))})</li>)}
       {nonFavorites.map(use => <li key={`favorite-${use.step}`}><strong>{practiceButton(use.caseKey, favoriteLabel(use))}</strong>{' '}

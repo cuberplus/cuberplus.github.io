@@ -7,6 +7,7 @@ import { loadCube, locations, SOLVED } from '../../timer/src/Core/puzzle';
 import { blitzOrientations } from '../../src/trainer/blitz';
 import type { KTransformation } from 'cubing/kpuzzle';
 import type { TwistyPlayerConfig } from 'cubing/twisty';
+import type { PieceSelection } from '../../timer/src/Analysis/f2lSuggestions';
 
 const setup = jest.fn<(value: KTransformation | null) => void>();
 const timeline = jest.fn<(value: { animLeaf: { toString(): string }; start: number; end: number }[]) => void>();
@@ -237,6 +238,35 @@ test('gray stickers follow animated turns and can be restored without resetting 
   expect(setup).toHaveBeenCalledTimes(1);
   frame(25);
   expect(timestamps.at(-1)).toBe(500);
+});
+
+test.each<[string, PieceSelection]>([
+  ['scrambled', {}],
+  ['cross-solved', { EDGES: [4, 5, 6, 7] }],
+  ['f2l-solved', { EDGES: [4, 5, 6, 7, 8, 9, 10, 11], CORNERS: [4, 5, 6, 7] }],
+])('gray focus preserves only stage-guaranteed pieces for %s, not chance solves', async (_stage, coloredPieces) => {
+  const pattern = cube.solved().applyAlg('U'), facelets = cube.facelets(pattern), moves: string[] = [];
+  const focusEdge = pattern.patternData.EDGES.pieces.find((piece, index) => piece !== index || pattern.patternData.EDGES.orientation[index])!;
+  await act(async () => root.render(createElement(CubeView, { cube, facelets, moves, focusEdge, coloredPieces })));
+  const mask = stickering.mock.calls.at(-1)![0]!;
+  if (typeof mask === 'string') throw new Error('Expected per-sticker masking');
+  let ignored = 0;
+  for (const orbit of ['EDGES', 'CORNERS'] as const) {
+    mask.orbits[orbit].pieces.forEach((piece, id) => {
+      const colored = (orbit === 'EDGES' && id === focusEdge) || coloredPieces[orbit]?.includes(id);
+      for (const sticker of piece!.facelets) {
+        expect(sticker).toBe(colored ? 'regular' : 'ignored');
+        if (sticker === 'ignored') ignored++;
+      }
+    });
+  }
+  expect(ignored).toBeGreaterThan(0);
+  expect(mask.orbits.CENTERS.pieces.every(piece => piece === null)).toBe(true);
+  await act(async () => root.render(createElement(CubeView, { cube, facelets, moves })));
+  const restored = stickering.mock.calls.at(-1)![0]!;
+  if (typeof restored === 'string') throw new Error('Expected per-sticker masking');
+  expect(Object.values(restored.orbits).flatMap(orbit => orbit.pieces).flatMap(piece => piece?.facelets ?? []).every(sticker => sticker === 'regular')).toBe(true);
+  expect(construct).toHaveBeenCalledTimes(1);
 });
 
 test('resynchronization cancels stale animation, and a delayed frame cannot skip a whole turn', async () => {

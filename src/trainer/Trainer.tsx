@@ -1,5 +1,5 @@
 import { memo, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import Navigation, { Footer, PageLocation, PageVisible, usePageDialog } from '@cuberplus/navigation';
+import Navigation, { Footer, PageLocation, PageVisible, SettingsContext, usePageDialog } from '@cuberplus/navigation';
 import { cubeConnection, useCubeConnection, type CubeEvent } from '../../shared/cube/connection';
 import { CubeConnectionMenu } from '../../shared/Components/CubeConnection';
 import { PageOptionsButton } from '../../shared/Components/PageOptionsButton';
@@ -8,21 +8,26 @@ import { loadCube, type Cube } from '../../timer/src/Core/puzzle';
 import { cfopFrame } from '../../timer/src/Analysis/cfop';
 import CaseImage from '../database/CaseImage';
 import { InfoTip } from '../../shared/Components/InfoTip';
-import { adjacentColors, Blitz, BLITZ_SETTINGS_STORAGE, cubeColors, readBlitzRuns, readBlitzSettings, saveBlitzRun, type BlitzKind, type BlitzRun, type BlitzSettings } from './blitz';
+import { Blitz, BLITZ_SETTINGS_STORAGE, readBlitzRuns, readBlitzSettings, saveBlitzRun, type BlitzKind, type BlitzRun, type BlitzSettings } from './blitz';
 import { BlitzCaseImage } from './BlitzCaseImage';
 import { CasePractice } from './CasePractice';
 import { findTrainingCase } from './cases';
 import { SolutionProgress } from './SolutionProgress';
 import { relativeTime } from '../../timer/src/Data/relativeTime';
 import './trainer.css';
+import { formatMilliseconds } from '../../shared/display';
+import { DrillSettings } from './DrillSettings';
+import { OrientationFlashcards } from './OrientationFlashcards';
+import { TOOLTIPS } from '../../shared/tooltips';
 
-const seconds = (milliseconds: number) => `${(milliseconds / 1000).toFixed(2)}s`;
+const seconds = (milliseconds: number) => `${formatMilliseconds(milliseconds)}s`;
 const recordedTime = (milliseconds?: number) => milliseconds === undefined ? 'Not recorded' : seconds(milliseconds);
 export default function Trainer() {
+  useContext(SettingsContext);
   const visible = useContext(PageVisible);
   const address = useContext(PageLocation);
   const requestedCase = new URLSearchParams((address || location.pathname + location.search).split('?')[1] ?? '').get('case') ?? '';
-  const [mode, setMode] = useState<'single' | 'custom' | null>(() => findTrainingCase(requestedCase) ? 'single' : null);
+  const [mode, setMode] = useState<'single' | 'custom' | 'orientation' | null>(() => findTrainingCase(requestedCase) ? 'single' : null);
   const [practiceCase, setPracticeCase] = useState({ key: requestedCase, revision: 0 });
   const [cube, setCube] = useState<Cube | null>(null);
   const [kind, setKind] = useState<BlitzKind | null>(null);
@@ -31,7 +36,7 @@ export default function Trainer() {
   const [error, setError] = useState(''), [status, setStatus] = useState('');
   const [runs, setRuns] = useState<BlitzRun[]>([]), [result, setResult] = useState<BlitzRun | null>(null);
   const [unsaved, setUnsaved] = useState(false);
-  const optionsDialog = useRef<HTMLDialogElement>(null);
+  const optionsDialog = useRef<HTMLDialogElement>(null), drillOptionsDialog = useRef<HTMLDialogElement>(null);
   usePageDialog(optionsDialog, false);
   const [, render] = useReducer((value: number) => value + 1, 0);
   const drill = useRef<Blitz | null>(null);
@@ -70,7 +75,7 @@ export default function Trainer() {
     }
     if (!mounted.current || (event.type !== 'MOVE' && event.type !== 'DISCONNECT')) return;
     if (event.type === 'DISCONNECT') {
-      setStatus('Cube disconnected.');
+      setStatus('');
       if (drill.current && ['countdown', 'running'].includes(drill.current.phase)) {
         drill.current.phase = 'cancelled'; setError('Blitz cancelled: reconnect your cube and start again.');
       }
@@ -91,7 +96,7 @@ export default function Trainer() {
   const current = drill.current, busy = !!current && ['countdown', 'running'].includes(current.phase);
   const previews = current?.phase === 'running' && settings.upcomingCases ? current.queue.slice(current.index, current.index + 4) : [];
   const entry = current?.queue[current.index];
-  const visibleRuns = useMemo(() => runs.filter(run => !kind || run.kind === kind), [runs, kind]);
+  const visibleRuns = useMemo(() => runs.filter(run => run.kind === kind), [runs, kind]);
   const best = useMemo(() => runs.reduce((best, run) => {
     if (!run.dnf) best[run.kind] = Math.min(best[run.kind], run.milliseconds);
     return best;
@@ -101,48 +106,26 @@ export default function Trainer() {
     <main className="container py-4 trainer-main">
       <div className="page-heading"><h1 className="route-heading">Trainer</h1><div className="page-actions">
       <CubeConnectionMenu />
-      <PageOptionsButton open={() => optionsDialog.current?.showModal()} />
+      {(mode || kind) && <PageOptionsButton open={() => (mode ? drillOptionsDialog : optionsDialog).current?.showModal()} />}
       </div></div>
       <dialog ref={optionsDialog} className="panel options-dialog trainer-settings" aria-labelledby="trainer-options-title">
         <div className="d-flex justify-content-between align-items-center mb-4">
           <h2 id="trainer-options-title" className="mb-0">{kind ? `${kind} Blitz` : 'Trainer'} options</h2>
           <button className="btn-close" aria-label="Close options" onClick={() => optionsDialog.current?.close()} />
         </div>
-        <fieldset className="d-grid gap-3">
-          <legend className="visually-hidden">Blitz settings</legend>
-          <label className="form-check"><input className="form-check-input" type="checkbox" checked={settings.upcomingCases}
-            onChange={event => changeSettings({ ...settings, upcomingCases: event.target.checked })} />Upcoming cases</label>
-          <label className="form-check"><input className="form-check-input" type="checkbox" checked={settings.caseNames}
-            onChange={event => changeSettings({ ...settings, caseNames: event.target.checked })} />Case names shown</label>
-          <label className="form-check"><input className="form-check-input" type="checkbox" checked={settings.solutionAlgorithms !== false}
-            onChange={event => changeSettings({ ...settings, solutionAlgorithms: event.target.checked })} />Solution algorithm shown</label>
-          <label className="form-check"><input className="form-check-input" type="checkbox" disabled={busy} checked={settings.randomPreAuf !== false}
-            onChange={event => changeSettings({ ...settings, randomPreAuf: event.target.checked })} />Random pre-AUF</label>
-          <label className="form-check"><input className="form-check-input" type="checkbox" disabled={busy} checked={settings.randomPostAuf !== false}
-            onChange={event => changeSettings({ ...settings, randomPostAuf: event.target.checked })} />Random post-AUF</label>
-          {kind === 'OLL' && <div className="d-flex align-items-center">
-            <label className="form-check"><input className="form-check-input" type="checkbox" checked={settings.hidePLL}
-              onChange={event => changeSettings({ ...settings, hidePLL: event.target.checked })} />Hide PLL stickers</label>
-            <InfoTip>Gray out the non-top-color stickers on last-layer pieces in the live cube. The stickers stay gray as you turn; the cube state and OLL completion rules are unchanged. OLL previews and result diagrams always hide PLL stickers.</InfoTip>
-          </div>}
-          {(['crossColor', 'frontColor'] as const).map(key => <label key={key}>{key === 'crossColor' ? 'Cross color' : 'Front color'}
-            <select disabled={busy} className="form-select" aria-label={key === 'crossColor' ? 'Cross color' : 'Front color'} value={settings[key]} onChange={event => changeSettings({ ...settings, [key]: event.target.value })}>
-              {[...cubeColors, 'Random'].map(color => <option key={color} disabled={color !== 'Random' && settings[key === 'crossColor' ? 'frontColor' : 'crossColor'] !== 'Random' &&
-                !adjacentColors(color as typeof cubeColors[number], settings[key === 'crossColor' ? 'frontColor' : 'crossColor'] as typeof cubeColors[number])}>{color}</option>)}
-            </select>
-          </label>)}
-        </fieldset>
+        {!mode && kind && <DrillSettings settings={settings} change={changeSettings} disabled={busy} hidePLL={kind === 'OLL'} />}
       </dialog>
-      {mode ? <CasePractice key={`${mode}:${practiceCase.revision}`} cube={cube} mode={mode} initialCase={practiceCase.key} settings={settings} back={() => { setMode(null); setPracticeCase(previous => ({ key: '', revision: previous.revision + 1 })); }} /> : !kind ? <><div className="trainer-drills">{(['OLL', 'PLL'] as const).map(group => <button key={group} className="card trainer-drill" onClick={() => choose(group)}>
+      {mode === 'orientation' ? <OrientationFlashcards cube={cube} optionsDialog={drillOptionsDialog} back={() => setMode(null)} /> : mode ? <CasePractice key={`${mode}:${practiceCase.revision}`} cube={cube} mode={mode} initialCase={practiceCase.key} settings={settings} changeSettings={changeSettings} optionsDialog={drillOptionsDialog} back={() => { setMode(null); setPracticeCase(previous => ({ key: '', revision: previous.revision + 1 })); }} /> : !kind ? <><div className="trainer-drills">{(['OLL', 'PLL'] as const).map(group => <button key={group} className="card trainer-drill" onClick={() => choose(group)}>
         <CaseImage category={group} id={group === 'OLL' ? '27' : 'T'} />
         <h3>{group} Blitz</h3>
       </button>)}<button className="card trainer-drill" onClick={() => setMode('single')}><CaseImage category="F2L" id="1" /><h3>Single-case drill</h3></button>
-        <button className="card trainer-drill" onClick={() => setMode('custom')}><CaseImage category="PLL" id="T" /><h3>Make your own drill</h3></button></div></> : <>
+        <button className="card trainer-drill" onClick={() => setMode('custom')}><CaseImage category="PLL" id="T" /><h3>Make your own drill</h3></button>
+        <button className="card trainer-drill" onClick={() => setMode('orientation')}><CaseImage category="OLL" id="45" /><h3>Orientation Flashcards</h3></button></div></> : <>
         <div className="d-flex align-items-center gap-3 mb-3">
           <button className="btn btn-outline-secondary" aria-label="Back to drills" disabled={busy} onClick={() => { drill.current = null; setKind(null); setResult(null); }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M20 12H4m7-7-7 7 7 7" /></svg>
           </button>
-          <h2 className="mb-0">{kind} Blitz <InfoTip>Bluetooth turns control the virtual cube in the displayed frame. Each completed case immediately loads the next virtual case; do not reset or scramble your physical cube. OLL finishes when F2L is intact and the top is oriented. Options independently controls random AUF before and after the algorithm in every drill; PLL includes the final U adjustment. Timing starts after the countdown and includes recognition. Random colors are chosen separately for each case.</InfoTip></h2>
+          <h2 className="mb-0">{kind} Blitz <InfoTip>{TOOLTIPS.trainer.blitz}</InfoTip></h2>
         </div>
         {!navigator.bluetooth && <p>Use a browser with Web Bluetooth, such as Chrome or Edge.</p>}
         <section className="card p-3 text-center" aria-label={`${kind} Blitz drill`}>
@@ -150,7 +133,7 @@ export default function Trainer() {
             {current?.phase === 'running' && <><button type="button" className="btn btn-outline-secondary" onClick={() => { current.retry(performance.now()); render(); }}>Retry case</button>
               <button type="button" className="btn btn-outline-secondary" onClick={() => { current.skip(performance.now()); finishDrill(); render(); }}>Skip case</button></>}
             <button type="button" className="btn btn-danger" onClick={() => { current.phase = 'cancelled'; setStatus('Blitz aborted. No result saved.'); render(); }}>Stop drill</button>
-            <InfoTip>Retry records this attempt as DNF and resets the same virtual case. Its elapsed time still counts toward the Blitz total. Skip records a DNF, advances to the next case, and marks the overall Blitz DNF. Neither needs a physical cube reset.</InfoTip>
+            <InfoTip>{TOOLTIPS.trainer.retryAndSkip}</InfoTip>
           </div>}
           {!!previews.length && <div className="trainer-case-queue" aria-label="Current and upcoming cases">
             {previews.map((entry, i) => <div key={`${entry.category}-${entry.id}`} data-auf={entry.auf} data-pre-auf={entry.preAuf} data-post-auf={entry.postAuf} data-color-frame={entry.colorFrame} className={i === 0 ? 'trainer-case-current' : ''}>
@@ -173,13 +156,13 @@ export default function Trainer() {
           }}>{result ? 'Try again' : 'Start Blitz'}</button> : null}
         </section>
       </>}
-      {status && <p role="status" className="mt-3">{status}</p>}
+      {!mode && kind && status && <p role="status" className="mt-3">{status}</p>}
       {error && <p role="alert" className="mt-3">{error}</p>}
       {result && <section className="card p-3 mt-4" aria-label="Blitz result"><h3>Blitz complete: {result.dnf ? 'DNF' : seconds(result.milliseconds)}</h3>
         {unsaved ? <button className="btn btn-primary" onClick={() => persist(result)}>Retry saving result</button> : <p>Result and case splits saved.</p>}
         <Splits run={result} cube={cube} />
       </section>}
-      {!mode && !!visibleRuns.length && <section className="mt-4 trainer-history">
+      {!mode && kind && !!visibleRuns.length && <section className="mt-4 trainer-history">
         <div className="d-flex align-items-baseline justify-content-between gap-2 mb-3"><h3 className="h5 mb-0">Blitz history</h3><span className="text-secondary small">{visibleRuns.length} {visibleRuns.length === 1 ? 'run' : 'runs'}</span></div>
         {visibleRuns.map(run => <details className="card trainer-run" key={run.id}>
           <summary>
@@ -213,6 +196,7 @@ function BlitzClock({ blitz, result, changed }: { blitz: Blitz | null; result: B
   </div>;
 }
 const Splits = memo(function Splits({ run, cube }: { run: BlitzRun; cube: Cube | null }) {
+  useContext(SettingsContext);
   const [sort, setSort] = useState<{ column: 'order' | 'caseId' | 'milliseconds' | 'recognitionMilliseconds' | 'executionMilliseconds'; ascending: boolean }>({ column: 'caseId', ascending: true });
   const splits = run.splits.map((split, index) => ({ ...split, retry: split.retry ?? (!!split.dnf && run.splits[index + 1]?.caseId === split.caseId), order: index + 1 })).sort((a, b) => {
     const first = a[sort.column], second = b[sort.column];
@@ -223,8 +207,8 @@ const Splits = memo(function Splits({ run, cube }: { run: BlitzRun; cube: Cube |
     run.splits.every(split => split[column] !== undefined) ? run.splits.reduce((sum, split) => sum + split[column]!, 0) : undefined);
   return <>
     <dl className="trainer-run-settings mt-3" aria-label="Timing breakdown">
-      <div><dt>Recognition <InfoTip>Time from each case loading to its first turn, excluding the countdown. Older results without timing data show Not recorded.</InfoTip></dt><dd>{recordedTime(timings[0])}</dd></div>
-      <div><dt>Execution <InfoTip>Time from the first turn to case completion, including pauses between turns.</InfoTip></dt><dd>{recordedTime(timings[1])}</dd></div>
+      <div><dt>Recognition <InfoTip>{TOOLTIPS.trainer.recognitionTime}</InfoTip></dt><dd>{recordedTime(timings[0])}</dd></div>
+      <div><dt>Execution <InfoTip>{TOOLTIPS.trainer.executionTime}</InfoTip></dt><dd>{recordedTime(timings[1])}</dd></div>
     </dl>
     <details className="settings-disclosure trainer-run-options"><summary>Run settings</summary>
     {run.settings ? <dl className="trainer-run-settings">

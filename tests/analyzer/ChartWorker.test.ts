@@ -54,6 +54,18 @@ describe('chartWorker message handling', () => {
         expect(chartData.bestSolvesData[0].time).toBe((12.345).toFixed(precision));
         expect(chartData.runningAverage.datasets[0].data[0]).toBeCloseTo(12.345);
     });
+    test('minute formatting crosses the worker boundary without changing chart values or exports', () => {
+        const solves = makeSolves(20, { time: 65.125, mistakes: [{ kind: 'f2lPause' }] });
+        const minutes = run({ solves, precision: 3, showMinutes: true, disabledMistakes: ['f2lPause'] }).chartData;
+        expect(minutes.recordRows[0].time).toBe('1:05.125');
+        expect(minutes.bestSolvesData[0].time).toBe('1:05.125');
+        expect(minutes.runningAverage.datasets[0].data[0]).toBeCloseTo(65.125);
+        expect(minutes.mistakes.counts.some(item => item.kind === 'f2lPause')).toBe(false);
+        const seconds = run({ solves, precision: 3, showMinutes: false }).chartData;
+        expect(seconds.recordRows[0].time).toBe('65.125');
+        expect(seconds.bestSolvesData[0].time).toBe('65.125');
+        expect(seconds.runningAverage.datasets[0].data[0]).toBeCloseTo(65.125);
+    });
 
     test('returns every chart the panel renders', () => {
         const { chartData } = run();
@@ -398,10 +410,10 @@ describe('chartWorker streaks', () => {
         expect(subTen.currentstreak).toBe('0');
     });
 
-    test('always reports the six streak targets', () => {
+    test('always reports all seven streak targets including Sub-7', () => {
         const { chartData } = run();
         expect(chartData.streakRows.map((r) => r.time))
-            .toEqual(['Sub-5', 'Sub-10', 'Sub-15', 'Sub-20', 'Sub-30', 'Overall']);
+            .toEqual(['Sub-5', 'Sub-7', 'Sub-10', 'Sub-15', 'Sub-20', 'Sub-30', 'Overall']);
     });
 
     test('keeps only the fastest solve of each day', () => {
