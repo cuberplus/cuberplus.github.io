@@ -135,12 +135,13 @@ async function click(text: string) {
 const groups = () => Array.from(container.querySelectorAll('[aria-label="Solution steps"] > [role="group"]'));
 const position = () => container.querySelector('[aria-label="Replay move"]')!.getAttribute('aria-valuenow');
 const facelets = () => container.querySelector('[aria-label="Replay cube"]')!.getAttribute('data-facelets');
-test.each(['current', 'suggested'])('%s replay highlighting stops before OLL and PLL and has no modal setting', async mode => {
-  localStorage.setItem('replay-highlight', mode);
+test.each(['default', 'current', 'suggested', 'none'])('%s replay highlighting respects preferences, stops before OLL and PLL and has no modal setting', async mode => {
+  if (mode !== 'default') localStorage.setItem('replay-highlight', mode);
   const solve = { ...recording(scramble, scramble.split(' ').reverse().map(inverse).join(' ')), crossOverride: 3 };
   await act(async () => root.render(createElement(SettingsProvider, null, createElement(Replay, { cube, solve, close }))));
   const highlighted = () => JSON.parse(container.querySelector('[aria-label="Replay cube"]')!.getAttribute('data-highlight')!) as PieceSelection;
-  expect(highlighted().EDGES?.length).toBeGreaterThan(0);
+  if (mode === 'none') expect(highlighted()).toEqual({});
+  else expect(highlighted().EDGES?.length).toBeGreaterThan(0);
   expect(container.querySelector('[aria-label="Replay highlight"]')).toBeNull();
   const ollMove = container.querySelector<HTMLButtonElement>('[aria-label="OLL solution"] button.move')!;
   expect(ollMove).not.toBeNull();

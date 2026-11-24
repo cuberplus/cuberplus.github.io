@@ -9,7 +9,7 @@ export function highlightCubies(object: SceneNode, selection: PieceSelection, au
   for (const [orbit, selected] of Object.entries(selection)) for (const piece of selected) {
     const cubie = puzzle.pieces?.[orbit]?.[piece];
     if (!cubie) continue;
-    const edge = orbit === 'EDGES', expansion = edge ? 1.1 : 1.06, lift = edge ? 0.16 : 0.1;
+    const center = orbit === 'CENTERS', expansion = center ? 1.06 : 1.1, lift = center ? 0.1 : 0.16;
     for (const [index, node] of [...cubie.children].entries()) {
       if (!node.visible) continue;
       const position = node.position.clone(), scale = node.scale.clone();
@@ -27,12 +27,12 @@ export function highlightCubies(object: SceneNode, selection: PieceSelection, au
         foundation.material = outline;
         restore.push(() => { foundation.material = original; outline.dispose(); });
       }
-      if (index > 0 && (aura === 'color' || edge) && foundation.material?.clone) {
+      if (index > 0 && (aura === 'color' || !center) && foundation.material?.clone) {
         const outline = node.clone() as SceneNode & { material: Material };
         outline.material = foundation.material.clone();
         if (aura === 'color') outline.material.color.multiplyScalar(0.35);
         else outline.material.color.set(aura === 'white' ? '#ffffff' : '#000000');
-        outline.scale.multiplyScalar(edge ? 1.2 : 1.15); outline.position.multiplyScalar(0.995);
+        outline.scale.multiplyScalar(center ? 1.15 : 1.2); outline.position.multiplyScalar(0.995);
         cubie.add(outline);
         restore.push(() => { cubie.remove(outline); outline.material.dispose(); });
       }

@@ -153,7 +153,7 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
     <SolveTimeline cube={cube} solve={solve} elapsed={solve.duration} precision={precision} position={position} cursor={cursor} seekMove={hasReplay ? seekPosition : undefined}
       seek={hasReplay && solve.moves.length ? time => seekPosition(time < 0 ? 0 : timestamps.reduce((closest, stamp, i) => Math.abs(stamp - time) <= Math.abs((timestamps[closest - 1] ?? 0) - time) ? i + 1 : closest, 0)) : undefined} />
     </section>
-    <div className="replay-disclosure-row"><details className="replay-disclosure"><summary>Solution moves</summary>
+    <div className="replay-disclosure-row replay-section"><details className="replay-disclosure"><summary>Solution moves</summary>
     <div className="move-timeline" role="group" aria-label="Solution steps">{steps.map((step, index) => <div key={`${index}-${step.name}`} role="group" aria-label={`${step.name} solution`} className="mb-2">
       <div className="d-flex align-items-baseline gap-2">
         <h3 className="replay-step-name">{step.caseKey ? <button type="button" className="replay-case-link" aria-label={`${step.name}: open ${step.case} case`} onClick={() => { setPlaying(false); setCaseKey(step.caseKey); }}>{step.name}</button> : step.name}</h3>
@@ -176,7 +176,7 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
     {!!solve.penalty && <p className="text-warning mt-2" aria-label="Penalty reason">+{solve.penalty / 1000} {solve.penalty === 2000 ? 'reason' : 'reasons'}: {getPenaltyReasons(solve).join(', ')}</p>}
     {solve.reason && solve.reason !== 'Solve aborted by user.' && <p className="text-secondary small mt-2">{solve.reason}</p>}
     <details className="replay-disclosure replay-section" onToggle={event => setInsightsOpen(event.currentTarget.open)}><summary>Insights</summary>{insightsOpen && <SolveMistakes cube={cube} solve={solve} history={history} />}</details>
-    {change && <div className="replay-disclosure-row"><details className="replay-disclosure"><summary>Analysis settings</summary>
+    {change && <div className="replay-disclosure-row replay-section"><details className="replay-disclosure"><summary>Analysis settings</summary>
     <div className="d-flex gap-2 align-items-center flex-wrap mt-3">
       <button className="btn btn-outline-primary" disabled={deleting} onClick={() => reanalyze(solve.crossOverride)}>Re-run analysis</button>
       {hasReplay && <label className="d-flex gap-2 align-items-center">Base cross color

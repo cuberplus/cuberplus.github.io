@@ -18,7 +18,7 @@ type Settings = {
   replayHighlight: string; setReplayHighlight(value: string): void;
   highlightAura: HighlightAura; setHighlightAura(value: HighlightAura): void;
 };
-export const SettingsContext = createContext<Settings>({ theme: 'aurora', isDark: true, precision: 2, solveLimit: DEFAULT_SOLVE_LIMIT, session: 'Default', allSessions: false, error: '', showMinutes: true, fontSize: 'normal', disabledMistakes: [], replayHighlight: 'none', highlightAura: 'black', setHighlightAura: () => {}, setReplayHighlight: () => {}, setShowMinutes: () => {}, setFontSize: () => {}, setDisabledMistakes: () => {}, setTheme: () => {}, setPrecision: () => {}, setSolveLimit: () => {}, setSession: () => {}, setAllSessions: () => {} });
+export const SettingsContext = createContext<Settings>({ theme: 'aurora', isDark: true, precision: 2, solveLimit: DEFAULT_SOLVE_LIMIT, session: 'Default', allSessions: false, error: '', showMinutes: true, fontSize: 'normal', disabledMistakes: [], replayHighlight: 'current', highlightAura: 'black', setHighlightAura: () => {}, setReplayHighlight: () => {}, setShowMinutes: () => {}, setFontSize: () => {}, setDisabledMistakes: () => {}, setTheme: () => {}, setPrecision: () => {}, setSolveLimit: () => {}, setSession: () => {}, setAllSessions: () => {} });
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState(savedTheme), [precision, setPrecision] = useState<2 | 3>(() => read('timer-time-precision') === '3' ? 3 : 2);
@@ -29,10 +29,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [showMinutes, setShowMinutes] = useState(() => readOption('show-minutes') !== 'false');
   const [fontSize, setFontSize] = useState<FontSize>(() => { const saved = readOption('font-size'); return saved === 'small' || saved === 'large' ? saved : 'normal'; });
   const [disabledMistakes, setDisabledMistakes] = useState(readDisabledMistakes);
-  const [replayHighlight, setReplayHighlight] = useState(() => { const saved = read('replay-highlight'); return saved === 'current' || saved === 'suggested' ? saved : 'none'; });
+  const [replayHighlight, setReplayHighlight] = useState(() => { const saved = read('replay-highlight'); return saved === 'none' || saved === 'suggested' ? saved : 'current'; });
   const [highlightAura, setHighlightAura] = useState<HighlightAura>(() => { const saved = read('highlight-aura'); return saved === 'white' || saved === 'color' ? saved : 'black'; });
   setTimeDisplay(showMinutes);
-  useLayoutEffect(() => { document.body.style.zoom = fontSize === 'small' ? '0.8' : fontSize === 'large' ? '1.2' : ''; }, [fontSize]);
+  useLayoutEffect(() => {
+    document.body.style.zoom = fontSize === 'small' ? '0.8' : fontSize === 'large' ? '1.2' : '';
+    document.body.style.setProperty('--cp-scramble-scale', fontSize === 'small' ? '0.9' : fontSize === 'large' ? '1.25' : '1');
+  }, [fontSize]);
   function save(key: string, value: string) {
     try { localStorage.setItem(key, value); setError(''); }
     catch { setError('Options changed, but this browser could not save them.'); }

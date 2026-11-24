@@ -12,6 +12,7 @@ export const TOOLTIPS = {
   },
   macAddressHelp: {
     overview: "Try connecting with the MAC field empty first. Only enter an address if your cube asks for it. Use the cube's Bluetooth address, not your computer's adapter, Wi-Fi address, device name, or serial number. This help does not scan or upload addresses.",
+    browserPages: "Browsers block websites from opening edge:// and chrome:// pages directly. Use Copy for your browser, then paste the address into a new tab's address bar.",
     platformLimitations: "iOS scanner apps cannot expose the hardware MAC; their UUID is not the address needed here. On macOS, Bluetooth-internals may also show an identifier that is not the real hardware MAC. Use Windows or Android, or consult the library author's FAQ.",
   },
   replayHighlightOptions: {

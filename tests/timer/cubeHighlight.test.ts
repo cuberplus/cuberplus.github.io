@@ -10,7 +10,7 @@ function cubie() {
   }
   return group;
 }
-test.each(['black', 'white', 'color'] as const)('%s edge highlights pop farther out, retain sticker colors and restore cleanly', aura => {
+test.each(['black', 'white', 'color'] as const)('%s corner and edge highlights match, retain sticker colors and restore cleanly', aura => {
   const edge = cubie(), other = cubie(), corner = cubie();
   const originals = [...edge.children] as Mesh<BoxGeometry, MeshBasicMaterial>[];
   const colors = originals.map(mesh => mesh.material.color.getHexString());
@@ -21,7 +21,12 @@ test.each(['black', 'white', 'color'] as const)('%s edge highlights pop farther 
   expect(originals[0].scale.x).toBeCloseTo(1.1);
   expect(originals[0].position.y).toBeCloseTo(1.26);
   expect(originals.slice(1).map(mesh => mesh.material.color.getHexString())).toEqual(colors.slice(1));
-  expect(corner.children[0].scale.x).toBeCloseTo(1.06);
+  expect(corner.children).toHaveLength(edge.children.length);
+  corner.children.forEach((node, index) => {
+    expect(node.scale.toArray()).toEqual(edge.children[index].scale.toArray());
+    expect(node.position.y).toBeCloseTo(edge.children[index].position.y);
+    expect(node.position.z).toBeCloseTo(edge.children[index].position.z);
+  });
   expect(other.children[0].scale.x).toBe(1);
   expect(other.children[0].position.y).toBe(1);
   const outlines = edge.children.slice(3) as Mesh<BoxGeometry, MeshBasicMaterial>[];

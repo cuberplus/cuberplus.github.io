@@ -23,7 +23,7 @@ details[open] > .visuals-summary::after { transform: rotate(225deg); }
 .metric-trend--equal { color: #808080; }
 .timer-panel.ready { border-color: var(--cp-accent); }
 .timer-details { display: flex; align-items: center; justify-content: center; }
-.timer-panel > .scramble { position: relative; min-height: 2.5rem; padding-right: 3rem; }
+.timer-panel > .scramble { position: relative; min-height: 2.5rem; padding-right: 3rem; font-size: calc(1rem * var(--cp-scramble-scale, 1)); }
 .scramble-refresh { position: absolute; top: 0; right: 0; width: 2.5rem; height: 2.5rem; display: inline-flex; align-items: center; justify-content: center; }
 .scramble-solving .scramble-content { visibility: hidden; }
 .scramble-content { text-wrap: balance; }
@@ -98,7 +98,7 @@ th[aria-sort="descending"] .history-sort::after { border-top: 6px solid currentC
   .timer-toolbar .route-heading { font-size: 1.5rem; }
   .timer-toolbar .page-actions { flex-wrap: nowrap; gap: 4px; }
   .timer-panel { min-height: 0; padding: 10px; }
-  .timer-panel > .scramble { font-size: .875rem; line-height: 1.7; margin-bottom: 0 !important; }
+  .timer-panel > .scramble { font-size: calc(.875rem * var(--cp-scramble-scale, 1)); line-height: 1.7; margin-bottom: 0 !important; }
   .timer-hero { display: grid; grid-template-columns: minmax(0, 1fr) 100px; gap: 0; margin: 0; align-items: center; }
   .timer-hero > * { width: auto; padding: 0; margin: 0; }
   .timer-hero--no-cube { grid-template-columns: minmax(0, 1fr); min-height: 110px; }
