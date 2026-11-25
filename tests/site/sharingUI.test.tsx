@@ -61,7 +61,9 @@ test('recipients view averages and read-only replays without connecting, publish
   const view = render(<PageLocation.Provider value="/share/?id=public-file"><SharedPage /></PageLocation.Provider>);
   await screen.findByRole('heading', { name: 'Shared average' });
   expect(readShare).toHaveBeenCalledWith({ id: 'public-file', resourceKey: undefined }, expect.any(AbortSignal));
-  fireEvent.click(screen.getByRole('button', { name: /^Ao1:/ }));
+  expect(screen.getByRole('heading', { name: /^Ao1:/ })).toBeDefined();
+  expect(screen.queryByRole('button', { name: /^Ao1:/ })).toBeNull();
+  expect(screen.queryByRole('dialog')).toBeNull();
   expect(screen.getByRole('table', { name: 'Average solves' })).toBeDefined();
   fireEvent.click(within(screen.getByRole('table', { name: 'Average solves' })).getAllByRole('button')[4]);
   expect(screen.getByText('Read only')).toBeDefined();
@@ -70,6 +72,30 @@ test('recipients view averages and read-only replays without connecting, publish
   view.rerender(<PageLocation.Provider value="/share/?id=gone"><SharedPage /></PageLocation.Provider>);
   await act(async () => {});
   expect(screen.queryByText('Read only')).toBeNull();
+});
+test('shared averages reuse sortable modal columns, trimming and penalties inline', async () => {
+  jest.mocked(readShare).mockResolvedValueOnce({ ...snapshot, time: 'DNF', rows: [
+    { ...snapshot.rows[0], number: 1, time: 12, trimmed: 'best', penalty: 2 },
+    { ...snapshot.rows[0], number: 2, time: 'DNF', turns: 0, tps: null, trimmed: 'worst' },
+  ] });
+  render(<PageLocation.Provider value="/share/?id=public-file"><SharedPage /></PageLocation.Provider>);
+  const table = await screen.findByRole('table', { name: 'Average solves' });
+  const panel = table.closest('section')!;
+  expect(within(panel).getByRole('heading', { name: 'Ao2: DNF' })).toBeDefined();
+  expect(within(table).getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['Solve', 'Time', 'Turns', 'TPS']);
+  expect(table.querySelector('.average-trimmed-best')?.textContent).toBe('(12.00s)');
+  expect(table.querySelector('.average-trimmed-worst')?.textContent).toBe('(DNF)');
+  expect(within(table).getByText('+2')).toBeDefined();
+  expect(within(table).getByText('--')).toBeDefined();
+  const rows = table.querySelectorAll('tbody tr');
+  fireEvent.click(within(table).getByRole('button', { name: 'Time', exact: true }));
+  fireEvent.click(within(table).getByRole('button', { name: 'Time', exact: true }));
+  expect(table.querySelector('tbody tr')).toBe(rows[1]);
+  expect(table.querySelector('th[aria-sort="descending"]')?.textContent).toBe('Time');
+  expect(panel.querySelectorAll('th[aria-sort]')).toHaveLength(1);
+  fireEvent.click(within(table).getByRole('button', { name: 'Solve 2: 0 turns, open replay' }));
+  expect(screen.getByText('Read only')).toBeDefined();
+  expect(connectSharing).not.toHaveBeenCalled();
 });
 test('revoked or malformed links show an error instead of prompting sign-in', async () => {
   jest.mocked(readShare).mockRejectedValueOnce(new Error('Snapshot revoked.'));

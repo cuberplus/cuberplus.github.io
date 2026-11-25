@@ -123,8 +123,27 @@ try {
   const averageUrl = await sharing.getByLabel('Public snapshot link').inputValue();
   await reader.goto(averageUrl);
   await expect(reader.getByRole('heading', { name: 'Shared average' })).toBeVisible();
-  await reader.getByRole('button', { name: /^Ao/ }).click();
-  await expect(reader.locator('dialog.average-dialog tbody tr')).toHaveCount(fileAt(averageUrl).data.rows.length);
+  await expect(reader.locator('section.shared-average tbody tr')).toHaveCount(fileAt(averageUrl).data.rows.length);
+  await expect(reader.locator('dialog.average-dialog')).toHaveCount(0);
+  const sharedAverage = reader.locator('section.shared-average');
+  expect(await sharedAverage.locator('thead th').allTextContents()).toEqual(['Solve', 'Time', 'Turns', 'TPS']);
+  await sharedAverage.getByRole('button', { name: 'Time', exact: true }).click();
+  await sharedAverage.getByRole('button', { name: 'Time', exact: true }).click();
+  await expect(sharedAverage.locator('th[aria-sort="descending"]')).toHaveText('Time');
+  for (const width of [1200, 390, 320]) {
+    await reader.setViewportSize({ width, height: 900 });
+    expect(await reader.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect(await sharedAverage.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    if (process.env.NOV24_SCREENSHOTS) {
+      mkdirSync(process.env.NOV24_SCREENSHOTS, { recursive: true });
+      await reader.screenshot({ path: join(process.env.NOV24_SCREENSHOTS, `shared-average-${width}.png`) });
+    }
+  }
+  await sharedAverage.locator('tbody .average-cell').first().click();
+  await expect(publicReplay).toBeVisible();
+  await expect(publicReplay.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0);
+  await publicReplay.getByRole('button', { name: 'Close replay' }).click();
+  await reader.setViewportSize({ width: 1200, height: 900 });
   expect(fileAt(averageUrl).data.rows.filter(row => row.trimmed)).toHaveLength(2);
   await page.goto(`${base}/analyzer/`);
   await expect(page.locator('canvas').first()).toBeVisible({ timeout: 120000 });

@@ -20,20 +20,20 @@ export interface AverageRow<T> {
   penalty?: number;
 }
 
-export function AverageDialog<T>({ rows, time, precision, view, close, title, share }: {
+interface AverageDetailsProps<T> {
   rows: AverageRow<T>[];
   time: number | 'DNF';
   precision: 2 | 3;
   view: (solve: T) => void;
-  close: () => void;
   title?: string;
   share?: ReactNode;
+}
+
+export function AverageDetails<T>({ rows, time, precision, view, title, share, heading, closeButton }: AverageDetailsProps<T> & {
+  heading: string;
+  closeButton?: ReactNode;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const heading = useId();
   const [sort, setSort] = useState<{ column: Column; direction: 'ascending' | 'descending' }>({ column: 'number', direction: 'ascending' });
-  usePageDialog(dialog);
-  const dismiss = () => { dialog.current?.close(); close(); };
   const ordered = useMemo(() => [...rows].sort((a, b) => {
     const left = a[sort.column], right = b[sort.column];
     if (left === null || right === null) return left === right ? a.number - b.number : left === null ? 1 : -1;
@@ -56,18 +56,30 @@ export function AverageDialog<T>({ rows, time, precision, view, close, title, sh
       <td>{field(row.turns, `${row.turns} turns`)}</td><td>{field(row.tps === null ? '--' : row.tps.toFixed(2), `${row.tps === null ? '--' : row.tps.toFixed(2)} TPS`)}</td>
     </tr>;
   }), [ordered, precision, view]);
-  return <dialog ref={dialog} className="panel average-dialog" aria-labelledby={heading} onCancel={event => { event.preventDefault(); dismiss(); }}>
+  return <>
     <div className="d-flex justify-content-between align-items-center gap-3 flex-wrap">
       <h2 id={heading}>{title ?? `Ao${rows.length}: ${format(time, precision)}`}</h2>
-      <div className="d-flex align-items-center gap-3">{share}<button autoFocus className="btn-close" aria-label={`Close ${title ? 'solves' : 'average'}`} onClick={dismiss} /></div>
+      <div className="d-flex align-items-center gap-3">{share}{closeButton}</div>
     </div>
     <div className="table-responsive" tabIndex={0} role="region" aria-labelledby={heading}>
       <table className="table table-sm align-middle average-clickable" aria-label={title ? 'Selected solves' : 'Average solves'}>
         <thead><tr>{columns.map(({ key, label }) => <th key={key} scope="col" aria-sort={sort.column === key ? sort.direction : undefined}>
-          <button className="history-sort" onClick={() => setSort({ column: key, direction: sort.column === key && sort.direction === 'ascending' ? 'descending' : 'ascending' })}>{label}</button>
+          <button type="button" className="history-sort" onClick={() => setSort({ column: key, direction: sort.column === key && sort.direction === 'ascending' ? 'descending' : 'ascending' })}>{label}</button>
         </th>)}</tr></thead>
         <tbody>{tableRows}</tbody>
       </table>
     </div>
+  </>;
+}
+
+export function AverageDialog<T>({ close, ...details }: AverageDetailsProps<T> & { close: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const heading = useId();
+  usePageDialog(dialog);
+  const dismiss = () => { dialog.current?.close(); close(); };
+  return <dialog ref={dialog} className="panel average-dialog" aria-labelledby={heading} onCancel={event => { event.preventDefault(); dismiss(); }}>
+    <AverageDetails {...details} heading={heading} closeButton={
+      <button autoFocus className="btn-close" aria-label={`Close ${details.title ? 'solves' : 'average'}`} onClick={dismiss} />
+    } />
   </dialog>;
 }
