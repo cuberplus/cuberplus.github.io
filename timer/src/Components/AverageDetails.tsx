@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { solveTime, type Solve } from '../Core/engine';
 import { averageDetails, numberedSolves, turns } from '../Data/storage';
 import { AverageDialog, type AverageRow } from './AverageDialog';
+import { ShareButton } from '../../../src/sharing/ShareButton';
+import { makeSnapshot } from '../../../src/sharing/snapshot';
 
 export function AverageDetails({ details, history, precision, view, close, title }: {
   details: NonNullable<ReturnType<typeof averageDetails>>;
@@ -24,5 +26,7 @@ export function AverageDetails({ details, history, precision, view, close, title
       };
     });
   }, [details, history]);
-  return <AverageDialog rows={rows} time={details.time === 'DNF' ? 'DNF' : details.time / 1000} precision={precision} view={view} close={close} title={title} />;
+  const time = details.time === 'DNF' ? 'DNF' : details.time / 1000;
+  return <AverageDialog rows={rows} time={time} precision={precision} view={view} close={close} title={title}
+    share={<ShareButton label={title ? 'Share solves' : 'Share average'} load={() => makeSnapshot(rows, time, title ? 'collection' : 'average')} />} />;
 }

@@ -91,7 +91,10 @@ test('a mistake opens an in-place case practice dialog and releases timer owners
   expect(dialog.open).toBe(true);
   expect(dialog.querySelector('.trainer-practice')!.getAttribute('data-case')).toBe('PLL-T');
   expect(dialog.textContent).toContain('PLL T drill');
-  expect(dialog.querySelector('fieldset')!.hidden).toBe(true);
+  expect(dialog.querySelector('fieldset > legend')!.textContent).toBe('Drill settings');
+  expect(dialog.querySelector('.trainer-practice > fieldset')!.getAttribute('hidden')).not.toBeNull();
+  expect(Array.from(dialog.querySelectorAll('button')).some(button => button.textContent === 'Start practice')).toBe(true);
+  expect(Array.from(dialog.querySelectorAll('button')).some(button => button.textContent === 'Stop drill')).toBe(false);
   expect(dialog.querySelector('[aria-label="Back to cases"]')).toBeNull();
   expect(location.href).toBe(address);
   expect(cubeConnection.getSnapshot().practicing).toBe(true);
@@ -158,6 +161,9 @@ test('manual penalties are reversible, preserve automatic reasons, and do not ch
   const original = structuredClone(solve);
   const change = (updated: Solve) => { solve = updated; };
   await draw(solve, change);
+  expect(Array.from(container.querySelectorAll('.replay-actions button')).map(button => button.textContent)).toEqual(['Share', '+2', 'DNF', 'Delete']);
+  expect(container.querySelector('.replay-header')!.textContent).not.toContain('Share');
+  expect(Array.from(container.querySelectorAll('.replay-edit-actions button')).map(button => button.textContent)).toEqual(['+2', 'DNF', 'Delete']);
   const manual = () => container.querySelectorAll<HTMLButtonElement>('[aria-label="Solve penalties and deletion"] button[aria-pressed]');
   expect(manual()[0].getAttribute('aria-pressed')).toBe('false');
   await act(async () => manual()[0].click());
@@ -270,7 +276,7 @@ test('replay prioritizes time and playback while keeping solution, analysis and 
   expect(header.querySelector('a')).toBeNull();
   expect(container.querySelector('.replay-scramble a')!.textContent).toBe('Retry');
   expect(header.querySelector('[aria-label="Solve date"]')).not.toBeNull();
-  expect(Array.from(container.querySelectorAll('[aria-label="Solve penalties and deletion"] button'), element => element.textContent)).toEqual(['Delete']);
+  expect(Array.from(container.querySelectorAll('[aria-label="Solve penalties and deletion"] button'), element => element.textContent)).toEqual(['Share', 'Delete']);
   expect(header.querySelector('h2')!.textContent).toBe('Solve replay');
   expect(header.textContent).not.toMatch(/complete|host timing|quarter turns/i);
   const solution = container.querySelector('[aria-label="Solution steps"]')!.closest('details')!;

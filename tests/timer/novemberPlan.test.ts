@@ -46,6 +46,13 @@ test('only the toughest newly reached daily streak notifies, including later imp
   expect(dailyStreakNotification([recording(23, 1, 'incomplete')], first)?.label).toBe('Sub-10');
   expect(dailyStreakNotification([], recording(23, 7000))?.label).toBe('Sub-10');
 });
+test('Sub-1:00 uses a strict minute boundary including penalties and supports streak drilldowns', () => {
+  const yesterday = recording(22, 59000), today = recording(23, 59999), boundary = recording(23, 60000);
+  expect(dailyStreakNotification([yesterday], today)).toEqual({ current: 2, label: 'Sub-1:00' });
+  expect(dailyStreakNotification([yesterday], boundary)?.label).toBe('Overall');
+  expect(dailyStreakNotification([yesterday], { ...today, duration: 58000, penalty: 2000 })?.label).toBe('Overall');
+  expect(dailyStreakSolves([yesterday, boundary], today, 'Sub-1:00')).toEqual([yesterday, today]);
+});
 test('smart drill limits each selected stage, combines rankings, and ignores corrupt, skipped and retry cases', () => {
   const solves = Array.from({ length: 8 }, (_, i) => makeSolve({ id: String(i), steps: [
     makeStep(StepName.F2L_1, 3 + i, { case: '1', moves: i === 7 ? "R U R' U R U R' U R U R'" : "R U R'" }),

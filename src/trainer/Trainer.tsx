@@ -18,6 +18,7 @@ import './trainer.css';
 import { formatMilliseconds } from '../../shared/display';
 import { DrillSettings } from './DrillSettings';
 import { OrientationFlashcards } from './OrientationFlashcards';
+import { DrillBackButton } from './DrillBackButton';
 import { TOOLTIPS } from '../../shared/tooltips';
 
 const seconds = (milliseconds: number) => `${formatMilliseconds(milliseconds)}s`;
@@ -122,9 +123,7 @@ export default function Trainer() {
         <button className="card trainer-drill" onClick={() => setMode('custom')}><CaseImage category="PLL" id="T" /><h3>Make your own drill</h3></button>
         <button className="card trainer-drill" onClick={() => setMode('orientation')}><CaseImage category="OLL" id="45" /><h3>Orientation Flashcards</h3></button></div></> : <>
         <div className="d-flex align-items-center gap-3 mb-3">
-          <button className="btn btn-outline-secondary" aria-label="Back to drills" disabled={busy} onClick={() => { drill.current = null; setKind(null); setResult(null); }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M20 12H4m7-7-7 7 7 7" /></svg>
-          </button>
+          <DrillBackButton disabled={busy} back={() => { drill.current = null; setKind(null); setResult(null); }} />
           <h2 className="mb-0">{kind} Blitz <InfoTip>{TOOLTIPS.trainer.blitz}</InfoTip></h2>
         </div>
         {!navigator.bluetooth && <p>Use a browser with Web Bluetooth, such as Chrome or Edge.</p>}

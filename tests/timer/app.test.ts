@@ -2410,10 +2410,12 @@ test('disconnect cancels pending advancement and discards buffered events', asyn
   await act(async () => move('F', 1000));
   await click('Disconnect');
   await act(async () => resolveNext('F L2'));
-  expect(container.querySelector('[role="status"]')?.textContent).toContain('Cube disconnected');
+  expect(container.querySelector('.timer-details [role="status"]')?.textContent).toContain('Cube disconnected');
   expect(container.querySelector('[aria-label="Scramble"]')?.textContent).toContain('R');
   expect(container.querySelector('[role="img"]')?.getAttribute('data-facelets')).toBe(SOLVED);
-  expect(save.mock.calls.flatMap(([solves]) => solves).filter(solve => solve.status === 'complete')).toHaveLength(2);
+  const completed = save.mock.calls.flatMap(([solves]) => solves).filter(solve => solve.status === 'complete');
+  expect(new Set(completed.map(solve => solve.id)).size).toBe(1);
+  expect(completed.at(-1)).toMatchObject({ scramble: 'R U2', penalty: 2000 });
 });
 
 test.each([100, 500, 501])('an extra turn after %s ms updates the timer and history immediately, even during preparation', async delay => {

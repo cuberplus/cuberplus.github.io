@@ -26,6 +26,23 @@ try {
   });
   const dialog = page.getByRole('dialog', { name: 'Practice PLL T', exact: true });
   await expect(dialog).toBeVisible();
+  await page.evaluate(async () => {
+    const { cubeConnection } = await import('/shared/cube/connection.ts');
+    cubeConnection.update({ connection: { deviceName: 'Test cube' } });
+  });
+  const start = dialog.getByRole('button', { name: 'Start practice', exact: true });
+  await expect(start).toBeEnabled();
+  await page.waitForTimeout(3200);
+  await expect(dialog.getByRole('button', { name: 'Stop drill', exact: true })).toHaveCount(0);
+  await expect(dialog.locator('.trainer-practice-case-image')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Options', exact: true }).click();
+  const options = page.getByRole('dialog', { name: 'PLL T drill options', exact: true });
+  await expect(options.getByRole('checkbox', { name: 'Random pre-AUF' })).toBeEnabled();
+  await options.getByRole('checkbox', { name: 'Random pre-AUF' }).uncheck();
+  await options.getByRole('button', { name: 'Close options', exact: true }).click();
+  await start.click();
+  await expect(dialog.getByRole('button', { name: 'Stop drill', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Stop drill', exact: true }).click();
   for (const width of [1200, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     const image = dialog.locator('.trainer-practice-case-image img');
@@ -55,5 +72,5 @@ try {
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
   expect(errors).toEqual([]);
-  console.log('Practice modal image is centered at desktop/mobile sizes; timing headers sort numeric values, dates and DNFs using pointer and keyboard.');
+  console.log('Mistake practice waits for explicit Start with a connected cube and allows changing settings; image centers on desktop/mobile and timing headers sort correctly.');
 } finally { await context.close(); await browser.close(); }

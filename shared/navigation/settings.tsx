@@ -18,7 +18,7 @@ type Settings = {
   replayHighlight: string; setReplayHighlight(value: string): void;
   highlightAura: HighlightAura; setHighlightAura(value: HighlightAura): void;
 };
-export const SettingsContext = createContext<Settings>({ theme: 'aurora', isDark: true, precision: 2, solveLimit: DEFAULT_SOLVE_LIMIT, session: 'Default', allSessions: false, error: '', showMinutes: true, fontSize: 'normal', disabledMistakes: [], replayHighlight: 'current', highlightAura: 'black', setHighlightAura: () => {}, setReplayHighlight: () => {}, setShowMinutes: () => {}, setFontSize: () => {}, setDisabledMistakes: () => {}, setTheme: () => {}, setPrecision: () => {}, setSolveLimit: () => {}, setSession: () => {}, setAllSessions: () => {} });
+export const SettingsContext = createContext<Settings>({ theme: 'aurora', isDark: true, precision: 2, solveLimit: DEFAULT_SOLVE_LIMIT, session: 'Default', allSessions: false, error: '', showMinutes: true, fontSize: 'normal', disabledMistakes: ['f2lChoice'], replayHighlight: 'current', highlightAura: 'black', setHighlightAura: () => {}, setReplayHighlight: () => {}, setShowMinutes: () => {}, setFontSize: () => {}, setDisabledMistakes: () => {}, setTheme: () => {}, setPrecision: () => {}, setSolveLimit: () => {}, setSession: () => {}, setAllSessions: () => {} });
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState(savedTheme), [precision, setPrecision] = useState<2 | 3>(() => read('timer-time-precision') === '3' ? 3 : 2);

@@ -32,6 +32,7 @@ const scopeStyles: Plugin = {
 export default defineConfig(({ mode }) => ({
   define: {
     __GOOGLE_CLIENT_ID__: JSON.stringify(loadEnv(mode, root)['VITE_GOOGLE_CLIENT_ID'] ?? ''),
+    __GOOGLE_DRIVE_API_KEY__: JSON.stringify(loadEnv(mode, root)['VITE_GOOGLE_DRIVE_API_KEY'] ?? ''),
     __MICROSOFT_CLIENT_ID__: JSON.stringify(loadEnv(mode, root)['VITE_MICROSOFT_CLIENT_ID'] ?? ''),
   },
   plugins: [react({ exclude: /[/\\](?:Helpers|cube)[/\\]/ }), {
@@ -75,7 +76,7 @@ export default defineConfig(({ mode }) => ({
       writeFileSync(resolve(output, 'analyzer', 'theme-init.js'), await classicScript('shared/config/theme-init.ts'));
       const demos = resolve(output, 'analyzer', 'demo');
       for (const file of readdirSync(demos).filter(file => file.endsWith('.csv'))) writeFileSync(resolve(demos, `${file}.gz`), gzipSync(readFileSync(resolve(demos, file)), { level: 9 }));
-      for (const page of ['timer', 'analyzer', 'scrambler', 'database', 'trainer', 'options', 'smartcubeanalyzer']) {
+      for (const page of ['timer', 'analyzer', 'scrambler', 'database', 'trainer', 'options', 'share', 'smartcubeanalyzer']) {
         mkdirSync(resolve(output, page), { recursive: true });
         writeFileSync(resolve(output, page, 'index.html'), shell);
       }

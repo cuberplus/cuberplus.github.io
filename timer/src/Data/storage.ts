@@ -73,6 +73,16 @@ export async function readSolveIds(): Promise<string[]> {
 export async function readSolve(id: string): Promise<Solve | undefined> {
   return (await withSolves('readonly', store => store.get(id), 'Cannot read local solve.')).result as Solve | undefined;
 }
+export function readSelectedSolves(ids: string[]): Promise<Map<string, Solve>> {
+  return withSolves('readonly', store => {
+    const result = new Map<string, Solve>();
+    for (const id of new Set(ids)) {
+      const request = store.get(id);
+      request.onsuccess = () => { if (request.result) result.set(id, request.result as Solve); };
+    }
+    return result;
+  }, 'Cannot read selected solves.');
+}
 export async function recoverLocalSolves(cube: Cube, current?: (id: string) => boolean): Promise<Solve[]> {
   const solves = await readSolves(100), active = solves.filter(solve => solve.status === 'active' && !current?.(solve.id));
   if (!active.length) return solves;
@@ -276,7 +286,7 @@ export function dailyStreakNotification(previous: Solve[], solve: Solve): { curr
   return null;
 }
 export function dailyStreakSolves(previous: Solve[], solve: Solve, label: string): Solve[] {
-  const target = label === 'Overall' ? Infinity : Number(label.slice(4)) * 1000;
+  const target = (STREAK_TARGETS.find(target => streakLabel(target) === label) ?? 0) * 1000;
   const eligible = [...previous.filter(item => item.id !== solve.id), solve].filter(item => item.status !== 'active' && item.session !== 'Retries' &&
     (target === Infinity || item.status === 'complete' && solveTime(item) < target));
   const { current } = streakWindows(eligible.map(item => calendarDay(solveEndDate(item))), calendarDay(solveEndDate(solve)));

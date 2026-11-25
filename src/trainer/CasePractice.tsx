@@ -21,6 +21,7 @@ import { dataTask } from '../../shared/workers/dataClient';
 import { DrillSettings } from './DrillSettings';
 import { TOOLTIPS } from '../../shared/tooltips';
 import { DrillTable } from './DrillTable';
+import { DrillBackButton } from './DrillBackButton';
 
 const seconds = (time: number) => `${formatMilliseconds(time)}s`;
 export function CasePractice({ cube, mode, initialCase, settings, back, fixedCase = false, changeSettings, optionsDialog }: {
@@ -37,7 +38,6 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
   useEffect(() => () => generation.current?.cancel(), []);
   const id = useId();
   const [selected, setSelected] = useState(initialCase), [algorithm, setAlgorithm] = useState('own');
-  const [pendingStart, setPendingStart] = useState(!!initialCase);
   const heading = useRef<HTMLHeadingElement>(null);
   const [trainings, setTrainings] = useState<CustomTraining[]>([]), [trainingId, setTrainingId] = useState('');
   const [name, setName] = useState(''), [chosen, setChosen] = useState<string[]>([]), [editing, setEditing] = useState(false);
@@ -54,12 +54,6 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
     try { drill.current = new Practice(cube, cases, historyId, settings, performance.now(), Math.random, solution); setError(''); render(); }
     catch (failure) { setError((failure as Error).message); }
   }, [cube, settings]);
-  useEffect(() => {
-    if (!pendingStart || !visible || !connection || !cube || mode !== 'single') return;
-    const entry = findTrainingCase(selected);
-    if (entry) startPractice([entry], `single:${selected}`, algorithm === 'own' ? null : algorithm);
-    setPendingStart(false);
-  }, [pendingStart, visible, connection, cube, mode, selected, algorithm, startPractice]);
   useEffect(() => { if (selected && !fixedCase) heading.current?.focus(); }, [selected, fixedCase]);
   useEffect(() => {
     try { setTrainings(readTrainings()); setAttempts(readAttempts()); } catch (failure) { setError((failure as Error).message); }
@@ -93,10 +87,10 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
   }
   return <section className="trainer-practice" data-case={shown ? caseKey(shown) : selected || undefined} data-color-frame={current?.colorFrame} data-pre-auf={current?.preAuf} data-post-auf={current?.postAuf}>
     <div className="d-flex align-items-center gap-3 mb-3">
-      <button className="btn btn-outline-secondary" aria-label={mode === 'single' && selected && !fixedCase ? 'Back to cases' : 'Back to drills'} onClick={() => {
+      <DrillBackButton label={mode === 'single' && selected && !fixedCase ? 'Back to cases' : 'Back to drills'} back={() => {
         if (mode !== 'single' || !selected || fixedCase) { back(); return; }
-        drill.current = null; setSelected(''); setPendingStart(false); setError('');
-      }}>Back</button>
+        drill.current = null; setSelected(''); setError('');
+      }} />
       <h2 ref={heading} tabIndex={-1} className="mb-0">{mode === 'single' ? entry ? `${caseLabel(entry)} drill` : 'Single-case drill' : 'Make your own drill'} <InfoTip>{TOOLTIPS.casePractice.overview}</InfoTip></h2>
     </div>
     {changeSettings && <dialog ref={options} className="panel options-dialog" aria-labelledby={`${id}-options-title`}>
@@ -110,7 +104,7 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
     <fieldset hidden={running || mode === 'single' && !!entry} disabled={running || generating} className={running || mode === 'single' && entry ? '' : 'd-grid gap-3 mb-3'}>
       <legend className="visually-hidden">Choose practice cases</legend>
       {mode === 'single' ? <>
-        <CasePicker selected={[]} single change={key => { setSelected(key); setAlgorithm('own'); setPendingStart(true); }} />
+        <CasePicker selected={[]} single change={key => { setSelected(key); setAlgorithm('own'); }} />
       </> : <>
         <label htmlFor={`${id}-training`}>Saved training</label><select id={`${id}-training`} className="form-select" value={trainingId} onChange={event => { setTrainingId(event.target.value); setEditing(false); }}>
           <option value="">Choose a training</option>{trainings.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -183,7 +177,7 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
           <button className="btn btn-primary align-self-center" disabled={!connection || !cube || (mode === 'single' ? !entry : !training) || editing || generating}
             onClick={() => {
               const cases = mode === 'single' ? entry ? [entry] : [] : (training?.cases ?? []).flatMap(key => findTrainingCase(key) ?? []);
-              setPendingStart(false); startPractice(cases, historyId, mode === 'single' && algorithm !== 'own' ? algorithm : null);
+              startPractice(cases, historyId, mode === 'single' && algorithm !== 'own' ? algorithm : null);
             }}>Start practice</button></>}
     </div>}
     {error && <p role="alert" className="mt-3">{error}</p>}
@@ -206,8 +200,8 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
 function CasePicker({ selected, single = false, change }: { selected: string[]; single?: boolean; change: (key: string) => void }) {
   const name = useId();
   return <fieldset className="trainer-picker"><legend className="h6">{single ? 'Case' : 'Cases'}</legend>
-    {categories.map(category => <details className="mb-3" key={category}>
-      <summary>{category} cases ({selected.filter(key => key.startsWith(`${category}-`)).length} selected)</summary>
+    {categories.map(category => <details className="trainer-category" key={category}>
+      <summary><CaseImage category={category} id={category === 'PLL' ? 'T' : '1'} /><span>{category} cases ({selected.filter(key => key.startsWith(`${category}-`)).length} selected)</span></summary>
       <div className="trainer-case-picker">{getAlgorithms().filter(item => item.category === category)
         .sort((a, b) => category === 'OF2L' ? Number(caseNumber(a)) - Number(caseNumber(b)) : 0).map(item => {
         const key = caseKey(item);

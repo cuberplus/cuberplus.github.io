@@ -11,6 +11,7 @@ import { cubeConnection } from '../../shared/cube/connection';
 import { adjacentColors, cubeColors } from './blitz';
 import { TOOLTIPS } from '../../shared/tooltips';
 import { DrillTable } from './DrillTable';
+import { DrillBackButton } from './DrillBackButton';
 
 const noMoves: string[] = [];
 function readSettings(): OrientationSettings {
@@ -68,7 +69,7 @@ export function OrientationFlashcards({ cube, back, optionsDialog }: { cube: Cub
       milliseconds: Math.max(0, performance.now() - started.current) };
     setFeedback(attempt); setAttempts(items => [attempt, ...items]);
     try { saveOrientationAttempt(attempt); } catch { setUnsaved(items => [...items, attempt]); setError('Your result is shown, but could not be saved.'); }
-    next.current = setTimeout(showNext, 1000);
+    next.current = setTimeout(showNext, 700);
   };
   const answer = useCallback((value: boolean) => answerRef.current(value), []);
   function changeSettings(value: typeof settings) {
@@ -77,7 +78,7 @@ export function OrientationFlashcards({ cube, back, optionsDialog }: { cube: Cub
   }
   return <section className="orientation-flashcards">
     <div className="d-flex align-items-center gap-3 mb-3">
-      <button className="btn btn-outline-secondary" aria-label="Back to drills" onClick={back}>Back</button>
+      <DrillBackButton back={back} />
       <h2 className="mb-0">Orientation Flashcards <InfoTip>{TOOLTIPS.orientationFlashcards.overview}</InfoTip></h2>
     </div>
     <dialog ref={options} className="panel options-dialog orientation-options" aria-labelledby={`${colorsId}-options-title`}>

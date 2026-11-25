@@ -11,6 +11,7 @@ const pages = {
   database: lazy(() => import('./database/Database')),
   trainer: lazy(() => import('./trainer/Trainer')),
   options: lazy(() => import('./Pages/Options/Options')),
+  share: lazy(() => import('./sharing/SharedPage')),
 };
 export function toolAt(path: string): Tool | null {
   const name = path.replace(/\/index\.html$/, '/').replace(/^\/|\/$/g, '') || 'home';
@@ -46,7 +47,7 @@ function Router() {
   useLayoutEffect(() => {
     const shouldFocus = previousRoute.current !== route;
     previousRoute.current = route;
-    document.title = route === 'home' ? 'CuberPlus | Tools for better solves' : `CuberPlus - ${links.find(([id]) => id === route)?.[2] ?? 'Page not found'}`;
+    document.title = route === 'home' ? 'CuberPlus | Tools for better solves' : `CuberPlus - ${route === 'share' ? 'Shared solves' : links.find(([id]) => id === route)?.[2] ?? 'Page not found'}`;
     if (!route) return;
     const focusHeading = () => {
       const main = document.querySelector<HTMLElement>(`.site-page--${route} main`);

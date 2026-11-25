@@ -12,6 +12,7 @@ import { SettingsSection } from '../../../shared/Components/SettingsSection';
 import { MISTAKES, type MistakeCategory } from '../../../shared/mistakes';
 import { FavoriteOptions } from '../../../timer/src/Components/FavoriteOptions';
 import { TOOLTIPS } from '../../../shared/tooltips';
+import { SharedOptions } from '../../sharing/SharedOptions';
 
 export default function Options() {
   const { theme, setTheme, precision, setPrecision, solveLimit, setSolveLimit, allSessions, setAllSessions, error, showMinutes, setShowMinutes, fontSize, setFontSize, disabledMistakes, setDisabledMistakes, highlightAura, setHighlightAura } = useContext(SettingsContext);
@@ -66,6 +67,7 @@ export default function Options() {
       </SettingsSection>
       <ImportOptions />
       <CloudOptions />
+      <SharedOptions />
       <SettingsSection title="Community"><div className="d-flex gap-2">
         {/* Bootstrap Icons (MIT): /licenses/bootstrap-icons.txt */}
         <a className="btn btn-link d-inline-flex p-2" href="https://discord.gg/ft7tmsSWs" target="_blank" rel="noopener noreferrer" aria-label="Join the CuberPlus Discord server" title={TOOLTIPS.options.discord}>

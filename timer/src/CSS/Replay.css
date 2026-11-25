@@ -17,7 +17,7 @@
 .replay-disclosure > summary { padding-block: .75rem; cursor: pointer; font-weight: 600; }
 .replay-disclosure-row { display: flex; align-items: baseline; gap: .25rem; }
 .replay-actions { display: flex; flex-wrap: wrap; gap: .5rem; border-top: 1px solid var(--cp-border); margin-top: 1rem; padding-top: 1rem; }
-.replay-actions > .btn-outline-danger { margin-inline-start: auto; }
+.replay-edit-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-inline-start: auto; }
 .replay-recording { border-top: 1px solid var(--cp-border); margin-top: .75rem; color: var(--cp-muted); font-size: .85rem; }
 .replay-dialog .scramble, .replay-dialog .move-timeline { font-family: ui-monospace, monospace; line-height: 2.1; }
 .move { display: inline-block; padding: 0 .45rem; margin: 0 .1rem; border-radius: 5px; border: 0; background: transparent; color: var(--cp-text); }
@@ -29,7 +29,7 @@
 .replay-dialog .trail-tip { transition: none; box-shadow: 0 0 0 1px #000; }
 .replay-dialog .replay-step-name { display: table; margin: 0 0 .35rem; padding: .2rem .6rem; border-left: 3px solid #9fc8ff; border-radius: 4px; background: var(--cp-bg); color: var(--cp-accent); font: 700 .75rem var(--cp-font); letter-spacing: .06em; text-transform: uppercase; }
 .replay-case-link { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; text-decoration: underline dotted; text-underline-offset: .2em; }
-@media (max-width: 575px) { .replay-dialog { padding: 1rem; } }
+@media (max-width: 575px) { .replay-dialog { padding: 1rem; } .replay-actions .btn { padding-inline: .5rem; } }
 .replay-scramble { display: flex; align-items: start; gap: 1rem; border-bottom: 1px solid var(--cp-border); padding-bottom: .75rem; margin-bottom: .5rem; }
 .replay-scramble > div { flex: 1; min-width: 0; padding-block: .4rem; }
 .replay-scramble .scramble { overflow-wrap: anywhere; font-size: calc(.9rem * var(--cp-scramble-scale, 1)); }

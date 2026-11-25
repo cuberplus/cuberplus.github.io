@@ -19,6 +19,6 @@ export const MISTAKES = {
 } as const;
 export type MistakeCategory = keyof typeof MISTAKES | 'nonFavorite' | 'unlearn';
 export function readDisabledMistakes(): MistakeCategory[] {
-  try { const saved = JSON.parse(readOption('disabled-mistakes') ?? '[]') as MistakeCategory[]; return Array.isArray(saved) ? saved.filter(key => key in MISTAKES || key === 'nonFavorite' || key === 'unlearn') : []; }
-  catch { return []; }
+  try { const saved = JSON.parse(readOption('disabled-mistakes') ?? '["f2lChoice"]') as MistakeCategory[]; return Array.isArray(saved) ? saved.filter(key => key in MISTAKES || key === 'nonFavorite' || key === 'unlearn') : ['f2lChoice']; }
+  catch { return ['f2lChoice']; }
 }

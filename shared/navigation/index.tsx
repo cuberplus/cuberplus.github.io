@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useId, useRef, useState, type Ref
 import { APP_VERSION } from '../config/version';
 export { APP_VERSION } from '../config/version';
 export { SettingsContext, SettingsProvider } from './settings';
-export type Tool = 'home' | 'timer' | 'smartcubeanalyzer' | 'scrambler' | 'database' | 'trainer' | 'options';
+export type Tool = 'home' | 'timer' | 'smartcubeanalyzer' | 'scrambler' | 'database' | 'trainer' | 'options' | 'share';
 export const PageVisible = createContext(true);
 export const PageLocation = createContext('');
 export function usePageDialog(ref: RefObject<HTMLDialogElement>, autoOpen = true) {

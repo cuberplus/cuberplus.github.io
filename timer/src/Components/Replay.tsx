@@ -17,6 +17,8 @@ import { persistReplayAnalysis, reanalyzeSolve } from '../Analysis/analysis';
 import '../CSS/Replay.css';
 import { solvePairChoices, stepPieces } from '../Analysis/f2lSuggestions';
 import { TOOLTIPS } from '../../../shared/tooltips';
+import { ShareButton } from '../../../src/sharing/ShareButton';
+import { singleSnapshot } from '../../../src/sharing/snapshot';
 
 export function Replay({ cube, solve, history, close, change, remove, retry, retryDisabled = false, readOnly = false, precision = 2, saveError }: { cube: Cube; solve: Solve; history?: Solve[] | (() => Promise<Solve[]>); close: () => void; change?: (solve: Solve) => void; remove?: (solve: Solve) => Promise<void>; retry?: (solve: Solve) => void; retryDisabled?: boolean; readOnly?: boolean; precision?: 2 | 3; saveError?: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -127,9 +129,7 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
         </span>
         <span className="small text-secondary" aria-label="Solve date">{new Date(solve.createdAt).toLocaleString()}</span>
       </div>
-      <div className="d-flex gap-2">
-        <button autoFocus className="btn-close" aria-label="Close replay" disabled={deleting} onClick={dismiss} />
-      </div>
+      <button autoFocus className="btn-close" aria-label="Close replay" disabled={deleting} onClick={dismiss} />
     </div>
     {deleteError && <p className="alert alert-danger" role="alert">{deleteError}</p>}
     {saveError && <p className="alert alert-danger" role="alert">{saveError}</p>}
@@ -190,7 +190,9 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
     {analysisError && <p role="alert" className="alert alert-warning">{analysisError}</p>}
     {caseKey && <CaseModal caseKey={caseKey} close={() => setCaseKey('')} />}
     <div className="replay-actions" role="group" aria-label="Solve penalties and deletion">
-      {change && !readOnly && <>
+      <ShareButton label="Share" load={() => singleSnapshot(solve)} disabled={deleting || solve.status === 'active'} />
+      {!readOnly && <div className="replay-edit-actions">
+      {change && <>
         <button className={`btn ${getPenaltyReasons(solve).includes('manual') ? 'btn-warning' : 'btn-outline-warning'}`}
           aria-pressed={getPenaltyReasons(solve).includes('manual')} disabled={deleting || (solve.status !== 'complete' && solve.dnfReason !== 'manual')}
           onClick={() => change(setPenalty({ ...solve }, 'manual', !getPenaltyReasons(solve).includes('manual')))}>+2</button>
@@ -198,7 +200,8 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
           aria-pressed={solve.dnfReason === 'manual'} disabled={deleting || (solve.status !== 'complete' && solve.dnfReason !== 'manual')}
           onClick={() => change({ ...solve, status: solve.dnfReason === 'manual' ? 'complete' : 'incomplete', dnfReason: solve.dnfReason === 'manual' ? undefined : 'manual' })}>DNF</button>
       </>}
-      {!readOnly && <button className="btn btn-outline-danger" disabled={deleting} onClick={removeSolve}>{deleting ? 'Deleting...' : 'Delete'}</button>}
+      <button className="btn btn-outline-danger" disabled={deleting} onClick={removeSolve}>{deleting ? 'Deleting...' : 'Delete'}</button>
+      </div>}
     </div>
     <div className="replay-disclosure-row replay-recording"><details className="replay-disclosure"><summary>Recording details</summary>
     <div className="d-grid gap-2 small text-secondary text-break mt-3">

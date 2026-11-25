@@ -58,7 +58,7 @@ export const isConnected = (provider: Provider): boolean => provider === 'google
   ? !!googleToken && googleToken.expires > Date.now()
   : !!microsoftReady?.getActiveAccount();
 
-function googleOAuth(): Promise<GoogleOAuth> {
+export function googleOAuth(): Promise<GoogleOAuth> {
   const oauth = () => (window as Window & { google?: { accounts?: { oauth2?: GoogleOAuth } } }).google?.accounts?.oauth2;
   const loaded = oauth();
   if (loaded) return Promise.resolve(loaded);

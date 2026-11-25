@@ -410,10 +410,10 @@ describe('chartWorker streaks', () => {
         expect(subTen.currentstreak).toBe('0');
     });
 
-    test('always reports all seven streak targets including Sub-7', () => {
+    test('always reports all eight streak targets including Sub-1:00', () => {
         const { chartData } = run();
         expect(chartData.streakRows.map((r) => r.time))
-            .toEqual(['Sub-5', 'Sub-7', 'Sub-10', 'Sub-15', 'Sub-20', 'Sub-30', 'Overall']);
+            .toEqual(['Sub-5', 'Sub-7', 'Sub-10', 'Sub-15', 'Sub-20', 'Sub-30', 'Sub-1:00', 'Overall']);
     });
 
     test('keeps only the fastest solve of each day', () => {

@@ -32,10 +32,11 @@ test.each(['single', 'custom'] as const)('%s practice shows each queued setup wi
   const practice = { phase: 'running', queue, pattern, moves: [], splitAt: performance.now(), tick: () => {} };
   jest.mocked(Practice).mockImplementation(() => practice as Partial<Practice> as Practice);
   const view = render(<CasePractice cube={cube} mode={mode} initialCase={mode === 'single' ? 'OLL-27' : ''} settings={settings} back={() => {}} />);
+  expect(Practice).not.toHaveBeenCalled();
   if (mode === 'custom') {
     fireEvent.change(screen.getByLabelText('Saved training'), { target: { value: 'mixed' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Start practice' }));
   }
+  fireEvent.click(screen.getByRole('button', { name: 'Start practice' }));
   const previews = view.container.querySelector('[aria-label="Upcoming 3 cases"]')!;
   expect(previews.children).toHaveLength(3);
   queue.slice(1).forEach((entry, index) => {

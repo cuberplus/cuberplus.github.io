@@ -11,6 +11,7 @@ and printable practice worksheets. One React/Vite app serves all tools at
 | Scrambler | `/scrambler/` | Optimal partial-cube practice worksheets |
 | Algorithm database | `/database/` | F2L, Advanced F2L, OLL, and PLL algorithms and favorites |
 | Options | `/options/` | Theme, time precision, CSV imports, and cloud backups |
+| Shared solves | `/share/` | Signed-out, read-only solve and average snapshots |
 
 ## Screenshots
 
@@ -132,6 +133,45 @@ Site-wide time precision changes display only, not recorded timing.
 Native turn counts use QTM; CSV face/slice counts use recorded face turns.
 
 ## Solve imports and backups
+
+### Public solve sharing
+
+Use **Share** in any replay or **Share average / Share solves** in Timer
+and Analyzer detail dialogs (including those opened from notifications and charts).
+Publishing stores sanitized solves in an unlisted public catalog in **the
+publishing user's Google Drive**, then creates a small reference file per link.
+Overlapping ao1000 shares store 1,001 distinct solves, not 2,000. Content hashes
+deduplicate recordings independently of their position in an average. Catalog
+additions are immutable batches, so updating an average does not duplicate old
+recordings in retained Drive revisions. An edited solve gets a new immutable
+version; older links keep their original result and trimming.
+No CuberPlus backend is needed. Snapshots retain times, dates, penalties, scrambles, step analysis and
+available replay moves, but exclude names, device/session labels, original source
+IDs and notes. Recipients need no account; viewing never imports or saves solves.
+Anyone with a share link can also download the other published solves in the
+catalog files it references. Revoking a link deletes only its reference file;
+catalog solves stay public for reuse, including solves from revoked links.
+Use **Options > Shared solves > Delete all shared data** to remove all links
+and catalog files without touching private backups. Deleting a catalog file
+directly in Drive also breaks links that need it. Downloaded copies cannot be recalled.
+Google Drive's own UI may expose the Drive file owner's identity.
+
+Site configuration: enable Google Drive API, set `VITE_GOOGLE_CLIENT_ID` and
+`VITE_GOOGLE_DRIVE_API_KEY` (see `.env.example`), and add the non-sensitive
+`drive.file` scope to the OAuth consent screen. Restrict the public API key to the
+Drive API and the site's HTTP referrers, including development origins if needed.
+Publishing requests file permission separately from private app-data backup
+permission. Sharing authorization is kept only in memory. Anonymous reads count
+against the site's Google API quota, while files use each user's own storage.
+OneDrive backups still work, but publishing currently requires Google Drive.
+Selections are limited to 10,000 solves; catalog files and recipient downloads
+(references plus the catalog batches needed for playback) are limited to 32 MiB.
+Failed anonymous verification does not yield a link; publishing attempts to
+remove the new reference file, but reusable catalog data may remain. Legacy
+self-contained snapshot links still work.
+
+For the complete, ordered Google Console and local setup instructions, see
+[Google Drive sharing setup](docs/google-drive-sharing-setup.md).
 
 In **Options > Import solves**, select one or more Cubeast or Acubemy CSV
 exports. Validated solves merge into the local database without replacing

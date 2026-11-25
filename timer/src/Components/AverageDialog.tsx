@@ -20,13 +20,14 @@ export interface AverageRow<T> {
   penalty?: number;
 }
 
-export function AverageDialog<T>({ rows, time, precision, view, close, title }: {
+export function AverageDialog<T>({ rows, time, precision, view, close, title, share }: {
   rows: AverageRow<T>[];
   time: number | 'DNF';
   precision: 2 | 3;
   view: (solve: T) => void;
   close: () => void;
   title?: string;
+  share?: ReactNode;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const heading = useId();
@@ -58,7 +59,7 @@ export function AverageDialog<T>({ rows, time, precision, view, close, title }: 
   return <dialog ref={dialog} className="panel average-dialog" aria-labelledby={heading} onCancel={event => { event.preventDefault(); dismiss(); }}>
     <div className="d-flex justify-content-between align-items-center gap-3 flex-wrap">
       <h2 id={heading}>{title ?? `Ao${rows.length}: ${format(time, precision)}`}</h2>
-      <button autoFocus className="btn-close" aria-label={`Close ${title ? 'solves' : 'average'}`} onClick={dismiss} />
+      <div className="d-flex align-items-center gap-3">{share}<button autoFocus className="btn-close" aria-label={`Close ${title ? 'solves' : 'average'}`} onClick={dismiss} /></div>
     </div>
     <div className="table-responsive" tabIndex={0} role="region" aria-labelledby={heading}>
       <table className="table table-sm align-middle average-clickable" aria-label={title ? 'Selected solves' : 'Average solves'}>

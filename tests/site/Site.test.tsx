@@ -70,6 +70,9 @@ test('time, font and individual mistake preferences persist while Normal leaves 
   expect(document.body.style.zoom).toBe('1.2');
   const mistakes = screen.getByRole('button', { name: 'Mistakes', exact: true });
   fireEvent.click(mistakes);
+  expect((screen.getByRole('checkbox', { name: 'F2L: Non-suggested pair', exact: true }) as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(screen.getByRole('checkbox', { name: 'F2L: Non-suggested pair', exact: true }));
+  expect(JSON.parse(localStorage.getItem('disabled-mistakes')!)).toEqual([]);
   fireEvent.click(screen.getByRole('checkbox', { name: 'F2L: Non-suggested pair', exact: true }));
   expect(JSON.parse(localStorage.getItem('disabled-mistakes')!)).toEqual(['f2lChoice']);
   expect(screen.getByText('Mark non-favorite algs as mistakes')).toBeDefined();
@@ -115,7 +118,7 @@ test('mistake group checkboxes toggle their children, show mixed state and prese
   fireEvent.click(group);
   expect(group.checked).toBe(true); expect(individual.checked).toBe(true);
   fireEvent.click(group);
-  expect(JSON.parse(localStorage.getItem('disabled-mistakes')!)).toEqual(['f2lPause', 'ollRecognition', 'pllRecognition']);
+  expect(JSON.parse(localStorage.getItem('disabled-mistakes')!)).toEqual(['f2lChoice', 'f2lPause', 'ollRecognition', 'pllRecognition']);
   expect((screen.getByRole('checkbox', { name: 'Cross: Inefficient solution', exact: true }) as HTMLInputElement).checked).toBe(true);
   fireEvent.click(individual);
   expect(group.indeterminate).toBe(true);

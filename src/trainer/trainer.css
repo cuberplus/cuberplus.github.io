@@ -1,4 +1,15 @@
 .trainer-main { max-width: 1000px; }
+.trainer-back { display: inline-grid; place-items: center; align-self: flex-start; inline-size: 44px; block-size: 44px; flex: 0 0 44px; padding: 0; }
+.trainer-category { margin-block-end: .75rem; border: 1px solid var(--cp-border); border-radius: .75rem; background: var(--cp-panel); }
+.trainer-category > summary { display: flex; align-items: center; gap: .75rem; padding: .75rem 1rem; color: var(--cp-text); font-weight: 600; cursor: pointer; list-style: none; }
+.trainer-category > summary::-webkit-details-marker { display: none; }
+.trainer-category > summary .database-case-image { inline-size: 48px; block-size: 48px; flex: 0 0 48px; }
+.trainer-category > summary::after { content: '\203a'; margin-inline-start: auto; font-size: 1.5rem; }
+.trainer-category[open] > summary { border-block-end: 1px solid var(--cp-border); }
+.trainer-category[open] > summary::after { transform: rotate(90deg); }
+.trainer-category > summary:is(:hover, :focus-visible) { background: var(--cp-subtle); }
+.trainer-category > summary:focus-visible { outline: 2px solid var(--cp-accent); outline-offset: 2px; }
+.trainer-category .trainer-case-picker { padding-inline: .75rem; }
 .trainer-drills { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; }
 .trainer-drill { align-items: center; padding: 2rem; color: var(--bs-body-color); text-align: center; gap: .75rem; }
 .trainer-drill:hover { border-color: var(--bs-primary); }
