@@ -5,6 +5,7 @@ import { dataTask } from '../../../shared/workers/dataClient';
 import type { DataProgress, DataTask } from '../../../shared/workers/dataTasks';
 import { SettingsSection } from '../../../shared/Components/SettingsSection';
 import { TOOLTIPS } from '../../../shared/tooltips';
+import { ActionIcon } from '../../../shared/Components/ActionIcon';
 
 export function ImportOptions() {
   const [operation, setOperation] = useState<'import' | 'reanalyze' | null>(null), [message, setMessage] = useState(''), [error, setError] = useState(false);
@@ -30,7 +31,7 @@ export function ImportOptions() {
     }
   }
   return <SettingsSection title="Import solves" id="import-heading" help={<InfoTip>{TOOLTIPS.importOptions.merge}</InfoTip>}>
-    <label className={`btn btn-outline-primary ${busy ? 'disabled' : ''}`}>{importing ? 'Importing...' : 'Import Cubeast / Acubemy CSV'}
+    <label className={`btn btn-outline-primary ${busy ? 'disabled' : ''}`}><ActionIcon action="upload" />{importing ? 'Importing...' : 'Import Cubeast / Acubemy CSV'}
       <input className="visually-hidden" aria-label="Import solve CSV files" type="file" accept=".csv,text/csv" multiple disabled={busy}
         onChange={event => { void run({ type: 'import', files: Array.from(event.target.files ?? []) }); event.target.value = ''; }} />
     </label>

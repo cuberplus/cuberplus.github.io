@@ -17,7 +17,7 @@ const render = (ui: ReactElement) => renderView(<SettingsProvider>{ui}</Settings
 beforeEach(() => {
     localStorage.setItem('timer-time-precision', '3');
     Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } });
-    Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; } });
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; this.dispatchEvent(new Event('close')); } });
 });
 afterEach(() => { cleanup(); jest.restoreAllMocks(); });
 
@@ -40,6 +40,15 @@ function point(index: number, datasetIndex = 0): ActiveElement {
 }
 
 describe('Analyzer inline drill-down', () => {
+    test('daily streak dialogs display sortable local completion dates in the requested format', () => {
+        const solves = makeSolves(2).map((solve, i) => ({ ...solve, endDate: new Date(i === 0 ? 2026 : 1999, i === 0 ? 0 : 10, i === 0 ? 1 : 30, 12) }));
+        render(<AverageModal solves={solves} numbers={[1, 2]} percentage={0} title="Daily best - Sub-10" close={() => undefined} view={() => undefined} />);
+        expect(screen.getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['Solve', 'Time', 'Turns', 'TPS', 'Date']);
+        expect(screen.getByText("Jan 1 '26")).not.toBeNull();
+        expect(screen.getByText("Nov 30 '99")).not.toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Date', exact: true }));
+        expect(screen.getAllByRole('row')[1].textContent).toContain("Nov 30 '99");
+    });
     test.each([undefined, 'Selected solves'])('average rows activate once from every cell and row padding (%s)', title => {
         const solves = makeSolves(2), view = jest.fn();
         render(<AverageModal solves={solves} numbers={[1, 2]} percentage={0} title={title} close={() => undefined} view={view} />);
@@ -326,6 +335,7 @@ describe('chopped average modal', () => {
         sort('Solve');
         expect(numbers()).toEqual([73, 72, 71, 70, 69]);
         fireEvent(screen.getByRole('dialog'), new Event('cancel', { bubbles: true, cancelable: true }));
+        fireEvent(screen.getByRole('dialog'), new Event('close'));
         expect(close).toHaveBeenCalledTimes(1);
     });
 

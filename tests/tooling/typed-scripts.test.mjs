@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { createContext, runInContext, SourceTextModule, SyntheticModule } from 'node:vm';
 import { createServer, transformWithEsbuild } from 'vite';
+import { IDBFactory } from 'fake-indexeddb';
+import { createServer as createSocketServer } from 'node:net';
 
 const updaterURL = new URL('../../scripts/update-alternatives.ts', import.meta.url);
 const updater = (await transformWithEsbuild(readFileSync(updaterURL, 'utf8'), updaterURL.pathname, { loader: 'ts' })).code;
@@ -81,7 +83,11 @@ test('typed updater closes its browser without writing on HTTP failures', async 
 });
 
 test('Vite serves an isolated, synchronous classic theme asset at the original URL', async () => {
-  const server = await createServer({ server: { host: '127.0.0.1', port: 0, strictPort: true, open: false }, logLevel: 'silent' });
+  const socket = createSocketServer();
+  await new Promise(resolve => socket.listen(0, '127.0.0.1', resolve));
+  const port = socket.address().port;
+  await new Promise(resolve => socket.close(resolve));
+  const server = await createServer({ server: { host: '127.0.0.1', port, strictPort: true, open: false }, logLevel: 'silent' });
   try {
     await server.listen();
     const url = new URL('/analyzer/theme-init.js?cache=off', server.resolvedUrls.local[0]);
@@ -109,6 +115,7 @@ test('Vite serves an isolated, synchronous classic theme asset at the original U
       },
       window: { addEventListener: (type, callback) => listeners.push({ type, callback }) },
     });
+
     runInContext(script, context);
     assert.equal(attributes.get('data-theme'), 'dark');
     assert.equal(attributes.get('data-bs-theme'), 'dark');
@@ -118,3 +125,97 @@ test('Vite serves an isolated, synchronous classic theme asset at the original U
     assert.doesNotMatch(script, /\b(?:import|export|eval)\s*[(\s{]/);
   } finally { await server.close(); }
 });
+
+const workerURL = new URL('../../src/pwa/service-worker.ts', import.meta.url);
+    const serviceWorker = (await transformWithEsbuild(readFileSync(workerURL, 'utf8'), workerURL.pathname, { loader: 'ts', format: 'iife' })).code;
+    async function reminderWorker({ hour = 19, enabled = true, permission = 'granted', solves = [], seeded = true } = {}) {
+      const indexedDB = new IDBFactory(), handlers = new Map(), entries = new Map(), notifications = [], visits = [];
+      let now = new Date(2026, 10, 25, hour);
+      if (seeded) await new Promise((resolve, reject) => {
+        const request = indexedDB.open('smart-cube-timer', 2);
+        request.onupgradeneeded = () => request.result.createObjectStore('solves', { keyPath: 'id' });
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const db = request.result, tx = db.transaction('solves', 'readwrite');
+          solves.forEach(solve => tx.objectStore('solves').put(solve));
+          tx.oncomplete = () => { db.close(); resolve(); };
+        };
+      });
+      entries.set('/streak-reminders/enabled', new Response(String(enabled)));
+      const context = createContext({
+        URL, Response, indexedDB, __PRECACHE__: [], Notification: { permission },
+        Date: class extends Date { constructor(...args) { super(...(args.length ? args : [now])); } },
+        caches: { open: async () => ({ match: async key => entries.get(key)?.clone(), put: async (key, response) => entries.set(key, response) }) },
+        self: {
+          location: { origin: 'https://cuberplus.test' },
+          addEventListener: (name, handler) => handlers.set(name, handler),
+          registration: { showNotification: async (title, options) => notifications.push({ title, options }) },
+          clients: { matchAll: async () => [], openWindow: async url => visits.push(url) },
+        },
+      });
+      runInContext(serviceWorker, context);
+      return {
+        notifications, visits, entries,
+        setDate: date => { now = date; },
+        async sync(count = 1) {
+          const promises = [];
+          for (let i = 0; i < count; i++) handlers.get('periodicsync')({ tag: 'streak-reminder', waitUntil: promise => promises.push(promise) });
+          await Promise.all(promises);
+        },
+        async click() {
+          let promise;
+          handlers.get('notificationclick')({ notification: { tag: 'streak-reminder', close() {} }, waitUntil: value => { promise = value; } });
+          await promise;
+        },
+      };
+    }
+    const streakRecording = (day, duration = 9000, overrides = {}) => ({
+      id: `day-${day}`, createdAt: new Date(2026, 10, day, 12).toISOString(),
+      duration, status: 'complete', session: 'Default', moves: [], ...overrides,
+    });
+    test('closed-app background checks notify once per local day across concurrent wakeups and worker restarts', async () => {
+      const solves = [streakRecording(23), streakRecording(24), streakRecording(24, 9500, { id: 'slower' })];
+      const worker = await reminderWorker({ solves });
+      await worker.sync(3);
+      assert.equal(worker.notifications.length, 1);
+      assert.equal(worker.notifications[0].title, 'Your 2 day sub-10 streak is about to end!');
+      await worker.click();
+      assert.deepEqual(worker.visits, ['/timer/']);
+      const restarted = await reminderWorker({ solves });
+      restarted.entries.set('/streak-reminders/last-day', worker.entries.get('/streak-reminders/last-day').clone());
+      await restarted.sync();
+      assert.equal(restarted.notifications.length, 0);
+      restarted.setDate(new Date(2026, 10, 26, 19));
+      await restarted.sync();
+      assert.equal(restarted.notifications.length, 0, 'an already broken streak must not notify');
+    });
+    test('background reminders honor today, attempts, retries, penalties, completion dates, opt-out and permission', async () => {
+      const yesterday = streakRecording(24);
+      for (const options of [
+        { solves: [yesterday, streakRecording(25)] },
+        { solves: [yesterday, streakRecording(25, 1000, { status: 'incomplete', session: 'Retries' })] },
+        { solves: [streakRecording(24, 9000, { session: 'Retries' })] },
+        { solves: [yesterday], enabled: false },
+        { solves: [yesterday], permission: 'denied' },
+        { solves: [yesterday], hour: 17 },
+      ]) {
+        const worker = await reminderWorker(options);
+        await worker.sync();
+        assert.equal(worker.notifications.length, 0, JSON.stringify(options));
+      }
+      const active = await reminderWorker({ solves: [yesterday, streakRecording(25, 1000, { status: 'active' })] });
+      await active.sync();
+      assert.equal(active.notifications.length, 1);
+      const unset = await reminderWorker({ solves: [yesterday] });
+      unset.entries.delete('/streak-reminders/enabled');
+      await unset.sync();
+      assert.equal(unset.notifications.length, 0, 'reminders require an explicit opt-in');
+      const penalized = await reminderWorker({ solves: [streakRecording(24, 9000, { penalty: 2000 })] });
+      await penalized.sync();
+      assert.match(penalized.notifications[0].title, /sub-15/);
+      const midnight = await reminderWorker({ solves: [streakRecording(24, 9000, {
+        createdAt: new Date(2026, 10, 24, 23, 59, 59).toISOString(),
+      })] });
+      await midnight.sync();
+      assert.equal(midnight.notifications.length, 0);
+    });

@@ -4,7 +4,7 @@ import { describe, expect, jest, test } from '@jest/globals';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MistakeChart } from '../../smartcubeanalyzer/src/Components/MistakeChart';
 import { MISTAKES, MistakeKind, markMistakes, mistakeLabel, rankedMistakes, summarizeMistakes } from '../../smartcubeanalyzer/src/Analysis/MistakeAnalysis';
-import { consolidateMoves } from '../../smartcubeanalyzer/src/Data/CsvParser';
+import { consolidateMoves, parseCsv } from '../../smartcubeanalyzer/src/Data/CsvParser';
 import { analyzeMoveMistakes } from '../../smartcubeanalyzer/src/Analysis/MoveAnalysis';
 import { CrossColor, MethodName, Solve, Step, StepName } from '../../smartcubeanalyzer/src/Models/Types';
 import { FilterPanel } from '../../smartcubeanalyzer/src/Components/FilterPanel';
@@ -15,6 +15,42 @@ const caseSolve = (name: StepName, moves = "R U R'", overrides: Partial<Solve> =
     makeSolve({ steps: [makeStep(name, 3, { case: 'test case', moves })], ...overrides });
 
 describe('specific mistake reasons', () => {
+    test.each([
+        [StepName.Cross, 'extraLookCross'], [StepName.F2L_1, 'extraLookF2l'], [StepName.F2L_2, 'extraLookF2l'],
+        [StepName.F2L_3, 'extraLookF2l'], [StepName.F2L_4, 'extraLookF2l'], [StepName.OLL, 'extraLookOll'], [StepName.PLL, 'extraLookPll'],
+    ])('detects an extra look within %s from recorded timestamps', (name, kind) => {
+        const solves = parseCsv(`id,date,dnf,time,solving_method,step_0_name,step_0_recorded_moves\nextra,2026-11-25 12:00:00 UTC,false,12000,CFOP,${name},R[0] F[100] L[200] B[3300] R[3400]`, ',');
+        markMistakes(solves, 5);
+        const mistake = solves[0].mistakes!.find(mistake => mistake.kind === kind)!;
+        expect(mistake.step).toBe(name);
+        expect(mistake.estimatedSeconds).toBeCloseTo(1.1);
+        expect(mistakeLabel(mistake)).toBe(`${name}: Extra Look`);
+        expect(summarizeMistakes(solves, 5, [kind]).counts.some(item => item.kind === kind)).toBe(false);
+    });
+    test('keeps extra looks in different F2L pairs distinct in solve analysis and charts', () => {
+        const solve = makeSolve({ steps: [
+            makeStep(StepName.Cross, 4, { extraLookTime: 1 }),
+            makeStep(StepName.F2L_1, 4, { extraLookTime: 1.5 }),
+            makeStep(StepName.F2L_3, 5, { extraLookTime: 2 }),
+        ] });
+        markMistakes([solve], 5);
+        const extraLooks = rankedMistakes(solve).filter(mistake => mistake.kind.startsWith('extraLook'));
+        expect(extraLooks.map(mistakeLabel)).toEqual(['F2L Slot 3: Extra Look', 'F2L Slot 1: Extra Look', 'Cross: Extra Look']);
+        expect(extraLooks[0].stepCosts).toEqual({ [StepName.F2L_3]: 2 });
+        const enabled = summarizeMistakes([solve], 5, ['extraLookF2l']).counts.filter(mistake => mistake.kind.startsWith('extraLook'));
+        expect(enabled.map(mistakeLabel)).toEqual(['Cross: Extra Look']);
+    });
+    test.each([
+        'R[3000] F[3100] L[3200] B[3300]',
+        'R[0] F[100] L[2100] B[2200]',
+        'R[0] F[100] L[200] B[2200]',
+        'U[0] U[100] U[200] R[3500] F[3600] L[3700]',
+        'R[0] F[100] L[200] U[3500]',
+    ])('extra looks exclude initial recognition, short sequences, threshold ties, setup and final AUF: %s', moves => {
+        const solves = parseCsv(`id,date,dnf,time,solving_method,step_0_name,step_0_recorded_moves\nno-extra,2026-11-25 12:00:00 UTC,false,12000,CFOP,PLL,${moves}`, ',');
+        markMistakes(solves, 5);
+        expect(solves[0].mistakes!.some(mistake => mistake.kind.startsWith('extraLook'))).toBe(false);
+    });
     test('fresh prepared classification is retained, but a changed window or mixed context is recalculated', () => {
         const solves = makeSolves(20).map(solve => ({ ...solve, steps: [makeStep(StepName.Cross, 1)] }));
         solves.at(-1)!.steps[0].time = 100;
@@ -25,7 +61,7 @@ describe('specific mistake reasons', () => {
         expect(JSON.stringify(solves)).toBe(expected);
         expect(solves.at(-1)!.mistakes).toBe(reasons);
         markMistakes(solves, 10, true);
-        expect(solves[0].mistakeContext).toMatch(/^4:10:/);
+        expect(solves[0].mistakeContext).toMatch(/^5:10:/);
         const combined = [...solves, ...markMistakes(makeSolves(5), 10)];
         const reference = JSON.parse(JSON.stringify(combined)) as Solve[];
         reference.forEach(solve => { solve.date = new Date(solve.date); });
@@ -310,7 +346,7 @@ describe('recent mistake counts', () => {
         expect(summary.sampleCount).toBe(3);
         expect(summary.counts[0]).toEqual({ kind: 'f2lMoves', count: 2 });
         expect(summary.counts.find(r => r.kind === 'crossMoves')?.count).toBe(1);
-        expect(summary.counts).toHaveLength(Object.keys(MISTAKES).length - 4);
+        expect(summary.counts).toHaveLength(Object.keys(MISTAKES).length - 8);
         expect(summary.counts.some(row => row.kind === 'slowStep' && !row.step)).toBe(false);
         expect(summarizeMistakes([], 10).counts.every(row => row.count === 0)).toBe(true);
     });

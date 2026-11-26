@@ -1,9 +1,8 @@
-import { useContext, useEffect, useId, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import Navigation, { Footer, PageLocation, SettingsContext } from '@cuberplus/navigation';
 import { loadCube, type Cube } from '../../timer/src/Core/puzzle';
 import { Replay } from '../../timer/src/Components/Replay';
-import { AverageDetails } from '../../timer/src/Components/AverageDialog';
-import { formatSeconds } from '../../shared/display';
+import { AverageDialog } from '../../timer/src/Components/AverageDialog';
 import { readShare } from './drive';
 import type { Snapshot } from './snapshot';
 import type { Solve } from '../../timer/src/Core/engine';
@@ -12,7 +11,6 @@ import '../../timer/src/CSS/AverageDialog.css';
 
 export default function SharedPage() {
   const address = useContext(PageLocation), { precision } = useContext(SettingsContext);
-  const averageHeading = useId();
   const [data, setData] = useState<{ snapshot: Snapshot; cube: Cube } | null>(null), [error, setError] = useState('');
   const [solve, setSolve] = useState<Solve | null>(null);
   const query = new URLSearchParams(address.split('?')[1] ?? location.search);
@@ -26,22 +24,16 @@ export default function SharedPage() {
     return () => abort.abort();
   }, [id, resourceKey]);
   const snapshot = data?.snapshot;
+  const close = () => { history.pushState(null, '', '/timer/'); window.dispatchEvent(new PopStateEvent('popstate')); };
   return <div className="cuberplus-page"><header className="cuberplus-header"><Navigation current="share" /></header>
-    <main className="container py-4"><h1>Shared {snapshot?.kind === 'solve' ? 'solve' : snapshot?.kind === 'average' ? 'average' : 'solves'}</h1>
+    <main className="container py-4"><h1 className="visually-hidden">Shared {snapshot?.kind === 'solve' ? 'solve' : snapshot?.kind === 'average' ? 'average' : 'solves'}</h1>
       {!data && !error && <p role="status">Loading shared snapshot...</p>}
       {error && <p role="alert">{error}</p>}
       {snapshot && <>
-        <p>Read-only snapshot &middot; {snapshot.rows.length} {snapshot.rows.length === 1 ? 'solve' : 'solves'}</p>
-        {snapshot.kind === 'average' ? <section className="panel average-dialog shared-average" aria-labelledby={averageHeading}>
-          <AverageDetails heading={averageHeading} rows={snapshot.rows} time={snapshot.time} precision={precision} view={setSolve}
+        {snapshot.kind !== 'solve' ? <AverageDialog rows={snapshot.rows} time={snapshot.time} precision={precision} view={setSolve} close={close}
+            title={snapshot.kind === 'collection' ? 'Shared solves' : undefined}
             share={<ShareButton label="Share average" load={async () => snapshot} />} />
-        </section> : <>
-        <div className="d-flex flex-wrap gap-2 mb-3"><ShareButton label={snapshot.kind === 'solve' ? 'Share solve' : 'Share solves'} load={async () => snapshot} /></div>
-        <div className="table-responsive"><table className="table align-middle"><caption>Shared solves</caption><thead><tr><th>Solve</th><th>Time</th><th>Scramble</th></tr></thead>
-          <tbody>{snapshot.rows.map(row => <tr key={row.number}><td><button className="btn btn-link" onClick={() => setSolve(row.solve)}>Solve {row.number}</button></td>
-            <td>{row.trimmed ? '(' : ''}{row.time === 'DNF' ? 'DNF' : `${formatSeconds(row.time, precision)}s`}{row.trimmed ? ')' : ''}</td>
-            <td className="text-break">{row.solve.scramble}</td></tr>)}</tbody></table></div>
-        </>}
+          : data && <Replay key={snapshot.rows[0].solve.id} cube={data.cube} solve={snapshot.rows[0].solve} history={snapshot.rows.map(row => row.solve)} close={close} readOnly precision={precision} />}
         {solve && data && <Replay key={solve.id} cube={data.cube} solve={solve} history={snapshot.rows.map(row => row.solve)} close={() => setSolve(null)} readOnly precision={precision} />}
       </>}
     </main><Footer />

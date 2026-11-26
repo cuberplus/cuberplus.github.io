@@ -22,7 +22,7 @@ const snapshot = {
 beforeEach(() => {
   jest.clearAllMocks(); localStorage.clear();
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function(this: HTMLDialogElement) { this.open = true; } });
-  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function(this: HTMLDialogElement) { this.open = false; } });
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function(this: HTMLDialogElement) { this.open = false; this.dispatchEvent(new Event('close')); } });
   jest.mocked(connectSharing).mockResolvedValue(undefined);
   jest.mocked(publishShare).mockResolvedValue({ id: 'public-file', name: 'Snapshot' });
   jest.mocked(deleteShare).mockResolvedValue(undefined);
@@ -61,9 +61,9 @@ test('recipients view averages and read-only replays without connecting, publish
   const view = render(<PageLocation.Provider value="/share/?id=public-file"><SharedPage /></PageLocation.Provider>);
   await screen.findByRole('heading', { name: 'Shared average' });
   expect(readShare).toHaveBeenCalledWith({ id: 'public-file', resourceKey: undefined }, expect.any(AbortSignal));
-  expect(screen.getByRole('heading', { name: /^Ao1:/ })).toBeDefined();
+  expect(await screen.findByRole('heading', { name: /^Ao1:/ })).toBeDefined();
   expect(screen.queryByRole('button', { name: /^Ao1:/ })).toBeNull();
-  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.getByRole('dialog', { name: /^Ao1:/ })).toBeDefined();
   expect(screen.getByRole('table', { name: 'Average solves' })).toBeDefined();
   fireEvent.click(within(screen.getByRole('table', { name: 'Average solves' })).getAllByRole('button')[4]);
   expect(screen.getByText('Read only')).toBeDefined();
@@ -80,7 +80,7 @@ test('shared averages reuse sortable modal columns, trimming and penalties inlin
   ] });
   render(<PageLocation.Provider value="/share/?id=public-file"><SharedPage /></PageLocation.Provider>);
   const table = await screen.findByRole('table', { name: 'Average solves' });
-  const panel = table.closest('section')!;
+  const panel = table.closest('dialog')!;
   expect(within(panel).getByRole('heading', { name: 'Ao2: DNF' })).toBeDefined();
   expect(within(table).getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['Solve', 'Time', 'Turns', 'TPS']);
   expect(table.querySelector('.average-trimmed-best')?.textContent).toBe('(12.00s)');
@@ -96,6 +96,26 @@ test('shared averages reuse sortable modal columns, trimming and penalties inlin
   fireEvent.click(within(table).getByRole('button', { name: 'Solve 2: 0 turns, open replay' }));
   expect(screen.getByText('Read only')).toBeDefined();
   expect(connectSharing).not.toHaveBeenCalled();
+});
+test('shared singles open directly in the normal read-only replay; closing returns to the timer', async () => {
+  jest.mocked(readShare).mockResolvedValueOnce({ ...snapshot, kind: 'solve' });
+  const push = jest.spyOn(history, 'pushState'), navigation = jest.fn();
+  window.addEventListener('popstate', navigation);
+  render(<PageLocation.Provider value="/share/?id=public-file"><SharedPage /></PageLocation.Provider>);
+  expect(await screen.findByText('Read only')).toBeDefined();
+  expect(screen.queryByRole('table')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Close replay' }));
+  expect(push).toHaveBeenLastCalledWith(null, '', '/timer/');
+  expect(navigation).toHaveBeenCalledTimes(1);
+  window.removeEventListener('popstate', navigation); push.mockRestore();
+});
+test('closing a shared average, including native dismissal, returns to the timer', async () => {
+  const push = jest.spyOn(history, 'pushState');
+  render(<PageLocation.Provider value="/share/?id=public-file"><SharedPage /></PageLocation.Provider>);
+  const table = await screen.findByRole('table', { name: 'Average solves' });
+  fireEvent(table.closest('dialog')!, new Event('close'));
+  expect(push).toHaveBeenLastCalledWith(null, '', '/timer/');
+  push.mockRestore();
 });
 test('revoked or malformed links show an error instead of prompting sign-in', async () => {
   jest.mocked(readShare).mockRejectedValueOnce(new Error('Snapshot revoked.'));

@@ -290,7 +290,12 @@ export function dailyStreakSolves(previous: Solve[], solve: Solve, label: string
   const eligible = [...previous.filter(item => item.id !== solve.id), solve].filter(item => item.status !== 'active' && item.session !== 'Retries' &&
     (target === Infinity || item.status === 'complete' && solveTime(item) < target));
   const { current } = streakWindows(eligible.map(item => calendarDay(solveEndDate(item))), calendarDay(solveEndDate(solve)));
-  return eligible.filter(item => current.includes(calendarDay(solveEndDate(item)))).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const best = new Map<number, Solve>();
+  for (const item of eligible) {
+    const day = calendarDay(solveEndDate(item)), previous = best.get(day);
+    if (current.includes(day) && (!previous || averageValue(item) < averageValue(previous))) best.set(day, item);
+  }
+  return [...best].sort(([a], [b]) => a - b).map(([, solve]) => solve);
 }
 export const turns = (solve: Solve): number => solve.imported?.turns ?? solve.moves.reduce((n, move) => n + (move.move.includes('2') ? 2 : 1), 0);
 export { formatMilliseconds as formatTime } from '../../../shared/display';

@@ -1,6 +1,7 @@
 import { useId, useMemo, useState } from 'react';
 import { scramblers, type Scrambler } from '../Core/scramblers';
 import { TOOLTIPS } from '../../../shared/tooltips';
+import { ActionIcon } from '../../../shared/Components/ActionIcon';
 
 export function SessionPicker({ value, sessions, disabled, change, create, manage }: {
   value: string; sessions: string[]; disabled: boolean; change: (session: string) => void; create: (session: string, scrambler: Scrambler) => void;
@@ -35,7 +36,7 @@ export function SessionPicker({ value, sessions, disabled, change, create, manag
       <button type="button" className="btn btn-outline-secondary" disabled={disabled || value === 'Retries'}
         title={value === 'Retries' ? TOOLTIPS.sessionPicker.reservedSession : undefined}
         onClick={() => { setError(''); setName(value); setEditing('rename'); }}>Rename session</button>
-      <button type="button" className="btn btn-outline-danger" disabled={disabled} onClick={() => void submitChange(null)}>Delete session</button>
+      <button type="button" className="btn btn-outline-danger" disabled={disabled} onClick={() => void submitChange(null)}><ActionIcon action="delete" />Delete session</button>
     </div>}
     {editing && <form className="d-flex flex-wrap gap-2 mt-2" onSubmit={event => {
       event.preventDefault();

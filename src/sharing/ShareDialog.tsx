@@ -4,6 +4,7 @@ import { InfoTip } from '../../shared/Components/InfoTip';
 import { prepareProvider } from '../cloud/providers';
 import { connectSharing, deleteShare, publishShare, shareUrl, sharingConfigured, type PublishedShare } from './drive';
 import type { Snapshot } from './snapshot';
+import { ActionIcon } from '../../shared/Components/ActionIcon';
 
 export default function ShareDialog({ load, close }: { load: () => Promise<Snapshot>; close: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null), id = useId();
@@ -30,7 +31,7 @@ export default function ShareDialog({ load, close }: { load: () => Promise<Snaps
       setBusy(true); setError(''); setStatus('Publishing...');
       void connectSharing().then(() => publishShare(snapshot!)).then(file => { setPublished(file); setStatus('Snapshot published.'); })
         .catch(failure => { setError(failure instanceof Error ? failure.message : 'Publishing failed.'); setStatus(''); }).finally(() => setBusy(false));
-    }}>{busy ? 'Publishing...' : 'Publish to my Google Drive'}</button> : <>
+    }}><ActionIcon action="share" />{busy ? 'Publishing...' : 'Publish to my Google Drive'}</button> : <>
       <label className="d-block" htmlFor={`${id}-link`}>Public snapshot link</label>
       <input id={`${id}-link`} className="form-control mb-3" readOnly value={url} onFocus={event => event.currentTarget.select()} />
       <div className="d-flex flex-wrap gap-2">
@@ -38,13 +39,13 @@ export default function ShareDialog({ load, close }: { load: () => Promise<Snaps
           setError('');
           if (!navigator.clipboard) { setStatus('Select and copy the link above.'); return; }
           void navigator.clipboard.writeText(url).then(() => setStatus('Link copied.')).catch(() => setStatus('Select and copy the link above.'));
-        }}>Copy link</button>
+        }}><ActionIcon action="copy" />Copy link</button>
         <a className="btn btn-outline-primary" href={url} target="_blank" rel="noopener noreferrer">Open shared snapshot</a>
         <button className="btn btn-outline-danger" disabled={busy} onClick={() => {
           setBusy(true); setError('');
           void connectSharing().then(() => deleteShare(published.id)).then(() => { setPublished(null); setStatus('Link revoked. Catalog solves remain public for reuse. Downloaded copies cannot be recalled.'); })
             .catch(failure => setError(failure instanceof Error ? failure.message : 'Unable to revoke sharing.')).finally(() => setBusy(false));
-        }}>Revoke link</button>
+        }}><ActionIcon action="delete" />Revoke link</button>
       </div>
     </>}
     {status && <p role="status" className="mt-3 mb-0">{status}</p>}

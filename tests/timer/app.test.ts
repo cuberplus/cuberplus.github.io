@@ -105,7 +105,7 @@ beforeEach(async () => {
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: jest.fn(() => ({ matches: false })) });
   Object.defineProperty(navigator, 'bluetooth', { configurable: true, value: {} });
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } });
-  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; } });
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; this.dispatchEvent(new Event('close')); } });
   jest.spyOn(console, 'info').mockImplementation(() => {});
   jest.spyOn(performance, 'now').mockReturnValue(0);
   jest.spyOn(cube, 'solution').mockImplementation(async facelets => {
@@ -917,10 +917,13 @@ test('daily notifications show the qualifying streak instead of the best streak'
   expect(notice.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
   expect(notice.querySelector('.streak-flame')).not.toBeNull();
   expect(notice.closest('.timer-panel')).toBeNull();
+  expect(notice.querySelector('.pb-actions')?.textContent).toContain('Share streak');
   expect(container.querySelector('[aria-label="Personal best"]')).not.toBeNull();
+  expect(container.querySelector('[aria-label="Personal best"] .pb-actions')?.textContent).toContain('Share PB');
   await click('View Sub-5 streak solves');
   expect(container.querySelector('[aria-label="Selected solves"] tbody tr')).not.toBeNull();
   expect(container.querySelector('dialog.average-dialog h2')?.textContent).toBe('Sub-5 daily streak solves');
+  expect(Array.from(container.querySelectorAll('dialog.average-dialog thead th')).map(cell => cell.textContent)).toEqual(['Solve', 'Time', 'Turns', 'TPS', 'Date']);
   await click('Close solves');
   await click('Dismiss daily streak');
   expect(container.querySelector('[aria-label="Daily streak"]')).toBeNull();
@@ -1089,6 +1092,7 @@ test('simultaneous PBs have separate clickable notifications and dismissal does 
   await click('Close');
   expect(container.querySelector<HTMLDialogElement>('.average-dialog')?.open).toBe(true);
   await act(async () => container.querySelector('.average-dialog')!.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true })));
+  await act(async () => (container.querySelector('.average-dialog') as HTMLDialogElement).close());
   expect(container.querySelector('.average-dialog')).toBeNull();
   await click('Dismiss personal best');
   expect(container.querySelector('[aria-label="Personal best"]')).toBeNull();
@@ -1414,7 +1418,7 @@ test('average columns sort numeric metrics and preserve real numbers, penalties,
 
 test.each(['accepted', 'dismissed'] as const)('Options prompts installation once when Chrome offers it (%s)', async outcome => {
   await openSiteOptions();
-  const button = container.querySelector<HTMLButtonElement>('button[aria-describedby="install-help"]')!;
+  const button = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Install app')!;
   expect(button.closest('dialog')).toBeNull();
   expect(button.disabled).toBe(true);
   const prompt = jest.fn<InstallOffer['prompt']>().mockResolvedValue({ outcome });
@@ -1430,7 +1434,7 @@ test.each(['accepted', 'dismissed'] as const)('Options prompts installation once
   expect(prompt).toHaveBeenCalledTimes(1);
   if (outcome === 'accepted') {
     await act(async () => window.dispatchEvent(new Event('appinstalled')));
-    expect(container.querySelector('button[aria-describedby="install-help"]')).toBeNull();
+    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Install app')).toBeUndefined();
   } else {
     await act(async () => window.dispatchEvent(Object.assign(new Event('beforeinstallprompt', { cancelable: true }), { prompt })));
     expect(button.disabled).toBe(false);
@@ -1445,7 +1449,7 @@ test('an installation failure stays inside Options and a fresh offer permits ret
   await act(async () => window.dispatchEvent(Object.assign(new Event('beforeinstallprompt'), { prompt })));
   await click('Install app');
   expect(container.querySelector('[role="alert"]')?.textContent).toContain('Installation could not start');
-  expect(container.querySelector<HTMLButtonElement>('button[aria-describedby="install-help"]')!.disabled).toBe(true);
+  expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Install app')!.disabled).toBe(true);
   prompt.mockResolvedValue({ outcome: 'dismissed' });
   await act(async () => window.dispatchEvent(Object.assign(new Event('beforeinstallprompt'), { prompt })));
   expect(container.querySelector('[role="alert"]')).toBeNull();
@@ -1462,7 +1466,7 @@ test('standalone launches omit installation controls', async () => {
   const offer = Object.assign(new Event('beforeinstallprompt', { cancelable: true }), { prompt });
   await act(async () => window.dispatchEvent(offer));
   expect(offer.defaultPrevented).toBe(false);
-  expect(container.querySelector('button[aria-describedby="install-help"]')).toBeNull();
+  expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Install app')).toBeUndefined();
   expect(removeListener).not.toHaveBeenCalledWith('beforeinstallprompt', expect.any(Function));
 });
 

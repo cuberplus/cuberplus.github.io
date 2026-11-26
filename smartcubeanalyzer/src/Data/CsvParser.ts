@@ -96,20 +96,9 @@ export function computeStepSegments(
  * Cross span from timestamps is 0 with a single move or identical first/last timestamps.
  * Use CSV step execution (seconds) when degenerate and the export reports a positive duration.
  */
-export function effectiveCrossExecutionSec(
-    moveTimings: MoveTiming[],
-    segmentExecutionSec: number,
-    csvExecutionFallbackSec: number
-): number {
-    if (!moveTimings.length) return segmentExecutionSec;
-    const firstTs = moveTimings[0].timestamp;
-    const lastTs = moveTimings[moveTimings.length - 1].timestamp;
-    const degenerate =
-        moveTimings.length === 1 || firstTs === lastTs;
-    if (degenerate && csvExecutionFallbackSec > 0 && segmentExecutionSec === 0) {
-        return csvExecutionFallbackSec;
-    }
-    return segmentExecutionSec;
+export function effectiveCrossExecutionSec(moveTimings: MoveTiming[], segmentExecutionSec: number, csvExecutionFallbackSec: number): number {
+    return moveTimings.length && moveTimings[0].timestamp === moveTimings.at(-1)!.timestamp &&
+        csvExecutionFallbackSec > 0 && segmentExecutionSec === 0 ? csvExecutionFallbackSec : segmentExecutionSec;
 }
 
 function applyStepTiming(step: Step, moves: MoveTiming[], previousEnd: number | null, aufMoves = AUF_MOVES, crossFallback = 0): void {
@@ -120,6 +109,15 @@ function applyStepTiming(step: Step, moves: MoveTiming[], previousEnd: number | 
     const execution = segments.preAuf + segments.coreExecution + segments.postAuf;
     step.executionTime = step.name === StepName.Cross ? effectiveCrossExecutionSec(moves, execution, crossFallback) : execution;
     step.time = step.recognitionTime + step.executionTime;
+    const lastLayer = /^(?:OLL|PLL|EOLL|OCLL|EPLL|CPOLL|CMLL|ZBLL)$/.test(step.name);
+    const first = lastLayer ? moves.findIndex(move => !aufMoves.has(move.move)) : 0;
+    let end = moves.length - 1;
+    if (lastLayer) while (end >= 0 && aufMoves.has(moves[end].move)) end--;
+    step.extraLookTime = 0;
+    for (let i = first + 3; first >= 0 && i <= end; i++) {
+        const gap = (moves[i].timestamp - moves[i - 1].timestamp) / 1000;
+        if (gap > 2) step.extraLookTime += gap - 2;
+    }
 }
 
 /** Splits a CSV line on `splitter`, ignoring separators inside [...] (e.g. case "[FL,BR]->FR 30"). */

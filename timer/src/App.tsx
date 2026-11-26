@@ -9,7 +9,10 @@ import { readSessionScramblers, SESSION_SCRAMBLERS, sessionScramble, type Scramb
 import { averageDetails, cubeastCSV, dailyStreakNotification, dailyStreakSolves, deleteSolve, formatTime, newPersonalBests, numberedSolves, personalBestNotifications, readSolves, recoverLocalSolves, saveSolves, sessionStats, turns, updateSession } from './Data/storage';
 import { userBackupJSON, validateUserBackup } from '../../src/cloud/userBackup';
 import { restoreSettings } from '../../src/cloud/backupSettings';
-import { AverageDetails } from './Components/AverageDetails';
+import { AverageDetails, averageSnapshot } from './Components/AverageDetails';
+import { ShareButton } from '../../src/sharing/ShareButton';
+import { singleSnapshot } from '../../src/sharing/snapshot';
+import { ActionIcon } from '../../shared/Components/ActionIcon';
 import { CubeView } from './Components/CubeView';
 import { Replay } from './Components/Replay';
 import { SolveTimeline } from './Components/SolveTimeline';
@@ -817,9 +820,9 @@ export default function App() {
         </select>
         {allSessions && <span className="badge text-bg-secondary">All sessions</span>}
       </div><div className="d-flex gap-2">
-        <button className="btn btn-outline-secondary" onClick={() => exportHistory('csv')}>Export CSV</button>
-        <button hidden className="btn btn-outline-secondary" onClick={() => exportHistory('json')}>Export JSON</button>
-        <label hidden className={`btn btn-outline-secondary mb-0 ${solving ? 'disabled' : ''}`}>Import JSON<input type="file" className="visually-hidden" accept=".json,application/json" disabled={solving} onChange={event => { void importBackup(event.target.files?.[0]); event.target.value = ''; }} /></label>
+        <button className="btn btn-outline-secondary" onClick={() => exportHistory('csv')}><ActionIcon action="download" />Export CSV</button>
+        <button hidden className="btn btn-outline-secondary" onClick={() => exportHistory('json')}><ActionIcon action="download" />Export JSON</button>
+        <label hidden className={`btn btn-outline-secondary mb-0 ${solving ? 'disabled' : ''}`}><ActionIcon action="upload" />Import JSON<input type="file" className="visually-hidden" accept=".json,application/json" disabled={solving} onChange={event => { void importBackup(event.target.files?.[0]); event.target.value = ''; }} /></label>
       </div></div>
       {historyTable}
       {!!historyRows.length && <nav className="history-pagination" aria-label="Solve history pages">
@@ -830,7 +833,7 @@ export default function App() {
       {!historyRows.length && <p className="text-secondary">{allSessions ? 'No saved solves yet.' : 'No solves in this session yet.'} Your data stays on this device.</p>}
     </section>
     {average && <AverageDetails details={average} history={history} precision={precision} view={setReplay} close={() => setAverage(null)} />}
-    {streakDetails && <AverageDetails title={`${streakDetails.label} daily streak solves`} details={{ time: 0, solves: streakDetails.solves.map(solve => ({ solve, trimmed: null })) }}
+    {streakDetails && <AverageDetails showDate title={`${streakDetails.label} daily streak solves`} details={{ time: 0, solves: streakDetails.solves.map(solve => ({ solve, trimmed: null })) }}
       history={history} precision={precision} view={setReplay} close={() => setStreakDetails(null)} />}
     {cube && replay && <Replay key={replay.id} cube={cube} solve={replay} history={history} precision={precision} change={changeSolve} remove={removeSolve} retry={retrySolve} retryDisabled={solving || resynchronizing.current} close={() => setReplay(null)} />}
     {(!!celebrations.length || !!streaks.length) && <div className="pb-notifications" aria-label="Solve notifications">
@@ -852,8 +855,9 @@ export default function App() {
             <span className="d-block">{streak.label} streak</span>
           </span>
         </button>
-        <button className="btn btn-sm btn-outline-light pb-dismiss" aria-label="Dismiss daily streak"
-          onClick={() => setStreaks(current => current.filter(item => item.id !== streak.id))}>Dismiss</button>
+        <div className="pb-actions"><ShareButton label="Share streak" load={() => averageSnapshot({ time: 0, solves: streak.solves.map(solve => ({ solve, trimmed: null })) }, history, true)} />
+          <button className="btn btn-sm btn-outline-light" aria-label="Dismiss daily streak"
+            onClick={() => setStreaks(current => current.filter(item => item.id !== streak.id))}>Dismiss</button></div>
       </div>)}
       {celebrations.map(celebration => <div key={celebration.id} className="pb-celebration" role="status" aria-label="Personal best">
       <button className="pb-open" aria-label={`View PB ${celebration.name}`} onClick={() => {
@@ -874,8 +878,9 @@ export default function App() {
         <span className="d-block">{celebration.name}: {formatTime(celebration.time, precision)}s</span>
       </span>
       </button>
-      <button className="btn btn-sm btn-outline-light pb-dismiss" aria-label="Dismiss personal best"
-        onClick={() => setCelebrations(current => current.filter(item => item.id !== celebration.id))}>Dismiss</button>
+      <div className="pb-actions"><ShareButton label="Share PB" load={() => celebration.average ? averageSnapshot(celebration.average, history) : singleSnapshot(celebration.solve)} />
+        <button className="btn btn-sm btn-outline-light" aria-label="Dismiss personal best"
+          onClick={() => setCelebrations(current => current.filter(item => item.id !== celebration.id))}>Dismiss</button></div>
     </div>)}</div>}
     </main>
     <Footer />

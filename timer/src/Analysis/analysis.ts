@@ -13,7 +13,7 @@ import { completedF2LCross } from '../../../shared/cube/f2l';
 import { COLORS } from '../../../scrambler/src/cube/cube';
 import { comparePairs, solvePairChoices } from './f2lSuggestions';
 
-export const ANALYSIS_VERSION = 3;
+export const ANALYSIS_VERSION = 4;
 export const analysisKey = (solve: Solve) => JSON.stringify([cfopKey(solve), solve.penalty, solve.duration, solve.session, solve.inspection, solve.createdAt, solve.timingBasis]);
 const serialize = ({ date, endDate, ...data }: Analysis): NonNullable<Solve['imported']> => ({ ...data, date: date.toISOString(), endDate: endDate?.toISOString() });
 const restore = (data: NonNullable<Solve['imported']>): Analysis => ({ ...data, date: new Date(data.date), endDate: data.endDate ? new Date(data.endDate) : undefined });

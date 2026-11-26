@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { TOOLTIPS } from '../../shared/tooltips';
+import { InfoTip } from '../../shared/Components/InfoTip';
+import { configureStreakReminders } from './StreakReminderOptions';
 
 type InstallOffer = Event & { prompt(): Promise<{ outcome: 'accepted' | 'dismissed' } | void> };
 type InstallState = { installPrompt: InstallOffer | null; installed: boolean; installError: string; waiting: ServiceWorker | null };
@@ -41,9 +43,9 @@ export function useInstall() {
 export function InstallControl() {
   const { installPrompt, installed, installError, waiting } = useInstall();
   return <>
-    {installed ? <p>CuberPlus is installed.</p> : <div>
-      <button className="btn btn-outline-secondary" disabled={!installPrompt} aria-describedby="install-help" onClick={() => void installApp()}>Install app</button>
-      <p id="install-help" className="small text-secondary mt-2">{installPrompt ? 'Add CuberPlus to your home screen or apps.' : 'Use your browser menu to Install app, or Share > Add to Home Screen on iPhone/iPad.'}</p>
+    {installed ? <p>CuberPlus is installed.</p> : <div className="d-flex align-items-center">
+      <button className="btn btn-outline-secondary" disabled={!installPrompt} onClick={() => void installApp()}>Install app</button>
+      <InfoTip>{installPrompt ? 'Add CuberPlus to your home screen or apps.' : 'Use your browser menu to Install app, or Share > Add to Home Screen on iPhone/iPad.'}</InfoTip>
     </div>}
     {waiting && <button className="btn btn-outline-secondary" title={TOOLTIPS.pwa.reloadCuberPlusToUpdateThisDisconnectsAnyConnectedCube} onClick={() => {
       navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true });
@@ -58,6 +60,7 @@ export async function registerWorker(production: boolean) {
     const old = await navigator.serviceWorker.getRegistrations();
     await Promise.all(old.filter(worker => worker.scope === new URL('/timer/', location.origin).href).map(worker => worker.unregister()));
     const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' });
+    void navigator.serviceWorker.ready.then(configureStreakReminders).catch(() => {});
     const check = () => { if (registration.waiting && navigator.serviceWorker.controller) update({ waiting: registration.waiting }); };
     check();
     registration.addEventListener('updatefound', () => registration.installing?.addEventListener('statechange', check));

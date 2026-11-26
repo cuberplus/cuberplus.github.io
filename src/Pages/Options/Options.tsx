@@ -13,6 +13,7 @@ import { MISTAKES, type MistakeCategory } from '../../../shared/mistakes';
 import { FavoriteOptions } from '../../../timer/src/Components/FavoriteOptions';
 import { TOOLTIPS } from '../../../shared/tooltips';
 import { SharedOptions } from '../../sharing/SharedOptions';
+import { StreakReminderOptions } from '../../pwa/StreakReminderOptions';
 
 export default function Options() {
   const { theme, setTheme, precision, setPrecision, solveLimit, setSolveLimit, allSessions, setAllSessions, error, showMinutes, setShowMinutes, fontSize, setFontSize, disabledMistakes, setDisabledMistakes, highlightAura, setHighlightAura } = useContext(SettingsContext);
@@ -48,6 +49,7 @@ export default function Options() {
       <div className="d-flex align-items-center gap-2"><label className="form-check mb-0" htmlFor="all-sessions"><input id="all-sessions" type="checkbox" className="form-check-input" checked={allSessions} aria-describedby="all-sessions-help" onChange={event => setAllSessions(event.target.checked)} />Show all sessions</label>
         <InfoTip id="all-sessions-help">{TOOLTIPS.options.allSessions}</InfoTip></div>
       <div><InstallControl /></div>
+      <StreakReminderOptions />
       </div></SettingsSection>
       <MyCubes />
       <BreakReminderOptions />
@@ -101,6 +103,7 @@ export default function Options() {
 const mistakeGroups: [string, Exclude<MistakeCategory, 'nonFavorite'>[]][] = [
   ['Inefficient solutions', ['crossMoves', 'f2lMoves', 'ollMoves', 'pllMoves']],
   ['Long recognition', ['f2lPause', 'ollRecognition', 'pllRecognition']],
+  ['Extra Look', ['extraLookCross', 'extraLookF2l', 'extraLookOll', 'extraLookPll']],
   ['Move undos', ['singleUndo', 'sequenceUndo']],
   ['Redundant turns', ['redundantTurns']],
   ['Slow adjustments', ['slowAuf']],

@@ -70,6 +70,7 @@ const validators = {
   'timer-break-settings': json(validBreakSettings),
   'timer-over-turn-penalty': flag,
   'timer-show-every-long-pb': flag,
+  'streak-reminders': flag,
   'timer-hide-distracting-visuals': json(value => boolean(value) || fields({ timer: optional(boolean), cube: optional(boolean), progressBar: optional(boolean) })(value)),
   'timer-sessions': json(array(value => typeof value === 'string' && !!value.trim() && value.length <= 100)),
   'timer-session-scramblers': json(dictionary(oneOf('default', 'easy-cross', 'easy-xcross', 'cross-solved', 'f2l-solved', '2-gen', '3-gen', 'doubles'))),

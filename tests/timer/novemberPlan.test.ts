@@ -1,4 +1,4 @@
-import { compareDurationText, formatMilliseconds, formatSeconds, setTimeDisplay } from '../../shared/display';
+import { compareDurationText, formatMilliseconds, formatSeconds, setTimeDisplay, streakDate } from '../../shared/display';
 import { dailyStreakNotification, dailyStreakSolves } from '../../timer/src/Data/storage';
 import { inverse, loadCube, type Cube } from '../../timer/src/Core/puzzle';
 import type { Solve } from '../../timer/src/Core/engine';
@@ -84,15 +84,24 @@ test('smart drills fill configured counts even when only two cases have failures
   }
   expect(smartDrillCases(solves, ['OLL'], 2, 'failed')).toEqual(['OLL-1', 'OLL-2']);
 });
-test('streak drilldowns include every qualifying solve, but not gaps, slower solves, future days or retries', () => {
+test('streak drilldowns include only the fastest solve per local day, not gaps, future days or retries', () => {
   const previous = [recording(19, 6000), recording(21, 6900), recording(22, 6999), recording(22, 5000),
     recording(22, 7000), recording(22, 1000, 'incomplete'), recording(23, 6500), recording(24, 6000),
     { ...recording(22, 1000), session: 'Retries' }, recording(22, 1000, 'active')];
   const current = recording(23, 6800);
   expect(dailyStreakSolves(previous, current, 'Sub-7').map(solve => solve.id))
-    .toEqual([previous[1], previous[2], previous[3], previous[6], current].map(solve => solve.id));
-  expect(dailyStreakSolves(previous, current, 'Overall')).toContain(previous[5]);
+    .toEqual([previous[1], previous[3], previous[6]].map(solve => solve.id));
+  expect(dailyStreakSolves(previous, current, 'Overall')).not.toContain(previous[5]);
   expect(dailyStreakSolves(previous, current, 'Overall')).not.toContain(previous[0]);
+  const dnfDay = recording(20, 1000, 'incomplete');
+  expect(dailyStreakSolves([dnfDay], recording(21, 1000), 'Overall')[0]).toBe(dnfDay);
+});
+test('daily best selection uses completion day and penalized time, with compact calendar dates', () => {
+  const beforeMidnight = { ...recording(22, 4000), createdAt: new Date(2026, 10, 22, 23, 59, 59).toISOString() };
+  const penalized = { ...recording(23, 3000), penalty: 2000 }, best = recording(23, 3900);
+  expect(dailyStreakSolves([beforeMidnight, penalized], best, 'Sub-7')).toEqual([best]);
+  expect(streakDate(new Date(2026, 0, 1, 12).getTime())).toBe("Jan 1 '26");
+  expect(streakDate(new Date(1999, 10, 30, 12).getTime())).toBe("Nov 30 '99");
 });
 test('suggestions preserve solved pairs, track physical identities across crosses, and accept ties', () => {
   const scramble = "R U R' F' U2 F";

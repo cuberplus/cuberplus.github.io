@@ -22,6 +22,7 @@ import { DrillSettings } from './DrillSettings';
 import { TOOLTIPS } from '../../shared/tooltips';
 import { DrillTable } from './DrillTable';
 import { DrillBackButton } from './DrillBackButton';
+import { ActionIcon } from '../../shared/Components/ActionIcon';
 
 const seconds = (time: number) => `${formatMilliseconds(time)}s`;
 export function CasePractice({ cube, mode, initialCase, settings, back, fixedCase = false, changeSettings, optionsDialog }: {
@@ -113,7 +114,7 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
           <button className="btn btn-outline-primary" onClick={() => { editingId.current = null; setName(''); setChosen([]); setEditing(true); }}>Create training</button>
           <button className="btn btn-outline-primary" onClick={() => setSmart(value => !value)} aria-expanded={smart}>Create smart drill</button>
           {training && <><button className="btn btn-outline-secondary" onClick={() => { editingId.current = training.id; setName(training.name); setChosen(training.cases); setEditing(true); }}>Edit training</button>
-            <button className="btn btn-outline-danger" onClick={() => { if (storeTrainings(trainings.filter(item => item.id !== trainingId))) { setTrainingId(''); setEditing(false); } }}>Delete training</button></>}
+            <button className="btn btn-outline-danger" onClick={() => { if (storeTrainings(trainings.filter(item => item.id !== trainingId))) { setTrainingId(''); setEditing(false); } }}><ActionIcon action="delete" />Delete training</button></>}
         </div>
       </>}
     </fieldset>

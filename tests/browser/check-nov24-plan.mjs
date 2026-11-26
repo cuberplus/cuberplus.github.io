@@ -99,7 +99,6 @@ try {
   expect(JSON.stringify([...files.values()].map(file => file.data))).not.toMatch(/PRIVATE|fixture-|123456|654321/);
   await reader.goto(singleUrl);
   await expect(reader.getByRole('heading', { name: 'Shared solve', exact: true })).toBeVisible();
-  await reader.getByRole('button', { name: 'Solve 1', exact: true }).click();
   const publicReplay = reader.getByRole('dialog', { name: 'Solve replay', exact: true });
   await expect(publicReplay).toBeVisible();
   await expect(publicReplay.getByRole('button', { name: 'Play', exact: true })).toBeEnabled();
@@ -123,9 +122,8 @@ try {
   const averageUrl = await sharing.getByLabel('Public snapshot link').inputValue();
   await reader.goto(averageUrl);
   await expect(reader.getByRole('heading', { name: 'Shared average' })).toBeVisible();
-  await expect(reader.locator('section.shared-average tbody tr')).toHaveCount(fileAt(averageUrl).data.rows.length);
-  await expect(reader.locator('dialog.average-dialog')).toHaveCount(0);
-  const sharedAverage = reader.locator('section.shared-average');
+  await expect(reader.locator('dialog.average-dialog tbody tr')).toHaveCount(fileAt(averageUrl).data.rows.length);
+  const sharedAverage = reader.locator('dialog.average-dialog');
   expect(await sharedAverage.locator('thead th').allTextContents()).toEqual(['Solve', 'Time', 'Turns', 'TPS']);
   await sharedAverage.getByRole('button', { name: 'Time', exact: true }).click();
   await sharedAverage.getByRole('button', { name: 'Time', exact: true }).click();

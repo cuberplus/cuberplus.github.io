@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { SettingsSection } from '../../shared/Components/SettingsSection';
 import { InfoTip } from '../../shared/Components/InfoTip';
+import { ActionIcon } from '../../shared/Components/ActionIcon';
 import { connectSharing, deleteShare, deleteSharedData, disconnectSharing, listShares, shareUrl, sharingConfigured, type PublishedShare } from './drive';
 
 export function SharedOptions() {
@@ -17,7 +18,7 @@ export function SharedOptions() {
         if (!window.confirm('Delete every CuberPlus share link and all public catalog solves in this Google Drive account? Private backups will not be changed.')) return;
         setBusy(true); setError('');
         void deleteSharedData().then(() => setFiles([])).catch(failure => setError(failure instanceof Error ? failure.message : 'Unable to delete shared data.')).finally(() => setBusy(false));
-      }}>Delete all shared data</button>}
+      }}><ActionIcon action="delete" />Delete all shared data</button>}
     </div>
     {files?.length === 0 && <p role="status">No published snapshots in this account.</p>}
     {files?.map(file => <div key={file.id} className="d-flex align-items-center flex-wrap gap-2 mb-3">
@@ -26,7 +27,7 @@ export function SharedOptions() {
         setBusy(true); setError('');
         void deleteShare(file.id).then(() => setFiles(items => items?.filter(item => item.id !== file.id) ?? null))
           .catch(failure => setError(failure instanceof Error ? failure.message : 'Unable to delete shared snapshot.')).finally(() => setBusy(false));
-      }}>Revoke link</button>
+      }}><ActionIcon action="delete" />Revoke link</button>
     </div>)}
     {error && <p role="alert">{error}</p>}
   </SettingsSection>;

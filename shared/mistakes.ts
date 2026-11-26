@@ -1,6 +1,7 @@
 import { readOption } from './display';
 import { TOOLTIPS } from './tooltips';
 const CASE_MOVES_RULE = TOOLTIPS.mistakes.caseMoves;
+const EXTRA_LOOK_RULE = 'A pause longer than 2 seconds after at least three turns within a step, suggesting re-recognition. Initial recognition, last-layer setup turns and final AUF are excluded.';
 export const MISTAKES = {
   crossMoves: { label: 'Cross: Inefficient solution', rule: TOOLTIPS.mistakes.crossMoves },
   f2lMoves: { label: 'F2L pair: Inefficient solution', rule: TOOLTIPS.mistakes.f2lMoves },
@@ -9,6 +10,10 @@ export const MISTAKES = {
   f2lPause: { label: 'F2L: Long recognition gap', rule: TOOLTIPS.mistakes.f2lPause },
   ollRecognition: { label: 'OLL: Long recognition', rule: TOOLTIPS.mistakes.ollRecognition },
   pllRecognition: { label: 'PLL: Long recognition', rule: TOOLTIPS.mistakes.pllRecognition },
+  extraLookCross: { label: 'Cross: Extra Look', rule: EXTRA_LOOK_RULE },
+  extraLookF2l: { label: 'F2L: Extra Look', rule: EXTRA_LOOK_RULE },
+  extraLookOll: { label: 'OLL: Extra Look', rule: EXTRA_LOOK_RULE },
+  extraLookPll: { label: 'PLL: Extra Look', rule: EXTRA_LOOK_RULE },
   singleUndo: { label: 'Single-move undo', rule: TOOLTIPS.mistakes.singleUndo },
   sequenceUndo: { label: 'Multi-move undo', rule: TOOLTIPS.mistakes.sequenceUndo },
   redundantTurns: { label: 'Redundant same-face turns', rule: TOOLTIPS.mistakes.redundantTurns },

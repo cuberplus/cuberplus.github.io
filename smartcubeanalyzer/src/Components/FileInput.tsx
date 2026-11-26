@@ -12,6 +12,7 @@ import ReactGA from 'react-ga4';
 import { DEFAULT_SOLVE_LIMIT } from '../../../shared/Components/SolveLimit';
 import { InfoTip } from '../../../shared/Components/InfoTip';
 import { TOOLTIPS } from '../../../shared/tooltips';
+import { ActionIcon } from '../../../shared/Components/ActionIcon';
 
 function ScopeSync({ limit, session, change }: { limit: number; session: string; change: (limit: number, session: string) => void }) {
     React.useLayoutEffect(() => change(limit, session), [limit, session, change]);
@@ -173,7 +174,7 @@ export class FileInput extends React.Component<Record<string, never>, FileInputS
                                 <FormControl type="file" id="uploaded_data" aria-label="CSV files" disabled={this.state.isParsing} accept=".csv" multiple onChange={event => this.showFileData(Array.from((event.currentTarget as HTMLInputElement).files ?? []))} />
                                 {this.state.csvFileNames && <span className="small text-break">{this.state.csvFileNames}</span>}
                             </label>
-                            <a className="btn btn-outline-primary" href="/options/#import-heading" onClick={() => this.dataDialogRef.current?.close()}>Import solves</a>
+                            <a className="btn btn-outline-primary" href="/options/#import-heading" onClick={() => this.dataDialogRef.current?.close()}><ActionIcon action="upload" />Import solves</a>
                             <details><summary>Demo data</summary><div className="d-grid gap-2 mt-2">{DEMO_DATASETS.map(dataset => <Button variant="outline-secondary" key={dataset.id} className="demo-dataset text-start text-wrap" onClick={() => this.showTestData(dataset.file)}>{dataset.name}<span className="d-block small text-muted">{dataset.description}</span></Button>)}</div></details>
                             <details><summary>CSV help</summary><HelpPanel /></details>
                         </div>

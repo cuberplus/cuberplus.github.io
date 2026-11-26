@@ -2,6 +2,7 @@ import { useContext, useEffect, useId, useRef, useState } from 'react';
 import { PageLocation, usePageDialog } from '@cuberplus/navigation';
 import { InfoTip } from './InfoTip';
 import { TOOLTIPS } from '../tooltips';
+import { ActionIcon } from './ActionIcon';
 
 export function MacAddressHelp({ openFromAddress = false }: { openFromAddress?: boolean }) {
   const dialog = useRef<HTMLDialogElement>(null), id = useId(), address = useContext(PageLocation);
@@ -60,7 +61,7 @@ function BrowserAddress({ browser }: { browser: 'Edge' | 'Chrome' }) {
   return <div className="d-flex align-items-center gap-2 flex-wrap my-2">
     <code ref={code} id={id} className="text-break">{address}</code>
     <button type="button" className="btn btn-sm btn-outline-secondary" {...{ command: '--copy', commandfor: id }}
-      onClick={() => { if (!('CommandEvent' in window)) void copy(); }}>Copy {browser} address</button>
+      onClick={() => { if (!('CommandEvent' in window)) void copy(); }}><ActionIcon action="copy" />Copy {browser} address</button>
     <span role="status" className="small">{status}</span>
   </div>;
 }

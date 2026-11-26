@@ -40,7 +40,8 @@ details[open] > .visuals-summary::after { transform: rotate(225deg); }
 .pb-open:focus-visible { outline: 2px solid #e0c8ff; outline-offset: -3px; }
 .pb-celebration svg { flex-shrink: 0; }
 .pb-celebration strong { color: var(--cp-text); }
-.pb-dismiss { position: absolute; top: 0.75rem; right: 0.75rem; }
+.pb-actions { display: flex; justify-content: flex-end; align-items: center; gap: .5rem; padding: 0 .75rem .75rem; }
+.pb-actions .btn { font-size: .875rem; padding: .25rem .5rem; }
 .pb-disco-ball { transform-origin: 32px 40px; animation: pb-disco 1.4s ease-in-out infinite; }
 .pb-sparkles { animation: pb-sparkle 1.4s ease-in-out infinite; }
 @keyframes pb-disco { 50% { filter: drop-shadow(0 0 6px #b695ef); } to { transform: rotate(360deg); } }

@@ -115,6 +115,7 @@ export interface StepTotals {
 }
 
 export interface Step extends StepTotals {
+    extraLookTime?: number,
     tps: number,
     moves: string,
     case: string,

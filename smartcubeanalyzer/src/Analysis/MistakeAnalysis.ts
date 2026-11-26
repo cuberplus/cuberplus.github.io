@@ -10,7 +10,7 @@ export type MistakeKind = keyof typeof MISTAKES;
 export interface Mistake { kind: MistakeKind; step?: StepName; auf?: boolean; estimatedSeconds?: number; stepCosts?: Partial<Record<StepName, number>>; }
 export interface MistakeSummary { sampleCount: number; windowSize: number; counts: (Mistake & { count: number })[]; }
 export const mistakeKey = ({ kind, step, auf }: Mistake) => `${kind}:${step ?? ''}:${auf ? 'auf' : ''}`;
-export const mistakeLabel = ({ kind, step, auf }: Mistake) => kind === 'slowStep' ? `Unusually slow ${step}` : `${step ? `${step}${auf ? ' AUF' : ''}: ` : ''}${MISTAKES[kind].label}`;
+export const mistakeLabel = ({ kind, step, auf }: Mistake) => kind === 'slowStep' ? `Unusually slow ${step}` : `${step ? `${step}${auf ? ' AUF' : ''}: ` : ''}${step && kind.startsWith('extraLook') ? 'Extra Look' : MISTAKES[kind].label}`;
 export function rankedMistakes(solve: Solve): Mistake[] {
     return [...solve.mistakes ?? []].map(mistake => ({ ...mistake, estimatedSeconds: mistake.estimatedSeconds ?? estimateMistakeCost(solve, mistake) }))
         .sort((a, b) => b.estimatedSeconds - a.estimatedSeconds);
@@ -64,13 +64,13 @@ export function markMistakes(solves: Solve[], windowSize: number, prepared = fal
     const valid = solves.filter(s => !s.isCorrupt && !s.dnf);
     // Only freshly worker-analyzed, unchanged datasets may bypass content hashing.
     const preparedContext = valid[0]?.mistakeContext;
-    if (prepared && preparedContext?.startsWith(`4:${windowSize}:`) && valid.every(s => s.mistakeContext === preparedContext && s.mistakes)) return solves;
+    if (prepared && preparedContext?.startsWith(`5:${windowSize}:`) && valid.every(s => s.mistakeContext === preparedContext && s.mistakes)) return solves;
     let hash = 2166136261;
     for (const solve of valid) {
-        const key = `${solve.id}:${solve.time}:${solve.method}:${solve.source}:${solve.date.getTime()}:${solve.crossColor}:${solve.executionTime}:${solve.turns}:${JSON.stringify(solve.pairChoices)}:${solve.steps.map(s => `${s.name},${s.case},${s.time},${s.turns},${s.recognitionTime},${s.executionTime},${s.postAufTime},${moveHash(s.moves)}`).join(';')}`;
+        const key = `${solve.id}:${solve.time}:${solve.method}:${solve.source}:${solve.date.getTime()}:${solve.crossColor}:${solve.executionTime}:${solve.turns}:${JSON.stringify(solve.pairChoices)}:${solve.steps.map(s => `${s.name},${s.case},${s.time},${s.turns},${s.recognitionTime},${s.executionTime},${s.postAufTime},${s.extraLookTime ?? 0},${moveHash(s.moves)}`).join(';')}`;
         for (let i = 0; i < key.length; i++) hash = multiply(hash ^ key.charCodeAt(i), 16777619);
     }
-    const context = `4:${windowSize}:${hash}`;
+    const context = `5:${windowSize}:${hash}`;
     if (valid.every(solve => solve.mistakeContext === context && solve.mistakes)) return solves;
     if (latest?.context === context) {
         valid.forEach((solve, i) => Object.assign(solve, latest!.reasons[i], { mistakeContext: context }));
@@ -110,9 +110,10 @@ export function markMistakes(solves: Solve[], windowSize: number, prepared = fal
         slowSteps.forEach(({ actualStep, step, map, times, average }) => { if (map[i]) add('slowStep', step, undefined, times[i] - (average[Math.max(0, i - windowSize)] ?? times[i]), actualStep); });
         const auf = getAufMovesForSolve(solve);
         for (const choice of solve.pairChoices ?? []) add('f2lChoice', choice.step, false, choice.wastedMoves * (solve.executionTime / solve.turns || 0));
-        for (const { name, turns, moves, case: caseName, recognitionTime, time, postAufTime, executionTime } of solve.steps) {
-            const pair = PAIRS.has(name), ll = LAST_LAYER.has(name);
+        for (const { name, turns, moves, case: caseName, recognitionTime, time, postAufTime, executionTime, extraLookTime } of solve.steps) {
+            const pair = PAIRS.has(name), ll = LAST_LAYER.has(name), extraLookKind = pair || name === StepName.F2L ? 'extraLookF2l' : name === StepName.Cross ? 'extraLookCross' : name === StepName.OLL ? 'extraLookOll' : name === StepName.PLL ? 'extraLookPll' : undefined;
             const turnTime = executionTime > 0 && turns > 0 ? executionTime / turns : 0.2;
+            if (extraLookKind && extraLookTime && extraLookTime > 0) add(extraLookKind, name, false, extraLookTime);
             if (name === StepName.Cross && Number.isFinite(turns) && turns > 8) add('crossMoves', undefined, undefined, (turns - 8) * turnTime, name);
             if (pair && Number.isFinite(turns) && turns > 12) add('f2lMoves', undefined, undefined, (turns - 12) * turnTime, name);
             if (Number.isFinite(recognitionTime) && recognitionTime > 2 && recognitionTime <= time) {
@@ -140,7 +141,7 @@ export function mistakeWindow(solves: Solve[], windowSize: number): Solve[] {
 export function summarizeMistakes(solves: Solve[], windowSize: number, disabled: string[] = []): MistakeSummary {
     const recent = mistakeWindow(solves, windowSize);
     const counts = new Map<string, Mistake & { count: number }>();
-    (Object.keys(MISTAKES) as MistakeKind[]).filter(kind => !['slowStep', 'singleUndo', 'sequenceUndo', 'redundantTurns'].includes(kind))
+    (Object.keys(MISTAKES) as MistakeKind[]).filter(kind => !kind.startsWith('extraLook') && !['slowStep', 'singleUndo', 'sequenceUndo', 'redundantTurns'].includes(kind))
         .forEach(kind => counts.set(mistakeKey({ kind }), { kind, count: 0 }));
     for (const solve of recent) {
         const unique = new Map((solve.mistakes ?? []).map(mistake => [mistakeKey(mistake), mistake]));

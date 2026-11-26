@@ -119,9 +119,30 @@ test('mistake group checkboxes toggle their children, show mixed state and prese
   expect(group.checked).toBe(true); expect(individual.checked).toBe(true);
   fireEvent.click(group);
   expect(JSON.parse(localStorage.getItem('disabled-mistakes')!)).toEqual(['f2lChoice', 'f2lPause', 'ollRecognition', 'pllRecognition']);
+  expect((screen.getByRole('checkbox', { name: 'F2L: Extra Look', exact: true }) as HTMLInputElement).checked).toBe(true);
   expect((screen.getByRole('checkbox', { name: 'Cross: Inefficient solution', exact: true }) as HTMLInputElement).checked).toBe(true);
   fireEvent.click(individual);
   expect(group.indeterminate).toBe(true);
+});
+
+test('Extra Look has independent step options and a separate mixed-state group', async () => {
+  render(<Site />);
+  await screen.findByRole('heading', { name: 'Home' });
+  await visit('Options');
+  fireEvent.click(screen.getByRole('button', { name: 'Mistakes', exact: true }));
+  const group = screen.getByRole('checkbox', { name: 'Extra Look', exact: true }) as HTMLInputElement;
+  const pair = screen.getByRole('checkbox', { name: 'F2L: Extra Look', exact: true }) as HTMLInputElement;
+  fireEvent.click(pair);
+  expect(group.indeterminate).toBe(true);
+  expect(JSON.parse(localStorage.getItem('disabled-mistakes')!)).toEqual(['f2lChoice', 'extraLookF2l']);
+  expect((screen.getByRole('checkbox', { name: 'Cross: Extra Look', exact: true }) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(group);
+  expect(group.checked).toBe(true); expect(pair.checked).toBe(true);
+  fireEvent.click(group);
+  expect(screen.queryByRole('checkbox', { name: 'Other steps: Extra Look', exact: true })).toBeNull();
+  expect(['Cross', 'F2L', 'OLL', 'PLL'].every(step =>
+    !(screen.getByRole('checkbox', { name: `${step}: Extra Look`, exact: true }) as HTMLInputElement).checked)).toBe(true);
+  expect((screen.getByRole('checkbox', { name: 'Long recognition', exact: true }) as HTMLInputElement).checked).toBe(true);
 });
 
 test('non-favorite group clears legacy disabled state, supports mixed selection and preserves other mistakes', async () => {

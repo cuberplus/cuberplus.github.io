@@ -11,6 +11,10 @@ export function formatSeconds(seconds: number, precision = 2, showMinutes = minu
     : sign + rounded;
 }
 export const formatMilliseconds = (milliseconds: number, precision = 2, showMinutes = minutes) => formatSeconds(milliseconds / 1000, precision, showMinutes);
+export const streakDate = (timestamp: number): string => {
+  const date = new Date(timestamp);
+  return `${date.toLocaleString('en-US', { month: 'short' })} ${date.getDate()} '${String(date.getFullYear()).slice(-2).padStart(2, '0')}`;
+};
 export function compareDurationText(left: string, right: string): number | undefined {
   if ((!left.includes(':') && !right.includes(':')) || ![left, right].every(value => /^-?(?:\d+:)?\d+(?:\.\d+)?$/.test(value))) return undefined;
   const seconds = (value: string) => {
