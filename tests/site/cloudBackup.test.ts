@@ -16,6 +16,7 @@ jest.mock('../../src/cloud/providers', () => ({
   writeRemote: jest.fn(async () => {}),
 }));
 const mockRead = jest.fn<Promise<Solve[]>, []>();
+const mockReadIds = jest.fn<Promise<string[]>, []>();
 const mockSave = jest.fn<Promise<void>, [Solve[]]>();
 const mockValidate = jest.fn((data: { format: string; solves: Solve[] }) => {
   if (data.format !== 'timer-v2' || data.solves.some(solve => !solve.id || solve.duration < 0)) throw new Error('Invalid timer backup');
@@ -23,6 +24,7 @@ const mockValidate = jest.fn((data: { format: string; solves: Solve[] }) => {
 });
 jest.mock('../../timer/src/Data/storage', () => ({
   readSolves: () => mockRead(), saveSolves: (solves: Solve[]) => mockSave(solves),
+  readSolveIds: () => mockReadIds(),
   backupJSON: (solves: Solve[]) => JSON.stringify({ format: 'timer-v2', solves }),
   backupData: (solves: Solve[]) => ({ format: 'timer-v2', solves }),
   validateBackupData: (data: { format: string; solves: Solve[] }) => mockValidate(data),
@@ -51,6 +53,7 @@ beforeAll(() => {
 beforeEach(() => {
   values.clear(); jest.clearAllMocks();
   mockRead.mockResolvedValue([local, same]); mockSave.mockResolvedValue();
+  mockReadIds.mockResolvedValue(['local', 'shared']);
   jest.mocked(readRemote).mockResolvedValue(null);
   jest.mocked(writeRemote).mockResolvedValue();
 });
@@ -70,29 +73,83 @@ test('backup merges cloud-only solves, dedupes both inputs and lets local matchi
   expect(decoded.settings).not.toHaveProperty('unrelated-secret');
   expect(cloudState().lastBackup).not.toBeNull();
 });
-test('backup reports real completed stages, waits for upload acknowledgement and clears progress on failure', async () => {
+test('backup publishes time estimates, waits for upload acknowledgement and clears progress on failure', async () => {
   const states: ReturnType<typeof cloudState>[] = [];
   const stop = subscribeCloud(() => states.push(cloudState()));
   let uploaded!: () => void;
   jest.mocked(writeRemote).mockImplementationOnce(async () => {
     expect(cloudState()).toMatchObject({
-      busy: true, backupProgress: { completed: 3, total: 4 }, message: 'Uploading 2 solves to Google Drive...',
+      busy: true, backupProgress: { solveCount: 2, complete: false }, message: 'Uploading 2 solves to Google Drive...',
     });
     await new Promise<void>(resolve => { uploaded = resolve; });
   });
   try {
     const operation = backupNow();
     while (!uploaded) await new Promise(resolve => setTimeout(resolve, 0));
-    expect(cloudState().backupProgress?.completed).toBe(3);
+    expect(cloudState().backupProgress?.complete).toBe(false);
+    expect(cloudState().backupProgress?.estimatedMs).toBeGreaterThan(0);
     expect(cloudState().lastBackup).toBeNull();
     uploaded();
     expect(await operation).toBe(true);
-    expect([...new Set(states.map(state => state.backupProgress?.completed))]).toEqual([0, 1, 2, 3, 4]);
-    expect(cloudState()).toMatchObject({ busy: false, backupProgress: { completed: 4, total: 4 } });
+    expect(states.map(state => state.message)).toEqual(expect.arrayContaining([
+      'Checking existing cloud backup...', 'Reading local solves...', 'Preparing 2 solves for backup...', 'Uploading 2 solves to Google Drive...',
+    ]));
+    expect(cloudState()).toMatchObject({ busy: false, backupProgress: { complete: true, solveCount: 2 } });
+    const timings = localStorage.getItem('cuberplus-cloud-backup-timings-v1');
+    expect(JSON.parse(timings!).durations).toHaveLength(4);
     jest.mocked(writeRemote).mockRejectedValueOnce(new Error('Network failed'));
     expect(await backupNow()).toBe(false);
     expect(cloudState()).toMatchObject({ busy: false, error: true, backupProgress: null, message: 'Network failed' });
+    expect(localStorage.getItem('cuberplus-cloud-backup-timings-v1')).toBe(timings);
   } finally { stop(); }
+});
+test('the first phase starts with a cheap local count and updates for cloud-only and merged solves', async () => {
+  const incoming = await remote([cloud, same, { ...cloud, id: 'other-cloud' }]);
+  mockReadIds.mockResolvedValue(Array.from({ length: 1000 }, (_, i) => String(i)));
+  let downloaded!: () => void;
+  jest.mocked(readRemote).mockImplementationOnce(() => new Promise(resolve => { downloaded = () => resolve(incoming); }));
+  const states: ReturnType<typeof cloudState>[] = [];
+  const stop = subscribeCloud(() => states.push(cloudState()));
+  try {
+    const operation = backupNow();
+    while (!downloaded) await new Promise(resolve => setTimeout(resolve, 0));
+    expect(mockRead).not.toHaveBeenCalled();
+    expect(cloudState().backupProgress).toMatchObject({ solveCount: 1000, complete: false });
+    downloaded();
+    expect(await operation).toBe(true);
+    expect(states.some(state => state.message === 'Checking existing cloud backup...' && state.backupProgress?.solveCount === 1000)).toBe(true);
+    expect(cloudState().backupProgress).toMatchObject({ solveCount: 4, complete: true });
+    expect(JSON.parse(localStorage.getItem('cuberplus-cloud-backup-timings-v1')!).counts).toEqual([3, 2, 4, 4]);
+  } finally { stop(); }
+});
+test.each([true, false])('large cloud validation yields between batches (scheduler available: %s)', async available => {
+  const records = Array.from({ length: 45 }, (_, i) => ({ ...cloud, id: String(i) }));
+  const incoming = await remote(records);
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'scheduler');
+  const yieldTask = jest.fn(async () => {});
+  Object.defineProperty(globalThis, 'scheduler', { configurable: true, value: available ? { yield: yieldTask } : undefined });
+  let time = 0;
+  const clock = jest.spyOn(performance, 'now').mockImplementation(() => time += 50);
+  try {
+    const onCount = jest.fn();
+    expect((await decodeCloudBackup(incoming.content, onCount)).solves).toEqual(records);
+    expect(onCount).toHaveBeenCalledWith(45);
+    expect(mockValidate.mock.calls.map(([value]) => value.solves.length)).toEqual([20, 20, 5]);
+    expect(yieldTask).toHaveBeenCalledTimes(available ? 2 : 0);
+  } finally {
+    clock.mockRestore();
+    if (original) Object.defineProperty(globalThis, 'scheduler', original);
+    else Reflect.deleteProperty(globalThis, 'scheduler');
+  }
+});
+test('an invalid solve in a later validation batch cannot partially restore or overwrite cloud data', async () => {
+  jest.mocked(readRemote).mockResolvedValue(await remote(Array.from({ length: 45 }, (_, i) => ({
+    ...cloud, id: String(i), duration: i === 44 ? -1 : cloud.duration,
+  }))));
+  expect(await restoreNow()).toBe(false);
+  expect(mockSave).not.toHaveBeenCalled();
+  expect(await backupNow()).toBe(false);
+  expect(writeRemote).not.toHaveBeenCalled();
 });
 test('startup resumes pending automatic backups without requiring another solve', async () => {
   localStorage.setItem('cuberplus-cloud-provider', 'microsoft');
@@ -195,7 +252,7 @@ test('an empty placeholder changed by another device is reread and merged on con
   const [, content, previous] = jest.mocked(writeRemote).mock.calls[1];
   expect(previous?.revision).toBe('etag');
   expect((await decodeCloudBackup(content)).solves).toEqual([cloud, same, local]);
-  expect(cloudState().backupProgress).toEqual({ completed: 4, total: 4 });
+  expect(cloudState().backupProgress).toMatchObject({ complete: true, solveCount: 3 });
 });
 test('an unexpectedly empty download of a nonempty file is never overwritten', async () => {
   configureCloud('microsoft', false, false);

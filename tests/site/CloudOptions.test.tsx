@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, cleanup, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, cleanup, within } from '@testing-library/react';
 import { CloudNotice, CloudOptions } from '../../src/cloud/CloudOptions';
 import { backupNow, cloudState, configureCloud, connectCloud, disconnectCloud, dismissCloudMessage, restoreNow } from '../../src/cloud/backup';
 
+let mockCloudChanged: () => void;
 jest.mock('../../src/cloud/backup', () => ({
-  cloudState: jest.fn(), subscribeCloud: () => () => {},
+  cloudState: jest.fn(), subscribeCloud: (listener: () => void) => { mockCloudChanged = listener; return () => {}; },
   configureCloud: jest.fn(), connectCloud: jest.fn(), disconnectCloud: jest.fn(),
   backupNow: jest.fn(), restoreNow: jest.fn(async () => false),
   dismissCloudMessage: jest.fn(), initializeCloud: jest.fn(async () => {}),
@@ -66,23 +67,51 @@ test('automatic backup failures are dismissible and link to reconnection options
   fireEvent.click(screen.getByRole('button', { name: 'Dismiss cloud backup notification' }));
   expect(dismissCloudMessage).toHaveBeenCalledTimes(1);
 });
-test('backup notification exposes labeled stage progress and the solve count without claiming early completion', () => {
-  jest.mocked(cloudState).mockReturnValue({
-    ...initial, busy: true, message: 'Uploading 12,345 solves to Google Drive...', backupProgress: { completed: 3, total: 4 },
-  });
-  const view = render(<CloudNotice />);
-  const bar = screen.getByRole('progressbar', { name: 'Cloud backup progress' });
-  expect(bar.tagName).toBe('PROGRESS');
-  expect(bar.getAttribute('value')).toBe('3');
-  expect(bar.getAttribute('max')).toBe('4');
-  expect(screen.getByRole('status').textContent).toContain('Uploading 12,345 solves');
-  expect(screen.getByText('3 / 4 steps complete')).toBeDefined();
-  jest.mocked(cloudState).mockReturnValue({
-    ...initial, message: 'Backed up 12,345 solves to Google Drive.', backupProgress: { completed: 4, total: 4 },
-  });
-  view.rerender(<CloudNotice key="complete" />);
-  expect(screen.getByRole('progressbar').getAttribute('value')).toBe('4');
-  expect(screen.getByText('4 / 4 steps complete')).toBeDefined();
+test('notification advances by elapsed time, never moves backwards on re-estimation, and only completes after success', () => {
+  jest.useFakeTimers();
+  try {
+    const progress = { startedAt: performance.now(), estimatedMs: 10000, solveCount: 12345, complete: false };
+    jest.mocked(cloudState).mockReturnValue({
+      ...initial, busy: true, message: 'Checking existing cloud backup...', backupProgress: progress,
+    });
+    render(<CloudNotice />);
+    const bar = screen.getByRole('progressbar', { name: 'Cloud backup progress' });
+    expect(bar.tagName).toBe('PROGRESS');
+    expect(bar.getAttribute('max')).toBe('100');
+    act(() => jest.advanceTimersByTime(2000));
+    expect(Number(bar.getAttribute('value'))).toBe(20);
+    expect(screen.getByText('Estimated 20% - 12,345 solves')).toBeDefined();
+    expect(bar.parentElement?.getAttribute('aria-live')).toBe('off');
+    jest.mocked(cloudState).mockReturnValue({
+      ...initial, busy: true, message: 'Uploading 12,345 solves to Google Drive...', backupProgress: { ...progress, estimatedMs: 20000 },
+    });
+    act(() => mockCloudChanged());
+    expect(Number(bar.getAttribute('value'))).toBe(20);
+    act(() => jest.advanceTimersByTime(60000));
+    expect(Number(bar.getAttribute('value'))).toBe(99);
+    jest.mocked(cloudState).mockReturnValue({
+      ...initial, message: 'Backed up 12,345 solves to Google Drive.', backupProgress: { ...progress, complete: true },
+    });
+    act(() => mockCloudChanged());
+    expect(bar.getAttribute('value')).toBe('100');
+    expect(screen.getByText('100% complete - 12,345 solves')).toBeDefined();
+    expect(jest.getTimerCount()).toBe(0);
+  } finally { jest.useRealTimers(); }
+});
+test('dismissing an active notification stops its progress clock', () => {
+  jest.useFakeTimers();
+  try {
+    jest.mocked(cloudState).mockReturnValue({
+      ...initial, busy: true, message: 'Checking existing cloud backup...',
+      backupProgress: { startedAt: performance.now(), estimatedMs: 10000, solveCount: 10, complete: false },
+    });
+    render(<CloudNotice />);
+    expect(jest.getTimerCount()).toBe(1);
+    jest.mocked(cloudState).mockReturnValue({ ...initial, busy: true });
+    act(() => mockCloudChanged());
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(jest.getTimerCount()).toBe(0);
+  } finally { jest.useRealTimers(); }
 });
 test('backup semantics tooltip follows the last successful backup, not Disconnect', () => {
   render(<CloudOptions />);

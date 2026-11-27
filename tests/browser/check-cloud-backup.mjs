@@ -28,6 +28,8 @@ let remote = {
 let uploaded, uploads = 0;
 let releaseUpload;
 const uploadGate = new Promise(resolve => { releaseUpload = resolve; });
+let releaseDownload;
+const downloadGate = new Promise(resolve => { releaseDownload = resolve; });
 const errors = [], cspErrors = [];
 try {
   const context = await browser.newContext();
@@ -64,9 +66,12 @@ try {
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
     expect(request.headers().authorization).toBe('Bearer synthetic-browser-test-token');
     if (url.pathname === '/drive/v3/files') return route.fulfill({ headers, json: { files: [{ id: 'test-backup' }] } });
-    if (url.pathname === '/drive/v3/files/test-backup') return route.fulfill({
-      headers: { ...headers, ETag: `"revision-${uploads}"` }, contentType: 'application/gzip', body: gzipSync(JSON.stringify(remote)),
-    });
+    if (url.pathname === '/drive/v3/files/test-backup') {
+      await downloadGate;
+      return route.fulfill({
+        headers: { ...headers, ETag: `"revision-${uploads}"` }, contentType: 'application/gzip', body: gzipSync(JSON.stringify(remote)),
+      });
+    }
     if (url.pathname === '/upload/drive/v3/files/test-backup') {
       expect(request.method()).toBe('PATCH');
       expect(request.headers()['if-match']).toBe(`"revision-${uploads}"`);
@@ -113,13 +118,20 @@ try {
   await expect(page.getByRole('button', { name: 'Back up now' })).toBeEnabled();
   await page.getByRole('button', { name: 'Back up now' }).click();
   const progress = page.getByRole('progressbar', { name: 'Cloud backup progress' });
-  await expect(progress).toHaveAttribute('value', '3');
-  await expect(progress).toHaveAttribute('max', '4');
+  await expect(progress).toHaveAttribute('max', '100');
+  await expect(page.locator('aside[role="status"]')).toContainText('Checking existing cloud backup');
+  const firstValue = Number(await progress.getAttribute('value'));
+  await expect.poll(async () => Number(await progress.getAttribute('value'))).toBeGreaterThan(firstValue);
+  expect(Number(await progress.getAttribute('value'))).toBeLessThan(100);
+  releaseDownload();
   await expect(page.locator('aside[role="status"]')).toContainText('Uploading 3 solves');
-  await expect(page.locator('aside[role="status"]')).toContainText('3 / 4 steps complete');
+  await expect(page.locator('aside[role="status"]')).toContainText(/Estimated \d+% - 3 solves/);
+  const uploadValue = Number(await progress.getAttribute('value'));
+  await expect.poll(async () => Number(await progress.getAttribute('value'))).toBeGreaterThan(uploadValue);
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     await expect(progress).toBeVisible();
+    expect(Number(await progress.getAttribute('value'))).toBeLessThan(100);
     const bounds = await progress.boundingBox();
     expect(bounds.x).toBeGreaterThanOrEqual(0);
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
@@ -131,13 +143,14 @@ try {
   }
   releaseUpload();
   await expect(page.locator('aside[role="status"]')).toContainText('Backed up 3 solves');
-  await expect(progress).toHaveAttribute('value', '4');
+  await expect(progress).toHaveAttribute('value', '100');
   expect(uploads).toBe(1);
   expect(uploaded.timer.solves.map(solve => solve.id).sort()).toEqual(['cloud-only', 'local-only', 'shared']);
   expect(uploaded.timer.solves.find(solve => solve.id === 'shared').duration).toBe(10000);
   expect(uploaded.settings['cuberplus-database-favorites']).toContain('F2L-1');
   expect(uploaded.settings['cuberplus-custom-algorithms']).toContain('F2L-1');
   expect(uploaded.settings).not.toHaveProperty('unrelated-secret');
+  expect(uploaded.settings).not.toHaveProperty('cuberplus-cloud-backup-timings-v1');
   remote = {
     ...uploaded, timer: pack([solve('shared', 9000), solve('cloud-only', 15000), solve('restored', 20000), solve('shared', 8000)]),
     settings: { ...uploaded.settings, theme: 'dark', 'timer-time-precision': '3', 'timer-sessions': '["Cloud practice"]' },
@@ -193,7 +206,7 @@ try {
   const contents = await readFile(await download.path());
   const manual = JSON.parse(contents.toString());
   expect(manual.settings).toMatchObject(sessionSettings);
-  for (const key of ['unrelated-secret', 'timer-pb-daily-records', 'cuberplus-cloud-provider', 'cuberplus-cloud-progress']) {
+  for (const key of ['unrelated-secret', 'timer-pb-daily-records', 'cuberplus-cloud-provider', 'cuberplus-cloud-progress', 'cuberplus-cloud-backup-timings-v1']) {
     expect(manual.settings).not.toHaveProperty(key);
   }
   const restoredContext = await browser.newContext(), restoredPage = await restoredContext.newPage();

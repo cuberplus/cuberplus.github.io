@@ -1,6 +1,7 @@
 import type { Solve } from '../../timer/src/Core/engine';
 import { connectProvider, disconnectProvider, isConfigured, isConnected, prepareProvider, readRemote, writeRemote, CloudHttpError, providerNames, type Provider } from './providers';
 import { readSettings, restoreSettings, validateSettings, type Settings } from './backupSettings';
+import { BackupEstimate, type BackupProgress } from './backupEstimate';
 export { settingKeys } from './backupSettings';
 type Progress = { pending: string[]; pbs: string[]; lastBackup: Partial<Record<Provider, string>> };
 type CloudBackup = {
@@ -12,8 +13,9 @@ const progressKey = 'cuberplus-cloud-progress';
 const providerKey = 'cuberplus-cloud-provider';
 const changed = 'cuberplus-cloud-changed';
 const flashcardsKey = 'cuberplus-orientation-attempts-v1';
+const timingKey = 'cuberplus-cloud-backup-timings-v1';
 let busy = false, message = '', error = false;
-let backupProgress: { completed: number; total: number } | null = null;
+let backupProgress: BackupProgress | null = null;
 const read = (key: string): string | null => { try { return localStorage.getItem(key); } catch { return null; } };
 const selectedProvider = (): Provider => 'google';
 function progress(): Progress {
@@ -97,7 +99,7 @@ export async function encodeCloudBackup(backup: CloudBackup): Promise<Blob> {
   const stream = new Blob([JSON.stringify(backup)]).stream().pipeThrough(new CompressionStream('gzip'));
   return new Blob([await new Response(stream).arrayBuffer()], { type: 'application/gzip' });
 }
-export async function decodeCloudBackup(content: Blob): Promise<{ solves: Solve[]; settings: Settings }> {
+export async function decodeCloudBackup(content: Blob, onCount?: (count: number) => void): Promise<{ solves: Solve[]; settings: Settings }> {
   if (!content.size) throw new Error('The cloud backup file is empty. Back up from a device with your solves before restoring. No local data was changed.');
   const text = await new Response(content.stream().pipeThrough(new DecompressionStream('gzip'))).text();
   const backup = JSON.parse(text) as CloudBackup;
@@ -109,7 +111,19 @@ export async function decodeCloudBackup(content: Blob): Promise<{ solves: Solve[
   const [{ validateBackupData }, { loadCube }] = await Promise.all([import('../../timer/src/Data/storage'), import('../../timer/src/Core/puzzle')]);
   // Older or externally edited backups may contain duplicate IDs; validate only the winning records.
   const timer = { ...backup.timer, solves: dedupeById(backup.timer.solves) };
-  return { solves: validateBackupData(timer, await loadCube()), settings };
+  onCount?.(timer.solves.length);
+  const cube = await loadCube(), solves: Solve[] = [];
+  let deadline = performance.now() + 40;
+  for (let offset = 0; offset < timer.solves.length || offset === 0; offset += 20) {
+    solves.push(...validateBackupData({ ...timer, solves: timer.solves.slice(offset, offset + 20) }, cube));
+    if (performance.now() >= deadline && offset + 20 < timer.solves.length) {
+      const scheduler = (globalThis as typeof globalThis & { scheduler?: { yield?: () => Promise<void> } }).scheduler;
+      if (scheduler?.yield) await scheduler.yield();
+      else await new Promise(resolve => setTimeout(resolve, 0));
+      deadline = performance.now() + 40;
+    }
+  }
+  return { solves, settings };
 }
 function mergeFlashcardHistory(previous: Settings, incoming: Settings): Settings {
   const older = previous[flashcardsKey], newer = incoming[flashcardsKey];
@@ -120,21 +134,27 @@ function mergeFlashcardHistory(previous: Settings, incoming: Settings): Settings
   return { ...incoming, [flashcardsKey]: JSON.stringify(rows) };
 }
 async function backUp(provider: Provider): Promise<void> {
-  const advance = (completed: number, status: string) => {
-    backupProgress = { completed, total: 4 }; message = status; emit();
-  };
-  const { readSolves, backupData } = await import('../../timer/src/Data/storage');
+  const { readSolves, readSolveIds, backupData } = await import('../../timer/src/Data/storage');
+  const localCount = (await readSolveIds()).length;
   // Retry a conditional-write conflict with a fresh cloud snapshot, never a blind overwrite.
   for (let attempt = 0; attempt < 3; attempt++) {
-    advance(0, attempt ? 'Cloud backup changed; checking again...' : 'Checking existing cloud backup...');
+    const estimate = new BackupEstimate(localCount, read(timingKey));
+    const publish = () => { backupProgress = estimate.snapshot(); emit(); };
+    const advance = (status: string) => { estimate.advance(); message = status; publish(); };
+    message = attempt ? 'Cloud backup changed; checking again...' : 'Checking existing cloud backup...'; publish();
     const remote = await readRemote(provider);
     // Empty placeholders still retain their ID and revision for the conditional upload.
-    const previous = remote && (remote.size !== 0 || remote.content.size !== 0) ? await decodeCloudBackup(remote.content) : { solves: [], settings: {} };
-    advance(1, 'Reading local solves...');
+    const previous = remote && (remote.size !== 0 || remote.content.size !== 0) ? await decodeCloudBackup(remote.content, count => {
+      estimate.remoteCount(count); publish();
+    }) : { solves: [], settings: {} };
+    estimate.remoteCount(previous.solves.length);
+    advance('Reading local solves...');
     const observed = progress();
     const local = (await readSolves()).filter(solve => solve.status !== 'active');
     const solves = dedupeById(previous.solves, local), savedAt = new Date().toISOString();
-    advance(2, `Preparing ${solves.length.toLocaleString()} solves for backup...`);
+    estimate.localCount(local.length);
+    estimate.mergedCount(solves.length);
+    advance(`Preparing ${solves.length.toLocaleString()} solves for backup...`);
     const settings = { ...previous.settings, ...readSettings() };
     settings[flashcardsKey] ??= previous.settings[flashcardsKey] ?? null;
     const content = await encodeCloudBackup({
@@ -142,7 +162,7 @@ async function backUp(provider: Provider): Promise<void> {
       timer: backupData(solves),
       settings: mergeFlashcardHistory(previous.settings, settings),
     });
-    advance(3, `Uploading ${solves.length.toLocaleString()} solves to ${providerNames[provider]}...`);
+    advance(`Uploading ${solves.length.toLocaleString()} solves to ${providerNames[provider]}...`);
     try { await writeRemote(provider, content, remote); }
     catch (failure) {
       if (failure instanceof CloudHttpError && [409, 412].includes(failure.status) && attempt < 2) continue;
@@ -153,7 +173,9 @@ async function backUp(provider: Provider): Promise<void> {
     saved.lastBackup[provider] = savedAt;
     try { saveProgress(saved); }
     catch { throw new Error('Backup uploaded, but this browser could not save the backup date or reset its counter.'); }
-    advance(4, `Backed up ${solves.length.toLocaleString()} solves to ${providerNames[provider]}.`); return;
+    advance(`Backed up ${solves.length.toLocaleString()} solves to ${providerNames[provider]}.`);
+    try { localStorage.setItem(timingKey, estimate.savedTimings()); } catch { /* Timing history is optional. */ }
+    return;
   }
 }
 async function restore(provider: Provider): Promise<void> {
@@ -169,7 +191,7 @@ async function restore(provider: Provider): Promise<void> {
 }
 async function operate(action: 'backup' | 'restore'): Promise<boolean> {
   if (busy) return false;
-  busy = true; error = false; backupProgress = action === 'backup' ? { completed: 0, total: 4 } : null;
+  busy = true; error = false; backupProgress = null;
   message = action === 'backup' ? 'Waiting to start backup...' : 'Restoring...'; emit();
   let success = false;
   try {

@@ -6,11 +6,27 @@ import { InfoTip } from '../../shared/Components/InfoTip';
 import { SettingsSection } from '../../shared/Components/SettingsSection';
 import { TOOLTIPS } from '../../shared/tooltips';
 import { SharedOptions } from '../sharing/SharedOptions';
+import { estimatedBackupPercent, type BackupProgress } from './backupEstimate';
 
 function useCloud() {
   const [state, setState] = useState(cloudState);
   useEffect(() => subscribeCloud(() => setState(cloudState())), []);
   return state;
+}
+function useBackupPercent(progress: BackupProgress | null, visible: boolean): number {
+  const [display, setDisplay] = useState({ startedAt: -1, percent: 0 });
+  useEffect(() => {
+    if (!progress || !visible) return;
+    const tick = () => setDisplay(previous => ({
+      startedAt: progress.startedAt,
+      percent: Math.max(previous.startedAt === progress.startedAt ? previous.percent : 0, estimatedBackupPercent(progress)),
+    }));
+    tick();
+    if (progress.complete) return;
+    const timer = window.setInterval(tick, 100);
+    return () => window.clearInterval(timer);
+  }, [progress, visible]);
+  return progress ? display.startedAt === progress.startedAt ? display.percent : estimatedBackupPercent(progress) : 0;
 }
 export function CloudOptions() {
   const state = useCloud();
@@ -46,6 +62,7 @@ export function CloudOptions() {
 }
 export function CloudNotice() {
   const state = useCloud();
+  const percent = useBackupPercent(state.backupProgress, Boolean(state.message));
   useEffect(() => {
     const resume = () => { if (!document.hidden) void initializeCloud(); };
     resume();
@@ -58,9 +75,11 @@ export function CloudNotice() {
     role={state.error ? 'alert' : 'status'} aria-live={state.error ? 'assertive' : 'polite'}>
     <button className="btn-close float-end ms-3" aria-label="Dismiss cloud backup notification" onClick={dismissCloudMessage} />
     <strong>Cloud backup</strong><p className="mb-0 mt-1">{state.message}</p>
-    {state.backupProgress && <div className="mt-2">
-      <progress className="w-100" aria-label="Cloud backup progress" max={state.backupProgress.total} value={state.backupProgress.completed} />
-      <p className="small mb-0">{state.backupProgress.completed} / {state.backupProgress.total} steps complete</p>
+    {state.backupProgress && <div className="mt-2" aria-live="off">
+      <progress className="w-100" aria-label="Cloud backup progress" max={100} value={percent}
+        aria-valuetext={state.backupProgress.complete ? 'Backup complete' : `Estimated ${Math.floor(percent)}%`} />
+      <p className="small mb-0">{state.backupProgress.complete ? '100% complete' : `Estimated ${Math.floor(percent)}%`}
+        {' - '}{state.backupProgress.solveCount.toLocaleString()} solves</p>
     </div>}
     {state.error && <a href="/options/">Open backup options</a>}
   </aside>;
