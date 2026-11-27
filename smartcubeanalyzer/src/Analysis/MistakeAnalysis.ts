@@ -1,8 +1,9 @@
 import { calculateMovingAverage, calculateMovingStdDev } from '../Helpers/MathHelpers';
-import { analyzeMoveMistakes, coreMovesCount, MoveMistake, typicalCaseMoves } from './MoveAnalysis';
-import { consolidateMoves, getAufMovesForSolve, tokenizeMoves } from '../Data/CsvParser';
+import { analyzeMoveMistakes, coreMovesCount, typicalCaseMoves } from './MoveAnalysis';
+import { consolidateMoves, countMovesExcludingRotations, getAufMovesForSolve, tokenizeMoves } from '../Data/CsvParser';
 import { Solve, StepName } from '../Models/Types';
 import { memoize } from '../Helpers/memoize';
+import lastLayerMoves from '../../../shared/config/last-layer-moves.json';
 
 import { MISTAKES } from '../../../shared/mistakes';
 export { MISTAKES } from '../../../shared/mistakes';
@@ -12,30 +13,22 @@ export interface MistakeSummary { sampleCount: number; windowSize: number; count
 export const mistakeKey = ({ kind, step, auf }: Mistake) => `${kind}:${step ?? ''}:${auf ? 'auf' : ''}`;
 export const mistakeLabel = ({ kind, step, auf }: Mistake) => kind === 'slowStep' ? `Unusually slow ${step}` : `${step ? `${step}${auf ? ' AUF' : ''}: ` : ''}${step && kind.startsWith('extraLook') ? 'Extra Look' : MISTAKES[kind].label}`;
 export function rankedMistakes(solve: Solve): Mistake[] {
-    return [...solve.mistakes ?? []].map(mistake => ({ ...mistake, estimatedSeconds: mistake.estimatedSeconds ?? estimateMistakeCost(solve, mistake) }))
+    const reasons = solve.mistakes ?? [], costs = reasons.some(m => m.estimatedSeconds === undefined) ? markMistakes([{ ...solve, mistakeContext: undefined }], 5)[0].mistakes : reasons;
+    return reasons.map(mistake => ({ ...mistake, estimatedSeconds: mistake.estimatedSeconds ?? costs?.find(cost => mistakeKey(cost) === mistakeKey(mistake))?.estimatedSeconds ?? 0 }))
         .sort((a, b) => b.estimatedSeconds - a.estimatedSeconds);
-}
-export function estimateMistakeCost(solve: Solve, { kind, step }: Mistake): number {
-        const steps = solve.steps.filter(s => !step || s.name === step);
-        const max = (value: (s: Solve['steps'][number]) => number) => Math.max(0, ...steps.map(value));
-        const turnTime = solve.executionTime > 0 && solve.turns > 0 ? solve.executionTime / solve.turns : 0.2;
-        switch (kind) {
-            case 'f2lPause': return max(s => PAIRS.has(s.name) ? s.recognitionTime - 2 : 0);
-            case 'ollRecognition': case 'pllRecognition': return max(s => s.name === (kind === 'ollRecognition' ? StepName.OLL : StepName.PLL) ? s.recognitionTime - 2 : 0);
-            case 'slowAuf': return max(s => LAST_LAYER.has(s.name) ? s.postAufTime - 0.5 : 0);
-            case 'crossMoves': return max(s => s.name === StepName.Cross ? s.turns - 8 : 0) * turnTime;
-            case 'f2lMoves': return max(s => PAIRS.has(s.name) ? s.turns - 12 : 0) * turnTime;
-            case 'sequenceUndo': return 4 * turnTime;
-            case 'singleUndo': return 2 * turnTime;
-            case 'ollMoves': case 'pllMoves': return 3 * turnTime;
-            case 'redundantTurns': return turnTime;
-            default: return Math.max(0, ...steps.map(s => s.time * 0.1));
-        }
 }
 const PAIRS = new Set([StepName.F2L_1, StepName.F2L_2, StepName.F2L_3, StepName.F2L_4]);
 const LAST_LAYER = new Set([StepName.OLL, StepName.PLL, StepName.EOLL, StepName.COLL, StepName.EPLL, StepName.CPLL, StepName.CMLL, StepName.ZBLL]);
-type MoveFacts = { core: number; issues: MoveMistake[] };
-const moveFactsCache = new Map<string, Map<string, MoveFacts>>();
+const turningPace = (step: Solve['steps'][number], core: number, extraLook = 0, auf = false) => {
+    const aufTurns = LAST_LAYER.has(step.name) ? Math.max(0, countMovesExcludingRotations(consolidateMoves(step.moves)) - core) : 0;
+    const aufTime = LAST_LAYER.has(step.name) ? step.preAufTime + step.postAufTime : 0;
+    return Math.max(0, auf ? aufTime : step.executionTime - extraLook - aufTime) / Math.max(1, auf ? aufTurns : step.turns - aufTurns);
+};
+const factsForFace = memoize((face: string) => memoize((moves: string) => {
+    const tokens = tokenizeMoves(consolidateMoves(moves)), auf = new Set([face, `${face}'`]);
+    return { core: coreMovesCount(tokens, auf), issues: analyzeMoveMistakes(tokens, auf) };
+}));
+const moveFacts = (moves: string, auf: Set<string>) => factsForFace(String(auf.values().next().value))(moves);
 const multiply = Math.imul;
 let latest: { context: string; reasons: Pick<Solve, 'mistakes' | 'isMistake'>[] } | undefined;
 const moveHash = memoize((moves: string): number => {
@@ -43,16 +36,37 @@ const moveHash = memoize((moves: string): number => {
     for (let i = 0; i < moves.length; i++) hash = multiply(hash ^ moves.charCodeAt(i), 16777619);
     return hash;
 });
-function moveFacts(moves: string, auf: Set<string>): MoveFacts {
-    const face = String(auf.values().next().value);
-    let cache = moveFactsCache.get(face);
-    if (!cache) moveFactsCache.set(face, cache = new Map<string, MoveFacts>());
-    let facts = cache.get(moves);
-    if (!facts) {
-        const tokens = tokenizeMoves(consolidateMoves(moves));
-        cache.set(moves, facts = { core: coreMovesCount(tokens, auf), issues: analyzeMoveMistakes(tokens, auf) });
+type Moments = { count: number; sum: number; squares: number };
+function pauseCosts(solves: Solve[], windowSize: number): number[][][] {
+    const costs = solves.map(solve => solve.steps.map(() => [0, 0, 0]));
+    const histories = new Map<string, Moments & { batches: Moments[] }>(), limit = Math.max(5, Number.isFinite(windowSize) ? Math.floor(windowSize) : 5);
+    for (const { solve, index } of solves.map((solve, index) => ({ solve, index })).sort((a, b) => a.solve.date.getTime() - b.solve.date.getTime() || a.solve.id.localeCompare(b.solve.id))) {
+        const pending: { history: Moments & { batches: Moments[] }; batch: Moments }[] = [];
+        solve.steps.forEach((step, stepIndex) => {
+            if (!(step.time > 0) || !(step.turns > 0)) return;
+            const readings = [step.case !== 'Solved' && step.recognitionTime <= step.time ? [step.recognitionTime] : [],
+                step.turnGaps ?? [], step.postAufTime <= step.executionTime && step.postAufTime > 0 ? [step.postAufTime] : []];
+            readings.forEach((raw, metric) => {
+                const values = raw.filter(value => Number.isFinite(value) && value >= 0 && (metric !== 1 || value <= step.executionTime));
+                if (!values.length) return;
+                const key = `${solve.method}:${step.name}:${metric}`, history = histories.get(key) ?? { count: 0, sum: 0, squares: 0, batches: [] };
+                histories.set(key, history);
+                if (history.batches.length >= 5) {
+                    const mean = history.sum / history.count;
+                    const threshold = mean + 2 * Math.sqrt(Math.max(0, (history.squares - history.sum * mean) / (history.count - 1)));
+                    costs[index][stepIndex][metric] = values.reduce((loss, value) => loss + (value > threshold + 8 * Number.EPSILON * Math.max(1, threshold) ? value - mean : 0), 0);
+                }
+                if (!pending.some(item => item.history === history)) pending.push({ history, batch: { count: values.length, sum: values.reduce((a, b) => a + b, 0), squares: values.reduce((a, b) => a + b * b, 0) } });
+            });
+        });
+        // Score every step before learning from this solve, including duplicate step records.
+        for (const { history, batch } of pending) {
+            history.batches.push(batch);
+            const expired = history.batches.at(-limit - 1);
+            for (const field of ['count', 'sum', 'squares'] as const) history[field] += batch[field] - (expired?.[field] ?? 0);
+        }
     }
-    return facts;
+    return costs;
 }
 
 export function getMistakeMap(values: number[], windowSize: number): boolean[] {
@@ -64,18 +78,18 @@ export function markMistakes(solves: Solve[], windowSize: number, prepared = fal
     const valid = solves.filter(s => !s.isCorrupt && !s.dnf);
     // Only freshly worker-analyzed, unchanged datasets may bypass content hashing.
     const preparedContext = valid[0]?.mistakeContext;
-    if (prepared && preparedContext?.startsWith(`5:${windowSize}:`) && valid.every(s => s.mistakeContext === preparedContext && s.mistakes)) return solves;
+    if (prepared && preparedContext?.startsWith(`7:${windowSize}:`) && valid.every(s => s.mistakeContext === preparedContext && s.mistakes)) return solves;
     let hash = 2166136261;
     for (const solve of valid) {
-        const key = `${solve.id}:${solve.time}:${solve.method}:${solve.source}:${solve.date.getTime()}:${solve.crossColor}:${solve.executionTime}:${solve.turns}:${JSON.stringify(solve.pairChoices)}:${solve.steps.map(s => `${s.name},${s.case},${s.time},${s.turns},${s.recognitionTime},${s.executionTime},${s.postAufTime},${s.extraLookTime ?? 0},${moveHash(s.moves)}`).join(';')}`;
+        const key = `${solve.id}:${solve.time}:${solve.method}:${solve.source}:${solve.date.getTime()}:${solve.crossColor}:${solve.executionTime}:${solve.turns}:${JSON.stringify(solve.pairChoices)}:${solve.steps.map(s => `${s.name},${s.case},${s.time},${s.turns},${s.recognitionTime},${s.executionTime},${s.preAufTime},${s.postAufTime},${moveHash(JSON.stringify(s.turnGaps ?? []))},${moveHash(s.moves)}`).join(';')}`;
         for (let i = 0; i < key.length; i++) hash = multiply(hash ^ key.charCodeAt(i), 16777619);
     }
-    const context = `5:${windowSize}:${hash}`;
+    const context = `7:${windowSize}:${hash}`;
     if (valid.every(solve => solve.mistakeContext === context && solve.mistakes)) return solves;
     if (latest?.context === context) {
-        valid.forEach((solve, i) => Object.assign(solve, latest!.reasons[i], { mistakeContext: context }));
-        return solves;
+        valid.forEach((solve, i) => Object.assign(solve, latest!.reasons[i], { mistakeContext: context })); return solves;
     }
+    const pauses = pauseCosts(valid, windowSize);
     const examples = new Map<string, number[]>();
     const stepTimes = new Map<StepName, number[]>();
     for (const [i, solve] of valid.entries()) {
@@ -99,8 +113,7 @@ export function markMistakes(solves: Solve[], windowSize: number, prepared = fal
     valid.forEach((solve, i) => {
         const reasons = new Map<string, Mistake>();
         const add = (kind: MistakeKind, step?: StepName, auf?: boolean, cost?: number, actualStep = step) => {
-            const mistake = { kind, step, auf, estimatedSeconds: 0 };
-            mistake.estimatedSeconds = Math.min(solve.time, Math.max(0, cost ?? estimateMistakeCost(solve, mistake)));
+            const mistake = { kind, step, auf, estimatedSeconds: Math.min(solve.time, Math.max(0, cost ?? 0)) };
             const key = mistakeKey(mistake), previous = reasons.get(key);
             const stepCosts = { ...previous?.stepCosts };
             if (actualStep) stepCosts[actualStep] = (stepCosts[actualStep] ?? 0) + mistake.estimatedSeconds;
@@ -109,23 +122,22 @@ export function markMistakes(solves: Solve[], windowSize: number, prepared = fal
         if (slowSolves[i]) add('slowSolve', undefined, undefined, solve.time - (average[Math.max(0, i - windowSize)] ?? solve.time));
         slowSteps.forEach(({ actualStep, step, map, times, average }) => { if (map[i]) add('slowStep', step, undefined, times[i] - (average[Math.max(0, i - windowSize)] ?? times[i]), actualStep); });
         const auf = getAufMovesForSolve(solve);
-        for (const choice of solve.pairChoices ?? []) add('f2lChoice', choice.step, false, choice.wastedMoves * (solve.executionTime / solve.turns || 0));
-        for (const { name, turns, moves, case: caseName, recognitionTime, time, postAufTime, executionTime, extraLookTime } of solve.steps) {
+        for (const choice of solve.pairChoices ?? []) { const step = solve.steps.findIndex(s => s.name === choice.step), current = solve.steps[step]; add('f2lChoice', choice.step, false, current ? Math.min(current.executionTime, choice.wastedMoves * turningPace(current, 0, pauses[i][step][1])) : 0); }
+        for (const [stepIndex, current] of solve.steps.entries()) {
+            const { name, turns, moves, case: caseName, executionTime } = current, [recognitionLoss, extraLook, aufLoss] = pauses[i][stepIndex];
             const pair = PAIRS.has(name), ll = LAST_LAYER.has(name), extraLookKind = pair || name === StepName.F2L ? 'extraLookF2l' : name === StepName.Cross ? 'extraLookCross' : name === StepName.OLL ? 'extraLookOll' : name === StepName.PLL ? 'extraLookPll' : undefined;
-            const turnTime = executionTime > 0 && turns > 0 ? executionTime / turns : 0.2;
-            if (extraLookKind && extraLookTime && extraLookTime > 0) add(extraLookKind, name, false, extraLookTime);
+            const facts = moveFacts(moves, auf), turnTime = turningPace(current, facts.core, extraLook);
+            const recognitionKind = pair ? 'f2lPause' : name === StepName.OLL ? 'ollRecognition' : name === StepName.PLL ? 'pllRecognition' : undefined;
+            if (recognitionKind && recognitionLoss > 0) add(recognitionKind, undefined, undefined, recognitionLoss, name);
+            if (extraLookKind && extraLook > 0) add(extraLookKind, name, false, Math.min(executionTime, extraLook));
             if (name === StepName.Cross && Number.isFinite(turns) && turns > 8) add('crossMoves', undefined, undefined, (turns - 8) * turnTime, name);
             if (pair && Number.isFinite(turns) && turns > 12) add('f2lMoves', undefined, undefined, (turns - 12) * turnTime, name);
-            if (Number.isFinite(recognitionTime) && recognitionTime > 2 && recognitionTime <= time) {
-                if (pair) add('f2lPause', undefined, undefined, recognitionTime - 2, name);
-                if (name === StepName.OLL) add('ollRecognition', undefined, undefined, recognitionTime - 2, name);
-                if (name === StepName.PLL) add('pllRecognition', undefined, undefined, recognitionTime - 2, name);
-            }
-            const threshold = thresholds.get(`${solve.method}:${name}:${caseName}`);
-            const facts = moveFacts(moves, auf);
-            if (threshold !== undefined && moves && facts.core > threshold) add(name === StepName.OLL ? 'ollMoves' : 'pllMoves', undefined, undefined, (facts.core - threshold + 2) * turnTime, name);
-            if (ll && Number.isFinite(postAufTime) && postAufTime > 0.5 && postAufTime <= executionTime) add('slowAuf', undefined, undefined, postAufTime - 0.5, name);
-            for (const issue of facts.issues) add(issue.kind, name, ll && issue.auf, issue.wastedMoves * turnTime);
+            const baseline = thresholds.get(`${solve.method}:${name}:${caseName}`), fallback = solve.method === 'CFOP' ? lastLayerMoves[`${name}-${caseName}` as keyof typeof lastLayerMoves] : undefined;
+            const expected = baseline !== undefined ? baseline - 2 : fallback, undone = facts.issues.filter(issue => !issue.auf && issue.kind === 'sequenceUndo' && issue.wastedMoves >= 6).reduce((sum, issue) => sum + issue.wastedMoves, 0);
+            const incorrect = (name === StepName.OLL || name === StepName.PLL) && caseName !== 'Solved' && (undone > 0 || expected !== undefined && facts.core > expected + 2);
+            if (incorrect) add(name === StepName.OLL ? 'ollMoves' : 'pllMoves', undefined, undefined, Math.min(executionTime, Math.max(undone, facts.core - (expected ?? facts.core)) * turnTime), name);
+            if (ll && aufLoss > 0) add('slowAuf', undefined, undefined, aufLoss, name);
+            for (const issue of facts.issues) if (!incorrect || issue.auf || issue.kind !== 'sequenceUndo') add(issue.kind, name, ll && issue.auf, Math.min(executionTime, issue.wastedMoves * turningPace(current, facts.core, extraLook, ll && issue.auf)));
         }
         solve.mistakes = Array.from(reasons.values());
         solve.isMistake = reasons.size > 0;

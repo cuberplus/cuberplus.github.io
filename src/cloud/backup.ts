@@ -14,7 +14,7 @@ const changed = 'cuberplus-cloud-changed';
 const flashcardsKey = 'cuberplus-orientation-attempts-v1';
 let busy = false, message = '', error = false;
 const read = (key: string): string | null => { try { return localStorage.getItem(key); } catch { return null; } };
-const selectedProvider = (): Provider => read(providerKey) === 'microsoft' ? 'microsoft' : 'google';
+const selectedProvider = (): Provider => 'google';
 function progress(): Progress {
   try {
     const saved = JSON.parse(read(progressKey) ?? 'null') as Progress | null;

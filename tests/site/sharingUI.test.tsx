@@ -65,6 +65,7 @@ test('recipients view averages and read-only replays without connecting, publish
   expect(screen.queryByRole('button', { name: /^Ao1:/ })).toBeNull();
   expect(screen.getByRole('dialog', { name: /^Ao1:/ })).toBeDefined();
   expect(screen.getByRole('table', { name: 'Average solves' })).toBeDefined();
+  expect(screen.queryByRole('button', { name: /share average/i })).toBeNull();
   fireEvent.click(within(screen.getByRole('table', { name: 'Average solves' })).getAllByRole('button')[4]);
   expect(screen.getByText('Read only')).toBeDefined();
   expect(localStorage.getItem('selected-session')).toBe('Private session');

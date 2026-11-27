@@ -14,7 +14,7 @@ export function CategoryImage({ category, example }: { category: Category; examp
   </span>;
 }
 
-export default function CaseDiagram({ category, id, pair, facelets, visibleStickers, palette = WHITE_CROSS_COLORS, topColor = palette[0], showPLL = false }: Omit<IllustratedCase, 'options'> & { palette?: string[]; topColor?: string; showPLL?: boolean }) {
+export default function CaseDiagram({ category, id, pair, facelets, visibleStickers, palette = category === 'Patterns' ? HEX : WHITE_CROSS_COLORS, topColor = palette[0], showPLL = false }: Omit<IllustratedCase, 'options'> & { palette?: string[]; topColor?: string; showPLL?: boolean }) {
   const f2l = category.endsWith('F2L');
   const faces = f2l && id ? floatingFaces(facelets, pair ?? algorithms.find(entry => entry.category === category && entry.id === id)?.pair) : [];
   const mirrors = faces.length > 0;
@@ -25,7 +25,7 @@ export default function CaseDiagram({ category, id, pair, facelets, visibleStick
   return <svg className={`database-case-image${mirrors ? ' database-case-image--mirrored' : ''}`} viewBox={diagramViewBox(faces)} role="img" aria-label={`${label} case`}
     aria-description={mirrors ? 'Floating mirrored faces reveal target F2L stickers hidden on the cube.' : undefined}>
     <title>{`${label} starting position${category === 'OLL' && !showPLL ? ': top-face stickers highlighted, other stickers gray' : ''}`}</title>
-    {f2l ? [...faces, 0, 2, 1].map(face => <g key={face}
+    {f2l || category === 'Patterns' ? [...faces, 0, 2, 1].map(face => <g key={face}
       data-mirrored-face={face >= 3 ? FACES[face] : undefined} data-visible-face={face < 3 ? FACES[face] : undefined}>
       {Array.from({ length: 9 }, (_, i) => {
         const col = i % 3, row = Math.floor(i / 3), index = face * 9 + i;

@@ -12,7 +12,6 @@ import { SettingsSection } from '../../../shared/Components/SettingsSection';
 import { MISTAKES, type MistakeCategory } from '../../../shared/mistakes';
 import { FavoriteOptions } from '../../../timer/src/Components/FavoriteOptions';
 import { TOOLTIPS } from '../../../shared/tooltips';
-import { SharedOptions } from '../../sharing/SharedOptions';
 import { StreakReminderOptions } from '../../pwa/StreakReminderOptions';
 
 export default function Options() {
@@ -23,6 +22,8 @@ export default function Options() {
     <header className="cuberplus-header"><Navigation current="options" /></header>
     <main className="container py-4"><h1 className="route-heading">Options</h1><section className="card p-4">
       <SettingsSection title="General" className="options-general-section"><div className="options-general">
+      <fieldset className="options-general-group">
+      <legend>Appearance</legend>
       <section aria-label="Theme picker" aria-roledescription="carousel">
         <h3>Theme</h3>
         <div className="theme-carousel">
@@ -35,21 +36,31 @@ export default function Options() {
           <button className="btn btn-outline-secondary" aria-label="Next theme" onClick={() => nextTheme(1)}>&#10095;</button>
         </div>
       </section>
-      <label className="d-block">Time precision<select aria-label="Time precision" className="form-select mt-2" value={precision} onChange={event => setPrecision(event.target.value === '3' ? 3 : 2)}>
-        <option value="2">Hundredths (0.00)</option><option value="3">Thousandths (0.000)</option>
+      <label>Font size<select aria-label="Font size" className="form-select mt-2" value={fontSize} onChange={event => setFontSize(event.target.value as typeof fontSize)}>
+        <option value="small">Small</option><option value="normal">Normal</option><option value="large">Large</option>
       </select></label>
       <label>Highlight aura<select aria-label="Highlight aura" className="form-select mt-2" value={highlightAura} onChange={event => setHighlightAura(event.target.value as typeof highlightAura)}>
         <option value="black">Black</option><option value="white">White</option><option value="color">Darker sticker color</option>
       </select></label>
-      <div className="d-flex align-items-center gap-2"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" checked={showMinutes} onChange={event => setShowMinutes(event.target.checked)} />Show minutes</label><InfoTip>{TOOLTIPS.options.showMinutes}</InfoTip></div>
-      <label>Font size<select aria-label="Font size" className="form-select mt-2" value={fontSize} onChange={event => setFontSize(event.target.value as typeof fontSize)}>
-        <option value="small">Small</option><option value="normal">Normal</option><option value="large">Large</option>
+      </fieldset>
+      <fieldset className="options-general-group">
+      <legend>Time display</legend>
+      <label className="d-block">Time precision<select aria-label="Time precision" className="form-select mt-2" value={precision} onChange={event => setPrecision(event.target.value === '3' ? 3 : 2)}>
+        <option value="2">Hundredths (0.00)</option><option value="3">Thousandths (0.000)</option>
       </select></label>
+      <div className="d-flex align-items-center gap-2"><label className="form-check mb-0"><input type="checkbox" className="form-check-input" checked={showMinutes} onChange={event => setShowMinutes(event.target.checked)} />Show minutes</label><InfoTip>{TOOLTIPS.options.showMinutes}</InfoTip></div>
+      </fieldset>
+      <fieldset className="options-general-group">
+      <legend>History</legend>
       <SolveLimit value={solveLimit} change={setSolveLimit} />
       <div className="d-flex align-items-center gap-2"><label className="form-check mb-0" htmlFor="all-sessions"><input id="all-sessions" type="checkbox" className="form-check-input" checked={allSessions} aria-describedby="all-sessions-help" onChange={event => setAllSessions(event.target.checked)} />Show all sessions</label>
         <InfoTip id="all-sessions-help">{TOOLTIPS.options.allSessions}</InfoTip></div>
-      <div><InstallControl /></div>
+      </fieldset>
+      <fieldset className="options-general-group">
+      <legend>App &amp; reminders</legend>
       <StreakReminderOptions />
+      <div className="options-general-app-actions"><InstallControl /></div>
+      </fieldset>
       </div></SettingsSection>
       <MyCubes />
       <BreakReminderOptions />
@@ -69,7 +80,6 @@ export default function Options() {
       </SettingsSection>
       <ImportOptions />
       <CloudOptions />
-      <SharedOptions />
       <SettingsSection title="Community"><div className="d-flex gap-2">
         {/* Bootstrap Icons (MIT): /licenses/bootstrap-icons.txt */}
         <a className="btn btn-link d-inline-flex p-2" href="https://discord.gg/ft7tmsSWs" target="_blank" rel="noopener noreferrer" aria-label="Join the CuberPlus Discord server" title={TOOLTIPS.options.discord}>

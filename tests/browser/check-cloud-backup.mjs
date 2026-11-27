@@ -117,7 +117,6 @@ try {
     ...uploaded, timer: pack([solve('shared', 9000), solve('cloud-only', 15000), solve('restored', 20000), solve('shared', 8000)]),
     settings: { ...uploaded.settings, theme: 'dark', 'timer-time-precision': '3', 'timer-sessions': '["Cloud practice"]' },
   };
-  await page.getByText('Restore and connection settings', { exact: true }).click();
   await page.getByRole('button', { name: 'Restore backup', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'Time precision' })).toHaveValue('3');
   const readHistory = (target = page) => target.evaluate(() => new Promise((resolve, reject) => {
@@ -134,7 +133,6 @@ try {
   expect(history.find(solve => solve.id === 'shared').duration).toBe(8000);
   expect(await page.evaluate(() => localStorage.getItem('timer-sessions'))).toBe('["Cloud practice"]');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
-  await page.getByText('Restore and connection settings', { exact: true }).click();
   await page.getByRole('button', { name: 'Restore backup', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Connect Google Drive' })).toBeEnabled();
   history = await readHistory();
@@ -149,10 +147,8 @@ try {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await expect(page.getByRole('button', { name: 'Connect Google Drive' })).toBeVisible();
   }
-  await page.getByText('Restore and connection settings', { exact: true }).click();
-  await page.getByRole('combobox', { name: 'Backup provider' }).selectOption('microsoft');
-  await expect(page.getByRole('button', { name: 'Connect Microsoft OneDrive' })).toBeEnabled();
-  await expect(page.getByText(/Microsoft OneDrive is not configured/)).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'Backup provider' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Connect Microsoft OneDrive' })).toHaveCount(0);
   const sessionSettings = {
     'timer-sessions': '["Empty training"]',
     'timer-session-scramblers': '{"Empty training":"2-gen"}',

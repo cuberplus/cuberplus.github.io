@@ -4,8 +4,8 @@ import { describe, expect, jest, test } from '@jest/globals';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MistakeChart } from '../../smartcubeanalyzer/src/Components/MistakeChart';
 import { MISTAKES, MistakeKind, markMistakes, mistakeLabel, rankedMistakes, summarizeMistakes } from '../../smartcubeanalyzer/src/Analysis/MistakeAnalysis';
-import { consolidateMoves, parseCsv } from '../../smartcubeanalyzer/src/Data/CsvParser';
-import { analyzeMoveMistakes } from '../../smartcubeanalyzer/src/Analysis/MoveAnalysis';
+import { consolidateMoves, countMovesExcludingRotations, parseCsv } from '../../smartcubeanalyzer/src/Data/CsvParser';
+import { analyzeMoveMistakes, coreMovesCount } from '../../smartcubeanalyzer/src/Analysis/MoveAnalysis';
 import { CrossColor, MethodName, Solve, Step, StepName } from '../../smartcubeanalyzer/src/Models/Types';
 import { FilterPanel } from '../../smartcubeanalyzer/src/Components/FilterPanel';
 import { makeCfopSteps, makeSolve, makeSolves, makeStep } from './testUtils';
@@ -13,6 +13,14 @@ import { makeCfopSteps, makeSolve, makeSolves, makeStep } from './testUtils';
 const classify = (steps: Step[]) => markMistakes([makeSolve({ steps })], 5)[0].mistakes?.map(m => m.kind);
 const caseSolve = (name: StepName, moves = "R U R'", overrides: Partial<Solve> = {}) =>
     makeSolve({ steps: [makeStep(name, 3, { case: 'test case', moves })], ...overrides });
+const withPriorPauses = (solve: Solve, timing: Partial<Step> = {}, count = 5): Solve[] => [
+    ...Array.from({ length: count }, (_, i) => makeSolve({
+        ...solve, id: `prior-${i}`, date: new Date(solve.date.getTime() - (count - i) * 1000),
+        mistakes: undefined, mistakeContext: undefined,
+        steps: solve.steps.map(step => ({ ...step, case: '', turnGaps: [.1], ...timing })),
+    })),
+    solve,
+];
 
 describe('specific mistake reasons', () => {
     test.each([
@@ -20,20 +28,20 @@ describe('specific mistake reasons', () => {
         [StepName.F2L_3, 'extraLookF2l'], [StepName.F2L_4, 'extraLookF2l'], [StepName.OLL, 'extraLookOll'], [StepName.PLL, 'extraLookPll'],
     ])('detects an extra look within %s from recorded timestamps', (name, kind) => {
         const solves = parseCsv(`id,date,dnf,time,solving_method,step_0_name,step_0_recorded_moves\nextra,2026-11-25 12:00:00 UTC,false,12000,CFOP,${name},R[0] F[100] L[200] B[3300] R[3400]`, ',');
-        markMistakes(solves, 5);
+        markMistakes(withPriorPauses(solves[0]), 5);
         const mistake = solves[0].mistakes!.find(mistake => mistake.kind === kind)!;
         expect(mistake.step).toBe(name);
-        expect(mistake.estimatedSeconds).toBeCloseTo(1.1);
+        expect(mistake.estimatedSeconds).toBeCloseTo(3);
         expect(mistakeLabel(mistake)).toBe(`${name}: Extra Look`);
         expect(summarizeMistakes(solves, 5, [kind]).counts.some(item => item.kind === kind)).toBe(false);
     });
     test('keeps extra looks in different F2L pairs distinct in solve analysis and charts', () => {
         const solve = makeSolve({ steps: [
-            makeStep(StepName.Cross, 4, { extraLookTime: 1 }),
-            makeStep(StepName.F2L_1, 4, { extraLookTime: 1.5 }),
-            makeStep(StepName.F2L_3, 5, { extraLookTime: 2 }),
+            makeStep(StepName.Cross, 4, { turnGaps: [1.1] }),
+            makeStep(StepName.F2L_1, 4, { turnGaps: [1.6] }),
+            makeStep(StepName.F2L_3, 5, { turnGaps: [2.1] }),
         ] });
-        markMistakes([solve], 5);
+        markMistakes(withPriorPauses(solve), 5);
         const extraLooks = rankedMistakes(solve).filter(mistake => mistake.kind.startsWith('extraLook'));
         expect(extraLooks.map(mistakeLabel)).toEqual(['F2L Slot 3: Extra Look', 'F2L Slot 1: Extra Look', 'Cross: Extra Look']);
         expect(extraLooks[0].stepCosts).toEqual({ [StepName.F2L_3]: 2 });
@@ -43,12 +51,12 @@ describe('specific mistake reasons', () => {
     test.each([
         'R[3000] F[3100] L[3200] B[3300]',
         'R[0] F[100] L[2100] B[2200]',
-        'R[0] F[100] L[200] B[2200]',
+        'R[0] F[100] L[200] B[300]',
         'U[0] U[100] U[200] R[3500] F[3600] L[3700]',
         'R[0] F[100] L[200] U[3500]',
     ])('extra looks exclude initial recognition, short sequences, threshold ties, setup and final AUF: %s', moves => {
         const solves = parseCsv(`id,date,dnf,time,solving_method,step_0_name,step_0_recorded_moves\nno-extra,2026-11-25 12:00:00 UTC,false,12000,CFOP,PLL,${moves}`, ',');
-        markMistakes(solves, 5);
+        markMistakes(withPriorPauses(solves[0]), 5);
         expect(solves[0].mistakes!.some(mistake => mistake.kind.startsWith('extraLook'))).toBe(false);
     });
     test('fresh prepared classification is retained, but a changed window or mixed context is recalculated', () => {
@@ -61,7 +69,7 @@ describe('specific mistake reasons', () => {
         expect(JSON.stringify(solves)).toBe(expected);
         expect(solves.at(-1)!.mistakes).toBe(reasons);
         markMistakes(solves, 10, true);
-        expect(solves[0].mistakeContext).toMatch(/^5:10:/);
+        expect(solves[0].mistakeContext).toMatch(/^7:10:/);
         const combined = [...solves, ...markMistakes(makeSolves(5), 10)];
         const reference = JSON.parse(JSON.stringify(combined)) as Solve[];
         reference.forEach(solve => { solve.date = new Date(solve.date); });
@@ -158,9 +166,14 @@ describe('specific mistake reasons', () => {
         [StepName.F2L_1, 'f2lPause'], [StepName.F2L_4, 'f2lPause'],
         [StepName.OLL, 'ollRecognition'], [StepName.PLL, 'pllRecognition'],
     ])('labels long recognition for %s without confusing execution with recognition', (name, kind) => {
-        expect(classify([makeStep(name as StepName, 10, { recognitionTime: 2 })])).not.toContain(kind);
-        expect(classify([makeStep(name as StepName, 10, { recognitionTime: 2.01 })])).toContain(kind);
-        expect(classify([makeStep(name as StepName, 1, { recognitionTime: 2.01 })])).not.toContain(kind);
+        const check = (time: number, recognitionTime: number) => {
+            const solve = makeSolve({ steps: [makeStep(name, time, { recognitionTime })] });
+            markMistakes(withPriorPauses(solve, { recognitionTime: 2 }), 5);
+            return solve.mistakes?.map(m => m.kind);
+        };
+        expect(check(10, 2)).not.toContain(kind);
+        expect(check(10, 2.01)).toContain(kind);
+        expect(check(1, 2.01)).not.toContain(kind);
     });
 
     test('detects inverse moves, treating rotations, invalid tokens and different faces as barriers', () => {
@@ -213,27 +226,71 @@ describe('specific mistake reasons', () => {
 
     test.each([
         ['U U', 'U2'], ["R' R'", 'R2'], ['U U2', "U'"], ['R R2', "R'"],
-        ['Rw Rw', 'Rw2'], ['U U U', "U'"], ["R U U' R'", "R U U' R'"],
+        ['Rw Rw', 'Rw2'], ['U U U', "U'"], ["U' U2'", 'U'], ["R U U' R'", "R U U' R'"],
         ["U U' U2", "U U' U2"], ["R R R'", "R R R'"],
-        ['R R R R', "R' R"], ['R R R R R', "R' R R"], ['R R R R R R', "R' R R2"],
-        ['R R R R R R R', "R' R R'"], ['R R R R R R R R', "R' R R' R"],
         ["R x R", "R x R"], ['R ??? R', 'R ??? R'],
     ])('consolidates %s into %s without discarding undo evidence or crossing barriers', (raw, expected) => {
         expect(consolidateMoves(raw)).toBe(expected);
         expect(consolidateMoves(consolidateMoves(raw))).toBe(expected);
         expect(classify([makeStep(StepName.PLL, 3, { moves: raw })])).not.toContain('redundantTurns');
     });
+    test.each([4, 5, 6, 7, 8, 10, 12])('a run of %i same-direction turns is not converted into a fictitious undo', count => {
+        const raw = Array(count).fill('R').join(' '), consolidated = consolidateMoves(raw);
+        expect(consolidated).toBe(`R${count}`);
+        expect(consolidateMoves(consolidated)).toBe(consolidated);
+        expect(countMovesExcludingRotations(consolidated)).toBe(count);
+        expect(coreMovesCount(`U4 ${consolidated} U10'`)).toBe(count);
+        const solve = makeSolve({ steps: [makeStep(StepName.Cross, 4, { moves: raw, turns: count, executionTime: 2 })] });
+        markMistakes([solve], 5);
+        expect(solve.mistakes?.map(m => m.kind)).toEqual([...(count > 8 ? ['crossMoves'] : []), 'redundantTurns']);
+        expect(solve.mistakes![0].estimatedSeconds).toBeLessThanOrEqual(2);
+    });
+    test('known last-layer cases can flag a likely incorrect algorithm without five personal examples', () => {
+        const solve = makeSolve({ steps: [makeStep(StepName.OLL, 5, { case: '27', moves: "R U R' U R U2 R' F R U R' U' F'", turns: 13 })] });
+        markMistakes([solve], 5);
+        expect(solve.mistakes?.map(m => m.kind)).toContain('ollMoves');
+        const unknown = makeSolve({ steps: [{ ...solve.steps[0], case: 'unknown' }] });
+        markMistakes([unknown], 5);
+        expect(unknown.mistakes?.map(m => m.kind)).not.toContain('ollMoves');
+    });
+    test('an undone algorithm attempt is attributed to the last-layer algorithm rather than its nested undo', () => {
+        const solve = makeSolve({ steps: [makeStep(StepName.PLL, 5, { moves: "R U F F' U' R' L D L'", turns: 9, executionTime: 3 })] });
+        markMistakes([solve], 5);
+        expect(solve.mistakes?.map(m => m.kind)).toEqual(['pllMoves']);
+        expect(solve.mistakes![0].estimatedSeconds).toBeCloseTo(2);
+    });
+    test('time loss uses active step turning pace without charging recognition, extra looks or AUF twice', () => {
+        const solve = makeSolve({ steps: [makeStep(StepName.PLL, 10, {
+            moves: "U R R' F U F' U", turns: 7, executionTime: 8, recognitionTime: 2,
+            preAufTime: 1, postAufTime: 1, turnGaps: [4.1],
+        })] });
+        markMistakes(withPriorPauses(solve), 5);
+        expect(solve.mistakes!.find(m => m.kind === 'singleUndo')?.estimatedSeconds).toBeCloseTo(.8);
+        expect(solve.mistakes!.find(m => m.kind === 'extraLookPll')?.estimatedSeconds).toBeCloseTo(4);
+    });
+    test('AUF undos use measured AUF pace and timing edits invalidate cached estimates', () => {
+        const solve = makeSolve({ steps: [makeStep(StepName.PLL, 10, {
+            moves: "U U' R F U U'", turns: 6, executionTime: 10, recognitionTime: 0,
+            preAufTime: 1, postAufTime: 1,
+        })] });
+        markMistakes([solve], 5);
+        expect(solve.mistakes!.find(m => m.kind === 'singleUndo' && m.auf)?.estimatedSeconds).toBeCloseTo(2);
+        solve.steps[0].preAufTime = 3;
+        markMistakes([solve], 5);
+        expect(solve.mistakes!.find(m => m.kind === 'singleUndo' && m.auf)?.estimatedSeconds).toBeCloseTo(4);
+    });
 
     test('ranks the biggest actionable mistake by estimated impact without mutating stored reasons', () => {
         const solve = makeSolve({
             executionTime: 10, turns: 50,
             steps: [makeStep(StepName.Cross, 3, { turns: 9 }), makeStep(StepName.F2L_1, 8, { recognitionTime: 6 })],
-            mistakes: [{ kind: 'slowSolve', estimatedSeconds: 0.1 }, { kind: 'crossMoves' }, { kind: 'f2lPause' }],
+            mistakes: [{ kind: 'slowSolve', estimatedSeconds: 0.1 }, { kind: 'crossMoves' }, { kind: 'f2lPause', estimatedSeconds: 4 }],
         });
         const original = [...solve.mistakes!];
         expect(rankedMistakes(solve).map(item => item.kind)).toEqual(['f2lPause', 'crossMoves', 'slowSolve']);
         expect(solve.mistakes).toEqual(original);
         expect(rankedMistakes(makeSolve())).toEqual([]);
+        expect(rankedMistakes(makeSolve({ mistakes: [{ kind: 'f2lPause' }] }))[0].estimatedSeconds).toBe(0);
     });
 
     test('keeps a normal U2 clean and assigns redundant AUF turns to the correct stage', () => {
@@ -255,23 +312,33 @@ describe('specific mistake reasons', () => {
         expect(solve.mistakes).toMatchObject([{ kind: 'singleUndo', step: StepName.PLL, auf: false }]);
     });
 
-    test('counts only post-AUF over 0.5 seconds, independently of pre-AUF', () => {
-        expect(classify([makeStep(StepName.PLL, 3, { preAufTime: 1 })])).toEqual([]);
-        expect(classify([makeStep(StepName.PLL, 3, { preAufTime: 0.3, postAufTime: 0.21 })])).toEqual([]);
-        expect(classify([makeStep(StepName.PLL, 3, { preAufTime: 1, postAufTime: 0.5 })])).toEqual([]);
-        expect(classify([makeStep(StepName.PLL, 3, { postAufTime: 0.51 })])).toEqual(['slowAuf']);
-        expect(classify([makeStep(StepName.PLL, 3, { preAufTime: NaN, postAufTime: 0.51 })])).toEqual(['slowAuf']);
+    test('compares only post-AUF with personal history, independently of pre-AUF', () => {
+        const check = (timing: Partial<Step>) => {
+            const solve = makeSolve({ steps: [makeStep(StepName.PLL, 3, timing)] });
+            markMistakes(withPriorPauses(solve, { postAufTime: .5 }), 5);
+            return solve.mistakes?.map(m => m.kind);
+        };
+        expect(check({ preAufTime: 1 })).toEqual([]);
+        expect(check({ preAufTime: .3, postAufTime: .21 })).toEqual([]);
+        expect(check({ preAufTime: 1, postAufTime: .5 })).toEqual([]);
+        expect(check({ postAufTime: .51 })).toEqual(['slowAuf']);
+        expect(check({ preAufTime: NaN, postAufTime: .51 })).toEqual(['slowAuf']);
         expect(MISTAKES.slowAuf.rule).toContain('Pre-AUF is excluded');
     });
 
     test('flags slow post-AUF only for plausible last-layer timings', () => {
-        expect(classify([makeStep(StepName.OLL, 3, { postAufTime: 0.51 })])).toEqual(['slowAuf']);
-        expect(classify([makeStep(StepName.Cross, 3, { postAufTime: 1 })])).toEqual([]);
+        const check = (name: StepName, timing: Partial<Step>, time = 3) => {
+            const solve = makeSolve({ steps: [makeStep(name, time, timing)] });
+            markMistakes(withPriorPauses(solve, { postAufTime: .5 }), 5);
+            return solve.mistakes?.map(m => m.kind);
+        };
+        expect(check(StepName.OLL, { postAufTime: .51 })).toEqual(['slowAuf']);
+        expect(check(StepName.Cross, { postAufTime: 1 })).toEqual([]);
         for (const postAufTime of [Infinity, NaN, -1]) {
-            expect(classify([makeStep(StepName.PLL, 3, { postAufTime })])).toEqual([]);
+            expect(check(StepName.PLL, { postAufTime })).toEqual([]);
         }
-        expect(classify([makeStep(StepName.PLL, 3, { executionTime: 0.5, postAufTime: 0.51 })])).toEqual([]);
-        expect(classify([makeStep(StepName.PLL, 0, { postAufTime: 1 })])).toEqual([]);
+        expect(check(StepName.PLL, { executionTime: .5, postAufTime: .51 })).toEqual([]);
+        expect(check(StepName.PLL, { postAufTime: 1 }, 0)).toEqual([]);
     });
 
     test('retains specific timing-outlier reasons, including steps missing from the first solve', () => {
@@ -305,15 +372,108 @@ describe('specific mistake reasons', () => {
             makeStep(StepName.PLL, 5, { turns: 10, executionTime: 3, recognitionTime: 2, moves: "R U U' R' F" }),
             makeStep(StepName.F2L_1, 7, { recognitionTime: 6, executionTime: 1 }),
         ] });
-        markMistakes([solve], 5);
+        const data = withPriorPauses(solve, { recognitionTime: 2 });
+        markMistakes(data, 5);
         const reasons = solve.mistakes;
         expect(reasons!.find(m => m.kind === 'sequenceUndo')!.estimatedSeconds).toBeCloseTo(1.2);
         expect(rankedMistakes(solve)[0]).toMatchObject({ kind: 'f2lPause', estimatedSeconds: 4 });
-        markMistakes([solve], 5);
+        markMistakes(data, 5);
         expect(solve.mistakes).toBe(reasons);
         solve.steps[0].executionTime = 6;
-        markMistakes([solve], 5);
+        markMistakes(data, 5);
         expect(solve.mistakes!.find(m => m.kind === 'sequenceUndo')!.estimatedSeconds).toBeCloseTo(2.4);
+    });
+});
+
+describe('personal pause baselines', () => {
+    const pauseReasons = (solve: Solve) => solve.mistakes?.filter(m => ['f2lPause', 'ollRecognition', 'pllRecognition', 'slowAuf'].includes(m.kind) || m.kind.startsWith('extraLook'));
+
+    test('waits for five prior valid stage samples without fixed-second fallback', () => {
+        const solve = makeSolve({ steps: [makeStep(StepName.PLL, 20, { recognitionTime: 8, postAufTime: 5, turnGaps: [5] })] });
+        for (const count of [0, 4]) {
+            markMistakes(withPriorPauses(solve, { recognitionTime: .2, postAufTime: .1 }, count), 5);
+            expect(pauseReasons(solve)).toEqual([]);
+        }
+        markMistakes(withPriorPauses(solve, { recognitionTime: .2, postAufTime: .1 }), 5);
+        expect(pauseReasons(solve)?.map(m => m.kind)).toEqual(['pllRecognition', 'extraLookPll', 'slowAuf']);
+        expect(solve.mistakes!.find(m => m.kind === 'pllRecognition')!.estimatedSeconds).toBeCloseTo(7.8);
+    });
+
+    test('uses average plus two sample standard deviations, charges above average, and excludes threshold ties', () => {
+        const threshold = .5 + 2 * Math.sqrt(.005);
+        const solve = makeSolve({ steps: [makeStep(StepName.OLL, 10, { recognitionTime: threshold })] });
+        const data = withPriorPauses(solve, { recognitionTime: .5 });
+        [.4, .5, .5, .5, .6].forEach((value, i) => { data[i].steps[0].recognitionTime = value; });
+        markMistakes(data, 5);
+        expect(pauseReasons(solve)).toEqual([]);
+        solve.steps[0].recognitionTime = .65;
+        markMistakes(data, 5);
+        expect(solve.mistakes!.find(m => m.kind === 'ollRecognition')!.estimatedSeconds).toBeCloseTo(.15);
+        solve.steps[0].recognitionTime = 2;
+        data.slice(0, 5).forEach(item => { item.steps[0].recognitionTime = 3; });
+        markMistakes(data, 5);
+        expect(pauseReasons(solve)).toEqual([]);
+    });
+
+    test('a two-second mid-OLL pause uses the normal inter-move gap, not a two-second allowance', () => {
+        const solve = makeSolve({ steps: [makeStep(StepName.OLL, 4, {
+            case: '27', moves: "R U R' U R U2 R' F U F' U F U2 F'", turns: 14,
+            recognitionTime: 0, executionTime: 4, turnGaps: [.1, .1, 2, .1],
+        })] });
+        markMistakes(withPriorPauses(solve), 5);
+        expect(solve.mistakes!.find(m => m.kind === 'extraLookOll')!.estimatedSeconds).toBeCloseTo(1.9);
+        expect(solve.mistakes!.find(m => m.kind === 'ollMoves')!.estimatedSeconds).toBeCloseTo(1.05);
+    });
+
+    test('uses only prior chronological samples and leaves the input order untouched', () => {
+        const solve = makeSolve({ id: 'target', steps: [makeStep(StepName.OLL, 10, { recognitionTime: 2 })] });
+        const data = withPriorPauses(solve, { recognitionTime: .2 });
+        const future = makeSolve({ id: 'future', date: new Date(solve.date.getTime() + 1000), steps: [makeStep(StepName.OLL, 10, { recognitionTime: 9 })] });
+        const shuffled = [future, solve, ...data.slice(0, -1).reverse()], before = shuffled.map(s => s.id);
+        markMistakes(shuffled, 5);
+        expect(solve.mistakes!.find(m => m.kind === 'ollRecognition')!.estimatedSeconds).toBeCloseTo(1.8);
+        expect(shuffled.map(s => s.id)).toEqual(before);
+        expect(data.slice(0, -1).every(s => !pauseReasons(s)?.length)).toBe(true);
+    });
+
+    test.each(['method', 'step', 'dnf', 'corrupt', 'skipped', 'missing', 'duplicates'])('does not fill warmup with another method/stage or invalid samples: %s', scenario => {
+        const solve = makeSolve({ steps: [makeStep(StepName.OLL, 10, { recognitionTime: 4, turnGaps: [4] })] });
+        const data = withPriorPauses(solve, { recognitionTime: .2 });
+        data.slice(0, -1).forEach(item => {
+            if (scenario === 'method') item.method = MethodName.Roux;
+            if (scenario === 'step') item.steps[0].name = StepName.PLL;
+            if (scenario === 'dnf') item.dnf = true;
+            if (scenario === 'corrupt') item.isCorrupt = true;
+            if (scenario === 'skipped') { item.steps[0].case = 'Solved'; item.steps[0].turns = 0; }
+            if (scenario === 'missing') { item.steps[0].recognitionTime = NaN; item.steps[0].turnGaps = undefined; }
+        });
+        const input = scenario === 'duplicates' ? [{ ...data[0], steps: Array(5).fill(data[0].steps[0]) }, solve] : data;
+        markMistakes(input, 5);
+        expect(pauseReasons(solve)).toEqual([]);
+    });
+
+    test('follows the most recent stage samples in the selected window', () => {
+        const solve = makeSolve({ steps: [makeStep(StepName.OLL, 10, { recognitionTime: 1 })] });
+        const data = withPriorPauses(solve, { recognitionTime: 3 }, 10);
+        data.slice(5, 10).forEach(s => { s.steps[0].recognitionTime = .2; });
+        markMistakes(data, 10);
+        expect(pauseReasons(solve)).toEqual([]);
+        markMistakes(data, 5);
+        expect(solve.mistakes!.find(m => m.kind === 'ollRecognition')!.estimatedSeconds).toBeCloseTo(.8);
+    });
+
+    test('handles normal zero-variance gaps and invalid timings, and refreshes edited pause data and legacy caches', () => {
+        const solve = makeSolve({ steps: [makeStep(StepName.PLL, 10, { recognitionTime: .1, turnGaps: [.1, .1] })] });
+        const data = withPriorPauses(solve);
+        markMistakes(data, 5);
+        expect(pauseReasons(solve)).toEqual([]);
+        solve.steps[0].turnGaps = [.1, .8, NaN, Infinity, -1, 100];
+        markMistakes(data, 5);
+        expect(solve.mistakes!.find(m => m.kind === 'extraLookPll')!.estimatedSeconds).toBeCloseTo(.7);
+        data.forEach(s => { s.mistakeContext = '6:5:old'; s.mistakes = [{ kind: 'pllRecognition', estimatedSeconds: 100 }]; });
+        markMistakes(data, 5, true);
+        expect(solve.mistakeContext).toMatch(/^7:5:/);
+        expect(solve.mistakes!.some(m => m.kind === 'pllRecognition')).toBe(false);
     });
 });
 
@@ -374,10 +534,11 @@ describe('recent mistake counts', () => {
         expect(label.classList.contains('text-decoration-none')).toBe(true);
     });
 
-    test('uses capitalized mistake names and calls excess moves an inefficient solution', () => {
-        for (const kind of ['crossMoves', 'f2lMoves', 'ollMoves', 'pllMoves'] as const) {
+    test('uses capitalized names and distinguishes possible algorithm mistakes from inefficient early steps', () => {
+        for (const kind of ['crossMoves', 'f2lMoves'] as const) {
             expect(MISTAKES[kind].label).toMatch(/: Inefficient solution$/);
         }
+        for (const kind of ['ollMoves', 'pllMoves'] as const) expect(MISTAKES[kind].label).toContain('Possible incorrect');
         for (const { label } of Object.values(MISTAKES)) {
             expect(label).not.toMatch(/extra moves/i);
             expect(label.split(': ').pop()).toMatch(/^[A-Z]/);

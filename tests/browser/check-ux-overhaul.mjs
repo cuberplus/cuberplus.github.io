@@ -83,16 +83,14 @@ try {
   await cubes.getByRole('button', { name: 'Forget Renamed cube', exact: true }).click();
   await expect(cubes.locator('.saved-cube')).toHaveCount(0);
   const cloud = page.getByRole('region', { name: /^Cloud backup/ });
-  await expect(cloud.getByRole('button', { name: 'Restore backup', exact: true })).toBeHidden();
-  await cloud.getByText('Restore and connection settings', { exact: true }).click();
+  await expect(cloud.getByRole('button', { name: 'Restore backup', exact: true })).toBeVisible();
   await expect(cloud.getByRole('button', { name: 'Restore backup', exact: true })).toBeDisabled();
   await expect(cloud.getByRole('checkbox', { name: 'Back up every 100 solves' })).toBeVisible();
   await mobile(async () => {
-    await expect(cloud.getByRole('combobox', { name: 'Backup provider', exact: true })).toBeVisible();
+    await expect(cloud.getByRole('button', { name: 'Manage Google Drive shared solves', exact: true })).toBeVisible();
     await optionsSpacing();
     await screenshot(`options-dark-${page.viewportSize().width}`);
   });
-  await cloud.getByText('Restore and connection settings', { exact: true }).click();
   await screenshot('options-dark');
   await page.getByLabel('Import solve CSV files').setInputFiles({
     name: 'ux-solves.csv', mimeType: 'text/csv',

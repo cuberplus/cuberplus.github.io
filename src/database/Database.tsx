@@ -27,7 +27,7 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
   const [adding, setAdding] = useState(false), [category, setCategory] = useState<Category>('F2L');
   const [notice, setNotice] = useState<AlgorithmNotice | null>(null);
   const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<'F2L' | 'OLL' | 'PLL' | ''>('');
+  const [selectedCategory, setSelectedCategory] = useState<'F2L' | 'OLL' | 'PLL' | 'Patterns' | ''>('');
   const [caseId, setCaseId] = useState('1'), [algorithm, setAlgorithm] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false);
   const customAlgorithms = readCustomAlgorithms();
   const entries = catalog.map(entry => ({ ...entry, ...caseImages[`${entry.category}-${entry.id}` as keyof typeof caseImages] }));
@@ -137,7 +137,7 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
       <section className="database-finder" aria-label="Find algorithms">
         <label htmlFor="algorithm-search">Search cases or algorithms<input id="algorithm-search" className="form-control" type="search" autoCorrect="off" autoCapitalize="off" spellCheck={false} placeholder="e.g. PLL-T, favorite, R U R'" value={search} onChange={event => setSearch(event.target.value)} /></label>
         <div className="d-flex align-items-center gap-3">
-          <nav className="d-flex flex-shrink-0 gap-2" aria-label="Algorithm categories">{(['F2L', 'OLL', 'PLL'] as const).map(value => <button key={value} className={`btn btn-sm ${selectedCategory === value ? 'btn-primary' : 'btn-outline-secondary'}`} aria-pressed={selectedCategory === value} onClick={() => { setSelectedCategory(selectedCategory === value ? '' : value); setOpen(new Set(categories.filter(category => value === 'F2L' ? category.endsWith('F2L') : category === value))); }}>{value}</button>)}</nav>
+          <nav className="d-flex flex-wrap gap-2" aria-label="Algorithm categories">{(['F2L', 'OLL', 'PLL', 'Patterns'] as const).map(value => <button key={value} className={`btn btn-sm ${selectedCategory === value ? 'btn-primary' : 'btn-outline-secondary'}`} aria-pressed={selectedCategory === value} onClick={() => { setSelectedCategory(selectedCategory === value ? '' : value); setOpen(new Set(categories.filter(category => value === 'F2L' ? category.endsWith('F2L') : category === value))); }}>{value}</button>)}</nav>
           <p aria-live="polite" className="small text-secondary mb-0">{matches.length} matching cases{!matches.length ? '. Try another search or clear the filters.' : ''}</p>
         </div>
         {(finding || selectedCategory) && <button className="btn btn-sm btn-outline-secondary" onClick={() => { setSearch(''); setSelectedCategory(''); }}>Clear filters</button>}
@@ -217,7 +217,7 @@ export default function Database({ caseKey }: { caseKey?: string } = {}) {
             return <article className={`database-case${category.endsWith('F2L') ? ' database-case--f2l' : ''}${linked === key ? ' database-case--linked' : ''}`} id={key} key={key} aria-label={label}>
               {entry.facelets ? <CaseImage {...entry} /> : <div className="database-case-image" />}
               <div className="database-algorithms">
-                <h3>{categoryName(category)} {caseNumber(entry)}</h3>
+                <h3>{category === 'Patterns' ? label : `${categoryName(category)} ${caseNumber(entry)}`}</h3>
                 {options.slice(0, expandedCases.has(key) ? undefined : 3).map(({ algorithm, index }) => {
                   const id = favoriteId(entry, algorithm), favorite = favorites.has(id), featured = entry.featured?.indexOf(algorithm) ?? -1;
                   const custom = customAlgorithms[key]?.includes(algorithm) && !builtInOptions.includes(algorithm);

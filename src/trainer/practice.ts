@@ -14,7 +14,7 @@ export interface PracticeAttempt {
   dnf?: boolean;
 }
 interface PracticeCase extends AlgorithmCase {
-  preAuf: string; postAuf: string; solution: string; pattern: KPattern; colorFrame: string;
+  preAuf: string; postAuf: string; solution: string; pattern: KPattern; colorFrame: string; target?: KPattern;
 }
 export function readTrainings(): CustomTraining[] {
   const saved = JSON.parse(localStorage.getItem(TRAININGS_STORAGE) ?? '[]') as CustomTraining[];
@@ -61,13 +61,14 @@ export class Practice {
   private fillQueue() {
     while (this.queue.length < 4) {
       const entry = this.cases[Math.floor(this.random() * this.cases.length)];
-      const preAuf = this.settings.randomPreAuf !== false ? aufMoves[Math.floor(this.random() * 4)] : '';
-      const postAuf = this.settings.randomPostAuf !== false ? aufMoves[Math.floor(this.random() * 4)] : '';
+      const preAuf = entry.category !== 'Patterns' && this.settings.randomPreAuf !== false ? aufMoves[Math.floor(this.random() * 4)] : '';
+      const postAuf = entry.category !== 'Patterns' && this.settings.randomPostAuf !== false ? aufMoves[Math.floor(this.random() * 4)] : '';
       const solution = [preAuf, this.algorithm ?? entry.algorithm, postAuf].filter(Boolean).join(' ');
-      const pattern = !this.algorithm && entry.setup
+      const pattern = entry.category === 'Patterns' ? this.cube.solved() : !this.algorithm && entry.setup
         ? this.cube.solved().applyAlg(postAuf ? inverse(postAuf) : '').applyAlg(entry.setup).applyAlg(preAuf ? inverse(preAuf) : '')
         : casePattern(this.cube, solution);
       this.queue.push({ ...entry, preAuf, postAuf, solution, pattern,
+        ...(entry.category === 'Patterns' && { target: this.cube.solved().applyAlg(entry.algorithm) }),
         colorFrame: this.frames[Math.floor(this.random() * this.frames.length)].colorFrame });
     }
   }
@@ -96,7 +97,8 @@ export class Practice {
     const entry = this.queue[0], pattern = normalized(this.cube, this.pattern, '');
     const cross = [4, 5, 6, 7].every(i => pattern.patternData['EDGES'].pieces[i] === i && !pattern.patternData['EDGES'].orientation[i]);
     const pairs = [4, 5, 6, 7].every(pair => this.pairSolved(pattern, pair));
-    const done = entry.category === 'PLL' ? this.cube.isSolved(pattern) :
+    const done = entry.category === 'Patterns' ? this.cube.equals(pattern, entry.target!) :
+      entry.category === 'PLL' ? this.cube.isSolved(pattern) :
       entry.category === 'OLL' ? cross && pairs && this.cube.facelets(pattern).slice(0, 9) === 'UUUUUUUUU' :
       entry.category === 'F2L' ? cross && pairs :
         cross && [...this.preservedPairs, entry.pair ?? 4].every(pair => this.pairSolved(pattern, pair));

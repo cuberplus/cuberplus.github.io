@@ -1,4 +1,4 @@
-import { AUF_MOVES, ROTATIONS, getAufMovesForSolve, tokenizeMoves } from "../Data/CsvParser";
+import { AUF_MOVES, ROTATIONS, countMovesExcludingRotations, getAufMovesForSolve, tokenizeMoves } from "../Data/CsvParser";
 import { AufInefficiency, CaseStats, caseSteps, getStep, MoveAnalysisResult, RedundantPair, Solve, SolveEfficiency, Step, StepName } from "../Models/Types";
 import { memoize } from '../Helpers/memoize';
 
@@ -85,31 +85,21 @@ export function coreMovesCount(movesString: string | string[], aufMoves: Set<str
     if (typeof movesString === 'string' && cache.has(movesString)) return cache.get(movesString)!;
     const tokens = typeof movesString === 'string' ? tokenizeMoves(movesString) : movesString;
     let start = 0;
-    while (start < tokens.length && (ROTATIONS.has(tokens[start].toLowerCase()) || aufMoves.has(tokens[start]))) start++;
+    while (start < tokens.length && (ROTATIONS.has(tokens[start].toLowerCase()) || aufMoves.has(tokens[start].replace(/\d+/, '')))) start++;
     let end = tokens.length - 1;
-    while (end >= start && (ROTATIONS.has(tokens[end].toLowerCase()) || aufMoves.has(tokens[end]))) end--;
-    let count = 0;
-    for (let i = start; i <= end; i++) {
-        if (!ROTATIONS.has(tokens[i].toLowerCase())) count++;
-    }
+    while (end >= start && (ROTATIONS.has(tokens[end].toLowerCase()) || aufMoves.has(tokens[end].replace(/\d+/, '')))) end--;
+    const count = countMovesExcludingRotations(tokens.slice(start, end + 1).join(' '));
     if (typeof movesString === 'string') cache.set(movesString, count);
     return count;
 }
 
-function median(sorted: number[]): number {
-    const mid = Math.floor(sorted.length / 2);
-    return !sorted.length ? 0 : sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
-/** Returns the lowest mode (smallest value that appears most often), or null if all values have the same frequency. */
-function lowestMode(sorted: number[]): number | null {
+export function typicalCaseMoves(sorted: number[]): number {
     const counts: { [value: number]: number } = {};
     for (const v of sorted) counts[v] = (counts[v] ?? 0) + 1;
-    const maxCount = Math.max(...Object.values(counts));
-    return maxCount > 1 ? sorted.find(value => counts[value] === maxCount)! : null;
+    const maxCount = Math.max(0, ...Object.values(counts)), mid = Math.floor(sorted.length / 2);
+    return maxCount > 1 ? sorted.find(value => counts[value] === maxCount)! :
+        !sorted.length ? 0 : sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
-
-export const typicalCaseMoves = (sorted: number[]): number => lowestMode(sorted) ?? median(sorted);
 
 export function computeCaseFailureStats(
     solves: Solve[],

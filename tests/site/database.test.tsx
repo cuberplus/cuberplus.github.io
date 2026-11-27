@@ -62,7 +62,7 @@ test('PLL search accepts spaces, hyphens, and the perm suffix', () => {
       fireEvent.change(search, { target: { value } });
       expect(screen.getAllByRole('article').map(article => article.id)).toEqual(['PLL-Ja', 'PLL-Jb']);
     }
-    expect(screen.getByRole('navigation', { name: 'Algorithm categories' }).querySelectorAll('button')).toHaveLength(3);
+    expect(screen.getByRole('navigation', { name: 'Algorithm categories' }).querySelectorAll('button')).toHaveLength(4);
   } finally { algorithms.splice(originalCount); }
 });
 test('a case hash clears finding filters and reveals the linked case', async () => {

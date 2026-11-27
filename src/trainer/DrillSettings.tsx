@@ -2,8 +2,8 @@ import { InfoTip } from '../../shared/Components/InfoTip';
 import { adjacentColors, cubeColors, type BlitzSettings } from './blitz';
 import { TOOLTIPS } from '../../shared/tooltips';
 
-export function DrillSettings({ settings, change, disabled = false, hidePLL = true }: {
-  settings: BlitzSettings; change: (next: BlitzSettings) => void; disabled?: boolean; hidePLL?: boolean;
+export function DrillSettings({ settings, change, disabled = false, hidePLL = true, fixedInput = false }: {
+  settings: BlitzSettings; change: (next: BlitzSettings) => void; disabled?: boolean; hidePLL?: boolean; fixedInput?: boolean;
 }) {
   return <fieldset className="d-grid gap-3 trainer-settings">
     <legend className="visually-hidden">Drill settings</legend>
@@ -16,7 +16,8 @@ export function DrillSettings({ settings, change, disabled = false, hidePLL = tr
         onChange={event => change({ ...settings, hidePLL: event.target.checked })} />Hide PLL stickers</label>
       <InfoTip>{TOOLTIPS.drillSettings.hidePLL}</InfoTip>
     </div>}
-    {(['crossColor', 'frontColor'] as const).map(key => <label key={key}>{key === 'crossColor' ? 'Cross color' : 'Front color'}
+    {fixedInput && <div>Cube colors <InfoTip>These colors affect the display only. Always hold your physical cube with white on top and green in front.</InfoTip></div>}
+    {(['crossColor', 'frontColor'] as const).map(key => <label key={key}>{`${fixedInput ? 'Displayed ' : ''}${key === 'crossColor' ? 'Cross color' : 'Front color'}`}
       <select disabled={disabled} className="form-select" aria-label={key === 'crossColor' ? 'Cross color' : 'Front color'} value={settings[key]} onChange={event => change({ ...settings, [key]: event.target.value })}>
         {[...cubeColors, 'Random'].map(color => <option key={color} disabled={color !== 'Random' && settings[key === 'crossColor' ? 'frontColor' : 'crossColor'] !== 'Random' &&
           !adjacentColors(color as typeof cubeColors[number], settings[key === 'crossColor' ? 'frontColor' : 'crossColor'] as typeof cubeColors[number])}>{color}</option>)}

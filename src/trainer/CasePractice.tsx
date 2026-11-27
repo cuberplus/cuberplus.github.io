@@ -68,12 +68,12 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
       if (!current) return;
       if (event.type === 'DISCONNECT' || event.type === 'CALIBRATE') { current.phase = 'cancelled'; setError(event.type === 'DISCONNECT' ? 'Cube disconnected. Reconnect and start again.' : 'Cube recalibrated. Start a new drill.'); render(); }
       if (event.type !== 'MOVE' || !active.current) return;
-      const attempt = current.move(cfopFrame(current.cube, current.colorFrame)(event.move), performance.now());
+      const attempt = current.move(mode === 'single' ? event.move : cfopFrame(current.cube, current.colorFrame)(event.move), performance.now());
       record(attempt);
       render();
     });
     return unsubscribe;
-  }, []);
+  }, [mode]);
   const current = drill.current, shown = current?.phase === 'running' ? current.queue[0] : null;
   function record(attempt: PracticeAttempt | null) {
     if (!attempt) return;
@@ -99,7 +99,7 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
         <h2 id={`${id}-options-title`} className="mb-0">{mode === 'single' ? entry ? `${caseLabel(entry)} drill` : 'Single-case drill' : 'Custom drill'} options</h2>
         <button type="button" className="btn-close" aria-label="Close options" onClick={() => options.current?.close()} />
       </div>
-      <DrillSettings settings={settings} change={changeSettings} disabled={running || generating}
+      <DrillSettings settings={settings} change={changeSettings} disabled={running || generating} fixedInput={mode === 'single'}
         hidePLL={mode === 'single' ? entry?.category === 'OLL' : (editing ? chosen : training?.cases ?? []).some(key => findTrainingCase(key)?.category === 'OLL')} />
     </dialog>}
     <fieldset hidden={running || mode === 'single' && !!entry} disabled={running || generating} className={running || mode === 'single' && entry ? '' : 'd-grid gap-3 mb-3'}>
@@ -157,13 +157,15 @@ export function CasePractice({ cube, mode, initialCase, settings, back, fixedCas
         <InfoTip>{TOOLTIPS.casePractice.retryAndSkip}</InfoTip>
       </div>}
       {shown && <>
+        {mode === 'single' && <p className="mb-2">Hold your cube with white on top and green in front.</p>}
+        {shown.category === 'Patterns' && <div className="trainer-practice-case-image"><DrillCaseImage cube={cube!} category={shown.category} id={shown.id} pattern={shown.target!} colorFrame={shown.colorFrame} /><span>Target pattern</span><InfoTip>Create this pattern from the solved virtual cube. Random pre/post-AUF is not applied to patterns.</InfoTip></div>}
         {settings.caseNames && <h3>{caseLabel(shown)}</h3>}
         <CubeView cube={cube!} facelets={cube!.facelets(current!.pattern)} moves={current!.moves} cross={3} colorFrame={current!.colorFrame} height={230}
           hidePLL={shown.category === 'OLL' && settings.hidePLL} />
         {settings.solutionAlgorithms !== false && <SolutionProgress cube={cube!} start={current!.initialPattern} pattern={current!.pattern} algorithm={current!.solution} />}
         {settings.upcomingCases && <div className="trainer-case-queue" aria-label="Upcoming 3 cases">
           {current!.queue.slice(1, 4).map((item, index) => <div key={index} data-pre-auf={item.preAuf} data-post-auf={item.postAuf} data-color-frame={item.colorFrame}>
-            <p>Next {index + 1}</p><DrillCaseImage cube={cube!} category={item.category} id={item.id} pattern={item.pattern}
+            <p>Next {index + 1}</p><DrillCaseImage cube={cube!} category={item.category} id={item.id} pattern={item.target ?? item.pattern}
               colorFrame={item.colorFrame} hidePLL={item.category === 'OLL' && settings.hidePLL} />
             {settings.caseNames && <strong>{caseLabel(item)}</strong>}</div>)}
         </div>}

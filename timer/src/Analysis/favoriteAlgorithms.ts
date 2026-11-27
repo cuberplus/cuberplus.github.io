@@ -199,7 +199,11 @@ export function validateUserAlgorithm(entry: AlgorithmCase, algorithm: string, c
   const matcher = algorithmMatcher(cube);
   const canonical = algorithm.trim().replace(/\s+/g, ' ');
   if (!canonical || canonical.length > 1000) throw new Error('Enter an algorithm of at most 1,000 characters.');
-  if (entry.pair !== undefined) {
+  if (entry.category === 'Patterns') {
+    if (!cube.equals(normalized(cube, cube.solved().applyAlg(canonical), ''), cube.solved().applyAlg(entry.algorithm))) {
+      throw new Error('This algorithm does not create the selected pattern.');
+    }
+  } else if (entry.pair !== undefined) {
     const image = caseImages[`${entry.category}-${entry.id}` as keyof typeof caseImages];
     const before = cube.parse(image.facelets), after = before.applyAlg(matcher.outerMoves(canonical).moves.join(' '));
     if (!pairSolved(after, entry.pair) || [4, 5, 6, 7].some(i =>

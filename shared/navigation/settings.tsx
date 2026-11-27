@@ -7,7 +7,7 @@ export type HighlightAura = 'black' | 'white' | 'color';
 export type Theme = keyof typeof themeColors;
 export const themeColors = { light: '#f3f6fa', dark: '#10141e', aurora: '#091e29', disco: '#20102e', inferno: '#1c0c0a', '90s': '#c0c0c0' };
 const read = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
-const savedTheme = (): Theme => { const value = read('theme'); return value && Object.hasOwn(themeColors, value) ? value as Theme : 'aurora'; };
+const savedTheme = (): Theme => { const value = read('theme'); return value && Object.hasOwn(themeColors, value) ? value as Theme : 'dark'; };
 const savedSolveLimit = () => { const value = Number(read('recent-solve-limit') ?? DEFAULT_SOLVE_LIMIT); return Number.isInteger(value) && value >= 0 ? value : DEFAULT_SOLVE_LIMIT; };
 type Settings = {
   theme: Theme; isDark: boolean; precision: 2 | 3; solveLimit: number; session: string; allSessions: boolean; error: string;
@@ -18,7 +18,7 @@ type Settings = {
   replayHighlight: string; setReplayHighlight(value: string): void;
   highlightAura: HighlightAura; setHighlightAura(value: HighlightAura): void;
 };
-export const SettingsContext = createContext<Settings>({ theme: 'aurora', isDark: true, precision: 2, solveLimit: DEFAULT_SOLVE_LIMIT, session: 'Default', allSessions: false, error: '', showMinutes: true, fontSize: 'normal', disabledMistakes: ['f2lChoice'], replayHighlight: 'current', highlightAura: 'black', setHighlightAura: () => {}, setReplayHighlight: () => {}, setShowMinutes: () => {}, setFontSize: () => {}, setDisabledMistakes: () => {}, setTheme: () => {}, setPrecision: () => {}, setSolveLimit: () => {}, setSession: () => {}, setAllSessions: () => {} });
+export const SettingsContext = createContext<Settings>({ theme: 'dark', isDark: true, precision: 2, solveLimit: DEFAULT_SOLVE_LIMIT, session: 'Default', allSessions: false, error: '', showMinutes: true, fontSize: 'normal', disabledMistakes: ['f2lChoice'], replayHighlight: 'current', highlightAura: 'black', setHighlightAura: () => {}, setReplayHighlight: () => {}, setShowMinutes: () => {}, setFontSize: () => {}, setDisabledMistakes: () => {}, setTheme: () => {}, setPrecision: () => {}, setSolveLimit: () => {}, setSession: () => {}, setAllSessions: () => {} });
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState(savedTheme), [precision, setPrecision] = useState<2 | 3>(() => read('timer-time-precision') === '3' ? 3 : 2);

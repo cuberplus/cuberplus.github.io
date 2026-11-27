@@ -84,3 +84,18 @@ test('settings validate, persist, and disable an existing lock only when explici
   localStorage.setItem(BREAK_SETTINGS, '{"enabled":true}');
   expect(readBreakSettings()).toEqual(breakDefaults);
 });
+test('session grace defaults to ten minutes, honors its exact boundary, and can be disabled or customized', () => {
+  expect(readBreakSettings()).toMatchObject({ graceEnabled: true, graceMinutes: 10 });
+  const slow = solve(100, 30000), start = 1000000;
+  expect(breakReason(slow, history(), settings, start, start + 599999)).toBeNull();
+  expect(breakReason(slow, history(), settings, start, start + 600000)).not.toBeNull();
+  expect(breakReason(slow, history(), { ...settings, graceMinutes: 1 }, start, start + 59999)).toBeNull();
+  expect(breakReason(slow, history(), { ...settings, graceEnabled: false }, start, start)).not.toBeNull();
+  expect(validBreakSettings({ ...settings, graceMinutes: -1 })).toBe(false);
+  expect(validBreakSettings({ ...settings, graceEnabled: 'yes' })).toBe(false);
+});
+test('older saved break settings retain their values while gaining grace defaults', () => {
+  const { graceEnabled: _enabled, graceMinutes: _minutes, ...legacy } = settings;
+  localStorage.setItem(BREAK_SETTINGS, JSON.stringify({ ...legacy, minutes: 3 }));
+  expect(readBreakSettings()).toEqual({ ...settings, minutes: 3 });
+});

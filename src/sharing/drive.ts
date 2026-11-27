@@ -139,7 +139,7 @@ async function createPublicFile(value: Catalog | Manifest, name: string): Promis
     return await (await authorized(`${api}/${encodeURIComponent(file.id)}?fields=id,name,resourceKey`)).json() as PublishedShare;
   } catch (failure) {
     try { await deleteShare(file.id); }
-    catch { throw new Error('Publishing failed and cleanup could not finish. Open Options > Shared solves > Delete all shared data. Your private backup is unchanged.'); }
+    catch { throw new Error('Publishing failed and cleanup could not finish. Open Options > Cloud backup > Shared solves > Delete all shared data. Your private backup is unchanged.'); }
     throw failure;
   }
 }
@@ -173,7 +173,7 @@ async function publish(snapshot: Snapshot): Promise<PublishedShare> {
     return file;
   } catch (failure) {
     try { await deleteShare(file.id); }
-    catch { throw new Error('Publishing failed and cleanup could not finish. Open Options > Shared solves > Delete all shared data.'); }
+    catch { throw new Error('Publishing failed and cleanup could not finish. Open Options > Cloud backup > Shared solves > Delete all shared data.'); }
     throw failure;
   }
 }

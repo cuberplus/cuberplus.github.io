@@ -35,13 +35,14 @@ try {
       solve.moves.forEach(turn => { turn.elapsed *= factor; turn.hostTime = turn.elapsed; });
       solve.imported.date = solve.createdAt; solve.imported.endDate = new Date(date.getTime() + duration).toISOString();
       solve.imported.time = duration / 1000;
-      for (const step of solve.imported.steps) for (const key of ['time', 'executionTime', 'recognitionTime', 'preAufTime', 'postAufTime', 'extraLookTime']) {
-        if (step[key] !== undefined) step[key] *= factor;
+      for (const step of solve.imported.steps) {
+        for (const key of ['time', 'executionTime', 'recognitionTime', 'preAufTime', 'postAufTime']) if (step[key] !== undefined) step[key] *= factor;
+        if (step.turnGaps) step.turnGaps = step.turnGaps.map(gap => gap * factor);
       }
       history.push(solve);
     }
     for (const step of history.at(-1).imported.steps) {
-      if (['F2L Slot 1', 'F2L Slot 3'].includes(step.name)) step.extraLookTime = Math.min(1.1, step.executionTime / 2);
+      if (['F2L Slot 1', 'F2L Slot 3'].includes(step.name)) step.turnGaps = [step.executionTime];
     }
     await saveSolves(history);
     return {

@@ -25,8 +25,8 @@ export function publicSolve(solve: Solve, index: number): Solve {
       recognitionTime: data.recognitionTime, executionTime: data.executionTime,
       preAufTime: data.preAufTime, postAufTime: data.postAufTime,
       scramble: solve.scramble, dnf: data.dnf, isCorrupt: data.isCorrupt, isFullStep: data.isFullStep, isMistake: false,
-      steps: data.steps.map(({ name, time, turns, tps, moves, case: caseName, recognitionTime, executionTime, preAufTime, postAufTime, extraLookTime }) =>
-        ({ name, time, turns, tps, moves, case: caseName, recognitionTime, executionTime, preAufTime, postAufTime, extraLookTime })),
+      steps: data.steps.map(({ name, time, turns, tps, moves, case: caseName, recognitionTime, executionTime, preAufTime, postAufTime, turnGaps }) =>
+        ({ name, time, turns, tps, moves, case: caseName, recognitionTime, executionTime, preAufTime, postAufTime, turnGaps })),
     } } : {}),
   };
 }

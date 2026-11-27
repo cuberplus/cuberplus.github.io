@@ -62,9 +62,9 @@ describe('ResizeObserver warning suppression', () => {
         expect(defaultPrevented).toBe(false);
     });
 
-    test('theme-init.js defaults to Aurora before paint', () => {
+    test('theme-init.js defaults to Dark before paint', () => {
         dispatchErrorAfterThemeInit('noop');
-        expect(document.documentElement.getAttribute('data-theme')).toBe('aurora');
+        expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
         expect(document.documentElement.getAttribute('data-bs-theme')).toBe('dark');
     });
 
@@ -77,10 +77,10 @@ describe('ResizeObserver warning suppression', () => {
         localStorage.clear();
     });
 
-    test.each(['', 'invalid', 'constructor', '__proto__'])('invalid theme %s falls back to Aurora', theme => {
+    test.each(['', 'invalid', 'constructor', '__proto__'])('invalid theme %s falls back to Dark', theme => {
         localStorage.setItem('theme', theme);
         new Function(themeInit).call(window);
-        expect(document.documentElement.getAttribute('data-theme')).toBe('aurora');
+        expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
         expect(document.documentElement.getAttribute('data-bs-theme')).toBe('dark');
         localStorage.clear();
     });
@@ -89,13 +89,13 @@ describe('ResizeObserver warning suppression', () => {
         const getItem = jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
         try {
             new Function(themeInit).call(window);
-            expect(document.documentElement.getAttribute('data-theme')).toBe('aurora');
+            expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
         } finally { getItem.mockRestore(); }
     });
 
     test.each([
         ['light', '#f3f6fa'], ['dark', '#10141e'], ['aurora', '#091e29'],
-        ['disco', '#20102e'], ['inferno', '#1c0c0a'], ['invalid', '#091e29'],
+        ['disco', '#20102e'], ['inferno', '#1c0c0a'], ['invalid', '#10141e'],
     ])('sets the browser color for %s without leaking script variables', (theme, color) => {
         const meta = document.createElement('meta');
         meta.name = 'theme-color';

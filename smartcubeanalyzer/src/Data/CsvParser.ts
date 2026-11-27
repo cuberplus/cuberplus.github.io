@@ -69,8 +69,7 @@ export function computeStepSegments(
     const zero = { recognition: 0, preAuf: 0, coreExecution: 0, postAuf: 0 };
     if (!moves.length) return zero;
 
-    const firstTs = moves[0].timestamp;
-    const lastTs = moves[moves.length - 1].timestamp;
+    const firstTs = moves[0].timestamp, lastTs = moves[moves.length - 1].timestamp;
 
     if (stepName === StepName.Cross) return { ...zero, coreExecution: Math.max(0, (lastTs - firstTs) / 1000) };
 
@@ -82,14 +81,9 @@ export function computeStepSegments(
     let lastNonU = moves.length - 1;
     while (aufMoves.has(moves[lastNonU].move)) lastNonU--;
 
-    const preAuf = (moves[firstNonU].timestamp - firstTs) / 1000;
-    const postAuf =
-        stepName === StepName.PLL && lastNonU < moves.length - 1
-            ? (lastTs - moves[lastNonU].timestamp) / 1000
-            : 0;
-    const coreExecution = Math.max(0, (moves[lastNonU].timestamp - moves[firstNonU].timestamp) / 1000);
-
-    return { recognition, preAuf, coreExecution, postAuf };
+    return { recognition, preAuf: (moves[firstNonU].timestamp - firstTs) / 1000,
+        coreExecution: Math.max(0, (moves[lastNonU].timestamp - moves[firstNonU].timestamp) / 1000),
+        postAuf: stepName === StepName.PLL && lastNonU < moves.length - 1 ? (lastTs - moves[lastNonU].timestamp) / 1000 : 0 };
 }
 
 /**
@@ -102,21 +96,19 @@ export function effectiveCrossExecutionSec(moveTimings: MoveTiming[], segmentExe
 }
 
 function applyStepTiming(step: Step, moves: MoveTiming[], previousEnd: number | null, aufMoves = AUF_MOVES, crossFallback = 0): void {
-    const segments = computeStepSegments(moves, previousEnd, step.name, aufMoves);
-    step.recognitionTime = segments.recognition;
-    step.preAufTime = segments.preAuf;
-    step.postAufTime = segments.postAuf;
-    const execution = segments.preAuf + segments.coreExecution + segments.postAuf;
+    const { recognition, preAuf, postAuf, coreExecution } = computeStepSegments(moves, previousEnd, step.name, aufMoves);
+    Object.assign(step, { recognitionTime: recognition, preAufTime: preAuf, postAufTime: postAuf });
+    const execution = preAuf + coreExecution + postAuf;
     step.executionTime = step.name === StepName.Cross ? effectiveCrossExecutionSec(moves, execution, crossFallback) : execution;
     step.time = step.recognitionTime + step.executionTime;
     const lastLayer = /^(?:OLL|PLL|EOLL|OCLL|EPLL|CPOLL|CMLL|ZBLL)$/.test(step.name);
     const first = lastLayer ? moves.findIndex(move => !aufMoves.has(move.move)) : 0;
     let end = moves.length - 1;
     if (lastLayer) while (end >= 0 && aufMoves.has(moves[end].move)) end--;
-    step.extraLookTime = 0;
+    step.turnGaps = [];
     for (let i = first + 3; first >= 0 && i <= end; i++) {
         const gap = (moves[i].timestamp - moves[i - 1].timestamp) / 1000;
-        if (gap > 2) step.extraLookTime += gap - 2;
+        if (Number.isFinite(gap) && gap >= 0) step.turnGaps.push(gap);
     }
 }
 
@@ -153,7 +145,7 @@ const consolidationToken = memoize((token: string) => /^([RLUDFBrludfbMES]w?)(2'
 export const consolidateMoves = memoize((raw: string): string => {
     if (!/([RLUDFBrludfbMES]w?)(?:2'?|')?\s+\1(?:2'?|')?(?=\s|$|")/.test(raw)) return raw;
     const result: string[] = [];
-    let previous: string[] | null = null;
+    let previous: { face: string; direction: number; count: number } | null = null;
     const amount = (suffix: string) => suffix.startsWith('2') ? 2 : suffix === "'" ? 3 : 1;
     const tokens = tokenizeMoves(raw), parsed = tokens.map(consolidationToken);
     const inverse = (left: number, right: number) => {
@@ -163,17 +155,18 @@ export const consolidateMoves = memoize((raw: string): string => {
     for (const [index, token] of tokens.entries()) {
         const move = parsed[index];
         if (inverse(index - 1, index) || inverse(index, index + 1)) { result.push(token); previous = null; continue; }
-        const total: number = previous && move && previous[1] === move[1] ? (amount(previous[2]) + amount(move[2])) % 4 : 0;
-        if (total) result[result.length - 1] = move![1] + ['', '', '2', "'"][total];
+        const direction = move?.[2]?.endsWith("'") ? -1 : 1, count = move?.[2]?.startsWith('2') ? 2 : 1;
+        const total: number = previous && move && previous.face === move[1] && previous.direction === direction ? previous.count + count : 0;
+        if (total) result[result.length - 1] = move![1] + (total < 4 ? ['', '', '2', direction === 1 ? "'" : ''][total] : `${total}${direction < 0 ? "'" : ''}`);
         else result.push(token);
-        previous = total ? ['', move![1], ['', '', '2', "'"][total]] : previous?.[1] === move?.[1] ? null : move;
+        previous = move ? { face: move[1], direction, count: total || count } : null;
     }
     return result.join(' ');
 });
 
 /** Counts move tokens excluding cube rotations (x, y, z). Use for all turn counts. */
 export const countMovesExcludingRotations = memoize((movesString: string | undefined | null): number =>
-    tokenizeMoves(movesString).filter(t => !ROTATIONS.has(t.toLowerCase())).length);
+    tokenizeMoves(movesString).reduce((count, token) => count + (ROTATIONS.has(token.toLowerCase()) ? 0 : Number(token.match(/^[RLUDFBrludfbMES]w?([3-9]|[1-9]\d+)'?$/)?.[1] ?? 1)), 0));
 
 function consolidateStep(step: Step): boolean {
     const moves = consolidateMoves(step.moves);

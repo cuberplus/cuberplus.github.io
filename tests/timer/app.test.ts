@@ -296,9 +296,21 @@ test('inspection readiness replaces only the inspection clock and switches at th
   expect(container.querySelector('[aria-label="Solve time"]')?.textContent).toBe('0.60');
   expect(save.mock.calls.at(-1)![0][0].penalty).toBeUndefined();
 });
-test('a slow solve starts a persistent timer lock that survives remount, ignores physical turns, and expires', async () => {
+test('default session grace prevents a slow-solve lockout until ten minutes have elapsed', async () => {
   jest.useFakeTimers({ doNotFake: ['performance'] });
   localStorage.setItem(BREAK_SETTINGS, JSON.stringify({ ...breakDefaults, enabled: true }));
+  await showHistory(Array.from({ length: 100 }, (_, index) => historySolve(index + 1, 1000, 0)));
+  await click('Connect cube');
+  await act(async () => { move('R', 100); move('U2', 200); move('U2', 300); move("R'", 3300); });
+  expect(container.querySelector('#break-reminder-title')).toBeNull();
+  expect(localStorage.getItem(BREAK_ACTIVE)).toBeNull();
+  await act(async () => { jest.advanceTimersByTime(600000); resolveNext('R U2'); });
+  await act(async () => { move('R', 4000); move('U2', 4100); move('U2', 4200); move("R'", 7200); });
+  expect(container.querySelector('#break-reminder-title')?.textContent).toBe('Time for a break');
+});
+test('a slow solve starts a persistent timer lock that survives remount, ignores physical turns, and expires', async () => {
+  jest.useFakeTimers({ doNotFake: ['performance'] });
+  localStorage.setItem(BREAK_SETTINGS, JSON.stringify({ ...breakDefaults, enabled: true, graceEnabled: false }));
   await showHistory(Array.from({ length: 100 }, (_, index) => historySolve(index + 1, 1000, 0)));
   await click('Connect cube');
   await act(async () => { move('R', 100); move('U2', 200); move('U2', 300); move("R'", 3300); });

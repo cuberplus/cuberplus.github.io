@@ -38,6 +38,24 @@ async function visit(name: string) {
   if (name === 'Options') await openGeneral();
 }
 
+test('General groups related options in their visual and keyboard order', async () => {
+  render(<Site />);
+  await screen.findByRole('heading', { name: 'Home' });
+  await visit('Options');
+  const general = screen.getByRole('region', { name: 'General', exact: true });
+  const groups = within(general).getAllByRole('group').filter(group => group.tagName === 'FIELDSET');
+  expect(groups.map(group => group.querySelector('legend')?.textContent)).toEqual(['Appearance', 'Time display', 'History', 'App & reminders']);
+  const [appearance, time, history, app] = groups.map(group => within(group));
+  expect(appearance.getByRole('region', { name: 'Theme picker' })).toBeDefined();
+  expect(Array.from(general.querySelectorAll('select, input[type="checkbox"]'))).toEqual([
+    appearance.getByRole('combobox', { name: 'Font size' }), appearance.getByRole('combobox', { name: 'Highlight aura' }),
+    time.getByRole('combobox', { name: 'Time precision' }), time.getByRole('checkbox', { name: 'Show minutes' }),
+    history.getByRole('combobox', { name: 'Recent solves', exact: true }), history.getByRole('checkbox', { name: 'Show all sessions' }),
+    app.getByRole('checkbox', { name: 'Daily streak reminders' }),
+  ]);
+  expect(app.getByRole('button', { name: 'Install app', exact: true }).compareDocumentPosition(app.getByRole('checkbox', { name: 'Daily streak reminders' })) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+});
+
 test('the site-wide recent-solve setting updates retained tools and survives a reload', async () => {
   const view = render(<Site />);
   await screen.findByRole('heading', { name: 'Home' });
@@ -269,19 +287,19 @@ test('saved light theme applies on every page, including navigation back to Anal
   expect(document.documentElement.dataset.bsTheme).toBe('light');
 });
 
-test.each(['missing', 'invalid', 'blocked'])('Aurora is the default when the saved theme is %s', async saved => {
+test.each(['missing', 'invalid', 'blocked'])('Dark is the default when the saved theme is %s', async saved => {
   history.replaceState(null, '', '/options/');
   if (saved === 'invalid') localStorage.setItem('theme', 'system');
   const read = saved === 'blocked' ? jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Blocked'); }) : null;
   try {
     render(<Site />);
     await openGeneral();
-    const theme = await screen.findByRole('button', { name: 'Aurora theme' }, { timeout: 10000 });
+    const theme = await screen.findByRole('button', { name: 'Dark theme' }, { timeout: 10000 });
     expect(theme.getAttribute('aria-pressed')).toBe('true');
-    expect(document.documentElement.dataset.theme).toBe('aurora');
+    expect(document.documentElement.dataset.theme).toBe('dark');
     expect(document.documentElement.dataset.bsTheme).toBe('dark');
     await visit('Scrambler');
-    expect(document.documentElement.dataset.theme).toBe('aurora');
+    expect(document.documentElement.dataset.theme).toBe('dark');
   } finally { read?.mockRestore(); }
 }, 15000);
 

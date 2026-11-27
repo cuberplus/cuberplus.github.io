@@ -5,6 +5,7 @@ import { caseStates } from './fixtures/cfop-cases';
 import { applyMoves, FACES, inverseMoves, parseAlgorithm, solvedCube, stickers } from '../../scrambler/src/cube/cube';
 import caseImages from '../../src/database/caseImages.json';
 import { validateUserAlgorithm } from '../../timer/src/Analysis/favoriteAlgorithms';
+import { algorithmMatcher } from '../../timer/src/Analysis/algorithmMatching';
 
 let cube: Cube;
 let images: ReturnType<typeof illustrateCases>;
@@ -20,6 +21,12 @@ test.each(['F2L', 'OLL', 'PLL'] as const)('manual %s algorithms reject the wrong
   expect(() => validateUserAlgorithm(entry, 'R', cube)).toThrow('does not match');
   expect(() => validateUserAlgorithm(entry, `D ${entry.algorithm}`, cube)).toThrow('does not match');
 });
+test.each(options.filter(entry => entry.category === 'Patterns'))('Patterns $id: $algorithm creates the original pictured target', entry => {
+  const expected = caseImages[`Patterns-${entry.id}` as keyof typeof caseImages].facelets;
+  expect(cube.facelets(cube.solved().applyAlg(entry.algorithm))).toBe(expected);
+  expect(cube.solved().applyAlg(entry.algorithm).patternData.CENTERS.pieces).toEqual(cube.solved().patternData.CENTERS.pieces);
+  expect(validateUserAlgorithm(algorithms.find(item => item.category === 'Patterns' && item.id === entry.id)!, entry.algorithm, cube)).toBe(entry.algorithm);
+});
 const f2lIndices = [...Array(54).keys()].filter(i => i >= 27 && i < 36 || i >= 9 && Math.floor(i / 9) !== 3 && i % 9 >= 3);
 const target = (category: string, facelets: string) => category === 'PLL' ? facelets === SOLVED :
   f2lIndices.every(i => facelets[i] === SOLVED[i]) && (category !== 'OLL' || facelets.slice(0, 9) === 'U'.repeat(9));
@@ -29,7 +36,7 @@ test('database retains every recognized case and includes all advanced F2L varia
     expect(algorithms.filter(entry => entry.category === category).map(entry => entry.id).sort()).toEqual([...CASE_IDS[category]].sort());
   }
   for (const entry of algorithms) {
-    expect(entry.options.length).toBeGreaterThanOrEqual(entry.category === 'OF2L' ? 1 : 2);
+    expect(entry.options.length).toBeGreaterThanOrEqual(['OF2L', 'Patterns'].includes(entry.category) ? 1 : 2);
     expect(new Set(entry.options).size).toBe(entry.options.length);
     if (entry.featured) expect(entry.options.slice(0, 3)).toEqual(entry.featured);
     else expect(entry.options[0]).toBe(entry.algorithm);
@@ -108,7 +115,15 @@ test('built-in full-cube solver independently verifies every illustrated setup',
         i >= 24 && i < 48 && corners.has(Math.floor((i - 24) / 3))) visibleStickers.push(index);
     });
     expect(rendered.join('')).toBe(facelets);
-    if (entry.pair === undefined) expect(cube.isSolved(cube.parse(rendered.join('')).applyAlg(entry.algorithm))).toBe(true);
+    if (entry.category === 'Patterns') {
+      const created = Array<string>(54);
+      stickers(applyMoves(solvedCube(), parseAlgorithm(algorithmMatcher(cube).outerMoves(entry.algorithm).moves.join(' ')))).forEach(({ face, row, col, color }) => {
+        created[face * 9 + row * 3 + col] = FACES[color];
+      });
+      expect(created.join('')).toBe(facelets);
+      expect(validateUserAlgorithm(entry, entry.algorithm, cube)).toBe(entry.algorithm);
+      expect(() => validateUserAlgorithm(entry, 'R', cube)).toThrow('does not create');
+    } else if (entry.pair === undefined) expect(cube.isSolved(cube.parse(rendered.join('')).applyAlg(entry.algorithm))).toBe(true);
     if (entry.category === 'F2L' || entry.category === 'AF2L') {
       expect([...entry.visibleStickers].sort((a, b) => a - b)).toEqual(visibleStickers.sort((a, b) => a - b));
     }

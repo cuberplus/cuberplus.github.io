@@ -4,12 +4,13 @@ import { locations } from '../../shared/cube/cubeLocations';
 import alternatives from './alternatives.json';
 import otherF2l from './otherF2l.json';
 import f2lSolutions from './f2lSolutions.json';
+import { patternDefinitions } from './patterns';
 
-export type Category = 'F2L' | 'AF2L' | 'OF2L' | 'OLL' | 'PLL';
+export type Category = 'F2L' | 'AF2L' | 'OF2L' | 'OLL' | 'PLL' | 'Patterns';
 export interface AlgorithmCase { category: Category; id: string; algorithm: string; options: string[]; setup?: string; pair?: number; featured?: string[] }
 type CaseDefinition = Omit<AlgorithmCase, 'options'>;
 export interface IllustratedCase extends AlgorithmCase { facelets: string; visibleStickers: number[] }
-export const categories: Category[] = ['F2L', 'AF2L', 'OF2L', 'OLL', 'PLL'];
+export const categories: Category[] = ['F2L', 'AF2L', 'OF2L', 'OLL', 'PLL', 'Patterns'];
 export const databaseCaseKey = (category: string, id: string) => /^(?:F2L|AF2L|OF2L)-/.test(id) ? id : `${category}-${id}`;
 export const databaseCaseKeys = (category: string, id: string) => id.split(' + ').map(label => databaseCaseKey(category, label));
 // Highest community-voted algorithms in SpeedCubeDB's default (front-right F2L) view, November 4, 2026.
@@ -202,6 +203,7 @@ export const baseAlgorithms: AlgorithmCase[] = [
   ...otherF2l.cases.map((entry): CaseDefinition => ({ ...entry, category: 'OF2L' })),
   ...oll.map((algorithm, i): CaseDefinition => ({ category: 'OLL', id: String(i + 1), algorithm })),
   ...Object.entries(pll).map(([id, algorithm]): CaseDefinition => ({ category: 'PLL', id, algorithm })),
+  ...patternDefinitions.map(({ id, algorithm }): CaseDefinition => ({ category: 'Patterns', id, algorithm })),
 ].map(entry => ({ ...entry, options: entry.category === 'OF2L' ? otherF2l.cases.find(saved => saved.id === entry.id)!.options :
   [entry.algorithm, ...(alternatives[`${entry.category}-${entry.id}` as keyof typeof alternatives] ?? [])] }));
 const generatedCases = f2lSolutions.cases as Record<string, { featured: string[]; options: string[]; optimalLength: number }>;
@@ -224,7 +226,8 @@ export function casePattern(cube: Cube, algorithm: string): KPattern {
 
 export const illustrateCases = (cube: Cube): IllustratedCase[] =>
   algorithms.map(entry => {
-    const pattern = entry.setup ? cube.solved().applyAlg(entry.setup) : casePattern(cube, entry.algorithm);
+    const pattern = entry.category === 'Patterns' ? cube.solved().applyAlg(entry.algorithm) :
+      entry.setup ? cube.solved().applyAlg(entry.setup) : casePattern(cube, entry.algorithm);
     const corners = new Set([entry.pair ?? 4]);
     if (entry.pair !== undefined) {
       for (let corner = 4; corner < 8; corner++) {

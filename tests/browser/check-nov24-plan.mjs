@@ -172,8 +172,8 @@ try {
   }
   await page.getByRole('button', { name: 'Mistakes', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: 'F2L: Non-suggested pair', exact: true })).not.toBeChecked();
-  await page.getByRole('button', { name: 'Shared solves', exact: true }).click();
-  await page.getByRole('button', { name: 'Manage Google Drive shares' }).click();
+  await page.getByRole('button', { name: 'Cloud backup', exact: true }).click();
+  await page.getByRole('button', { name: 'Manage Google Drive shared solves' }).click();
   await expect(page.getByRole('button', { name: /^Revoke CuberPlus/ })).toHaveCount(2);
   await page.goto(`${base}/trainer/`);
   await page.locator('.trainer-drill').filter({ hasText: 'Single-case drill' }).click();
@@ -229,9 +229,9 @@ try {
   expect(newCatalogs.map(file => Object.keys(file.data.solves).length)).toEqual([1000, 1]);
   expect(JSON.stringify(newCatalogs)).not.toMatch(/PRIVATE|overlap-|123456|654321/);
   await page.goto(`${base}/options/`);
-  const sharedOptions = page.getByRole('button', { name: 'Shared solves', exact: true });
+  const sharedOptions = page.getByRole('button', { name: 'Cloud backup', exact: true });
   if (await sharedOptions.getAttribute('aria-expanded') === 'false') await sharedOptions.click();
-  await page.getByRole('button', { name: 'Manage Google Drive shares' }).click();
+  await page.getByRole('button', { name: 'Manage Google Drive shared solves' }).click();
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Delete all shared data', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: 'No published snapshots' })).toBeVisible();

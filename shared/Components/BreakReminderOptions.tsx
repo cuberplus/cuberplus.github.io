@@ -7,6 +7,7 @@ import { TOOLTIPS } from '../tooltips';
 
 const fields = [
   ['minutes', 'Break length (minutes)', 0.1],
+  ['graceMinutes', 'Lockout-free session time (minutes)', 0.1],
   ['streakWindow', 'Average window (solves)', 1],
   ['singleMultiplier', 'Single-solve slowdown multiplier', 0.1],
   ['streakCount', 'Consecutive slow solves', 1],
@@ -27,27 +28,38 @@ export function BreakReminderOptions({ disabled = false }: { disabled?: boolean 
     catch { setError('Break reminder settings could not be saved.'); return false; }
   }
   return <SettingsSection title="Break reminder" help={<InfoTip>{TOOLTIPS.breakReminderOptions.overview}</InfoTip>}>
-    <label className="form-check"><input className="form-check-input" type="checkbox" checked={settings.enabled} disabled={disabled}
+    <div className="break-reminder-options">
+    <label className="form-check break-reminder-toggle break-reminder-row"><input className="form-check-input" type="checkbox" checked={settings.enabled} disabled={disabled}
       onChange={event => {
         if (event.target.checked) change({ ...settings, enabled: true });
         else { setWarning(1); dialog.current?.showModal(); }
       }} />Enable break reminders</label>
-    <details className="settings-disclosure">
-      <summary>Customize break reminders</summary>
-      <fieldset disabled={disabled} className="settings-fields mt-3">
-        <legend className="visually-hidden">Break thresholds</legend>
-        {fields.map(([key, label, step]) => <label key={key} htmlFor={`${id}-${key}`}>{label}<input id={`${id}-${key}`} className="form-control mt-1" type="number" min={breakRanges[key][0]} max={breakRanges[key][1]} step={step} defaultValue={settings[key]} key={`${key}-${settings[key]}`}
+    <fieldset disabled={disabled || !settings.enabled} className="break-reminder-fields">
+      <legend className="visually-hidden">Break reminder settings</legend>
+        <div className="break-reminder-row">
+          <label className="form-check break-reminder-toggle" htmlFor={`${id}-grace`}><input id={`${id}-grace`} className="form-check-input" type="checkbox" checked={settings.graceEnabled}
+            onChange={event => change({ ...settings, graceEnabled: event.target.checked })} />Start sessions without lockouts</label>
+          <InfoTip>Prevents new break lockouts for the configured time after opening the timer or switching sessions. Existing breaks still finish normally.</InfoTip>
+        </div>
+        <label className="form-check break-reminder-toggle break-reminder-row"><input className="form-check-input" type="checkbox" checked={settings.drills}
+          onChange={event => change({ ...settings, drills: event.target.checked })} />Suggest a targeted drill during breaks</label>
+      <details className="settings-disclosure">
+        <summary>Customize break reminders</summary>
+        <div className="break-reminder-values">
+        {fields.map(([key, label, step]) => <label className="break-reminder-row break-reminder-field" key={key} htmlFor={`${id}-${key}`}>{label}<input id={`${id}-${key}`} className="form-control" type="number" min={breakRanges[key][0]} max={breakRanges[key][1]} step={step} defaultValue={settings[key]} key={`${key}-${settings[key]}`}
+          disabled={key === 'graceMinutes' && !settings.graceEnabled}
           onBlur={event => {
+            if (disabled || !settings.enabled || key === 'graceMinutes' && !settings.graceEnabled) return;
             const value = event.currentTarget.valueAsNumber, [min, max] = breakRanges[key];
             if (!Number.isFinite(value) || value < min || value > max || step === 1 && !Number.isInteger(value)) {
               event.currentTarget.value = String(settings[key]); return;
             }
             change({ ...settings, [key]: value });
           }} /></label>)}
-        <label className="form-check"><input className="form-check-input" type="checkbox" checked={settings.drills}
-          onChange={event => change({ ...settings, drills: event.target.checked })} />Suggest a targeted drill during breaks</label>
-      </fieldset>
-    </details>
+        </div>
+      </details>
+    </fieldset>
+    </div>
     <dialog ref={dialog} className="panel options-dialog" aria-labelledby={`${id}-title`} onClose={() => setWarning(0)}>
       <h2 id={`${id}-title`}>{warning === 2 ? 'Disable break reminders?' : 'Keep your break reminders?'}</h2>
       <p>{warning === 2 ? 'Are you sure you want to continue? This disables future reminders and ends any current timer break.' : 'Break reminders help you step away when solves get frustrating. Are you sure you want to continue?'}</p>

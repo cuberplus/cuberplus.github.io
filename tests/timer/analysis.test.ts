@@ -4,7 +4,7 @@ import { jest } from '@jest/globals';
 import { TimerEngine, type Solve } from '../../timer/src/Core/engine';
 import { loadCube, SOLVED, type Cube } from '../../timer/src/Core/puzzle';
 import { analyzeCFOP, cfopKey } from '../../timer/src/Analysis/cfop';
-import { analysisKey, persistAnalysis, persistReplayAnalysis, reanalyzeAllSolves, reanalyzeSolve, solveAnalysis } from '../../timer/src/Analysis/analysis';
+import { analysisKey, persistAnalysis, persistReplayAnalysis, reanalyzeAllSolves, reanalyzeSolve, solveAnalysis, validAnalysis } from '../../timer/src/Analysis/analysis';
 import { MethodName } from '../../smartcubeanalyzer/src/Models/Types';
 import { backupJSON, deleteSolve, readSolves, saveSolves, validateBackup } from '../../timer/src/Data/storage';
 import { readLocalAnalysis } from '../../timer/src/Analysis/analyzer-data';
@@ -44,6 +44,19 @@ test('persisted analysis and CFOP are reused locally but omitted from backup sna
     expect(analyzeCFOP(stored, cube).ends).toEqual(stored.cfop!.ends);
     expect(await readLocalAnalysis()).toEqual(first);
   } finally { parse.mockRestore(); }
+});
+test('legacy fixed-pause caches rebuild raw gaps and cached gap arrays are validated', () => {
+  const solve = sample(), expected = solveAnalysis(solve, cube);
+  expect(expected.steps.some(step => Array.isArray(step.turnGaps))).toBe(true);
+  solve.analysis!.version = 5;
+  solve.analysis!.data.steps = expected.steps.map(({ turnGaps: _gaps, ...step }) => step);
+  solve.analysis!.data.mistakes = [{ kind: 'extraLookCross', estimatedSeconds: 100 }];
+  const rebuilt = solveAnalysis(solve, cube);
+  expect(rebuilt).toEqual(expected);
+  expect(solve.analysis!.version).toBe(6);
+  expect(validAnalysis(solve)).toBe(true);
+  solve.analysis!.data.steps[0].turnGaps = [-1];
+  expect(validAnalysis(solve)).toBe(false);
 });
 test('recent analysis skips historical CFOP, preserves original caches and recordings, and All restores details', async () => {
   const cached = { ...sample(), id: 'cached', createdAt: '2026-01-01T00:00:00.000Z' };

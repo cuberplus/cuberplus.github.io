@@ -18,7 +18,7 @@ const centers = 'ULFRBD', faces = 'URFDLB', aufs = ['', 'U', 'U2', "U'"];
 function expectedFills(category: Category, facelets: string, frame: string, hidePLL = false) {
   const centerPieces = cube.solved().applyAlg(frame).patternData.CENTERS.pieces;
   const palette = [...faces].map(face => colors[faces.indexOf(centers[centerPieces[centers.indexOf(face)]])]);
-  const indices = category.endsWith('F2L') ? [0, 2, 1].flatMap(face => Array.from({ length: 9 }, (_, i) => face * 9 + i)) :
+  const indices = category.endsWith('F2L') || category === 'Patterns' ? [0, 2, 1].flatMap(face => Array.from({ length: 9 }, (_, i) => face * 9 + i)) :
     [...Array.from({ length: 9 }, (_, i) => i), ...[45, 9, 18, 36].flatMap(face => [face + 2, face + 1, face])];
   return indices.map(index => hidePLL && category === 'OLL' ? facelets[index] === 'U' ? palette[0] : '#697384' :
     palette[faces.indexOf(facelets[index])]);
@@ -101,7 +101,7 @@ test.each(categories)('%s practice previews render all pre/post AUF combinations
     practice.tick(3000);
     const upcoming = practice.queue.slice(1);
     for (const queued of upcoming) {
-      const expected = entry.setup
+      const expected = category === 'Patterns' ? cube.solved() : entry.setup
         ? cube.solved().applyAlg(postAuf ? inverse(postAuf) : '').applyAlg(entry.setup).applyAlg(preAuf ? inverse(preAuf) : '')
         : casePattern(cube, `${preAuf} ${entry.algorithm} ${postAuf}`);
       expect(cube.facelets(queued.pattern)).toBe(cube.facelets(expected));

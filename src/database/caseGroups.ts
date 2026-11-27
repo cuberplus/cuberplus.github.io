@@ -3,6 +3,7 @@ import images from './caseImages.json';
 import { locations } from '../../shared/cube/cubeLocations';
 
 export function caseGroup(entry: AlgorithmCase): string {
+  if (entry.category === 'Patterns') return 'Create from solved';
   const { facelets } = images[`${entry.category}-${entry.id}` as keyof typeof images] ?? {};
   if (!facelets) return '';
   if (entry.category === 'OLL') {

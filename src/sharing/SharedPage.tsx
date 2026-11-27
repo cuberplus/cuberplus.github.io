@@ -6,7 +6,6 @@ import { AverageDialog } from '../../timer/src/Components/AverageDialog';
 import { readShare } from './drive';
 import type { Snapshot } from './snapshot';
 import type { Solve } from '../../timer/src/Core/engine';
-import { ShareButton } from './ShareButton';
 import '../../timer/src/CSS/AverageDialog.css';
 
 export default function SharedPage() {
@@ -31,8 +30,7 @@ export default function SharedPage() {
       {error && <p role="alert">{error}</p>}
       {snapshot && <>
         {snapshot.kind !== 'solve' ? <AverageDialog rows={snapshot.rows} time={snapshot.time} precision={precision} view={setSolve} close={close}
-            title={snapshot.kind === 'collection' ? 'Shared solves' : undefined}
-            share={<ShareButton label="Share average" load={async () => snapshot} />} />
+            title={snapshot.kind === 'collection' ? 'Shared solves' : undefined} />
           : data && <Replay key={snapshot.rows[0].solve.id} cube={data.cube} solve={snapshot.rows[0].solve} history={snapshot.rows.map(row => row.solve)} close={close} readOnly precision={precision} />}
         {solve && data && <Replay key={solve.id} cube={data.cube} solve={solve} history={snapshot.rows.map(row => row.solve)} close={() => setSolve(null)} readOnly precision={precision} />}
       </>}

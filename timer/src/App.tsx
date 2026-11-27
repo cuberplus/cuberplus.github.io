@@ -113,6 +113,8 @@ export default function App() {
     try { const value = Number(localStorage.getItem('timer-minimum-inspection')); return Number.isFinite(value) && value >= 0 && value <= 60 ? value : 0; } catch { return 0; }
   });
   const minimumInspectionRef = useRef(minimumInspection); minimumInspectionRef.current = minimumInspection;
+  const breakSession = useRef({ name: selectedSession, startedAt: Date.now() });
+  if (breakSession.current.name !== selectedSession) breakSession.current = { name: selectedSession, startedAt: Date.now() };
   const [timerBreak, setTimerBreak] = useState(readTimerBreak);
   const timerBreakRef = useRef(timerBreak);
   const [breakSettings, setBreakSettings] = useState(readBreakSettings);
@@ -274,7 +276,7 @@ export default function App() {
     if (deletedSolves.current.has(solve.id)) return;
     const copy = structuredClone(solve);
     const previous = historyRef.current, check = recordChecks.current.get(copy.id);
-    const settings = readBreakSettings(), reason = notify && !timerBreakRef.current ? breakReason(copy, previous, settings) : null;
+    const settings = readBreakSettings(), reason = notify && !timerBreakRef.current ? breakReason(copy, previous, settings, breakSession.current.startedAt) : null;
     if (reason) {
       const next = { until: Date.now() + settings.minutes * 60000, solveId: copy.id, reason };
       timerBreakRef.current = next; setTimerBreak(next); setBreakNow(Date.now()); setBreakSettings(settings);

@@ -79,7 +79,7 @@ test('startup resumes pending automatic backups without requiring another solve'
   expect(cloudState().pending).toBe(0);
   expect(cloudState().lastBackup).not.toBeNull();
 });
-test.each(['google', 'microsoft'] as const)('%s backs up exact flashcard statistics and merges both devices on upload and restore', async provider => {
+test.each(['google', 'microsoft'] as const)('Google backup preserves flashcard statistics even with legacy %s selection', async provider => {
   configureCloud(provider, false, false);
   const localAttempt = { ...orientationAttempt, id: 'local-card', date: '2026-11-23T12:00:00.000Z', answer: false, correct: false, milliseconds: 500 };
   const cloudAttempt = { ...orientationAttempt, id: 'cloud-card', date: '2026-11-21T12:00:00.000Z', gray: false };
@@ -91,7 +91,7 @@ test.each(['google', 'microsoft'] as const)('%s backs up exact flashcard statist
   expect(await backupNow()).toBe(true);
   const [uploadedProvider, content] = jest.mocked(writeRemote).mock.calls[0];
   const decoded = await decodeCloudBackup(content);
-  expect(uploadedProvider).toBe(provider);
+  expect(uploadedProvider).toBe('google');
   expect(JSON.parse(decoded.settings[attemptsKey]!)).toEqual([localAttempt, orientationAttempt, cloudAttempt]);
   expect(decoded.settings['cuberplus-orientation-settings-v1']).toBe(userSettings['cuberplus-orientation-settings-v1']);
   const deviceOnly = { ...orientationAttempt, id: 'device-only', date: '2026-11-23T13:00:00.000Z' };
@@ -149,14 +149,14 @@ test('malformed backups do not write solves or settings on restore or overwrite 
   expect(await backupNow()).toBe(false);
   expect(writeRemote).not.toHaveBeenCalled();
 });
-test('a confirmed empty OneDrive file can be backed up using its existing ID and revision', async () => {
+test('a confirmed empty backup file can be filled after a legacy provider selection', async () => {
   configureCloud('microsoft', false, false);
   const empty = { id: 'empty-file', revision: 'empty-revision', size: 0, content: new Blob() };
   jest.mocked(readRemote).mockResolvedValue(empty);
   localStorage.setItem('theme', 'dark');
   expect(await backupNow()).toBe(true);
   const [provider, content, previous] = jest.mocked(writeRemote).mock.calls[0];
-  expect(provider).toBe('microsoft');
+  expect(provider).toBe('google');
   expect(previous).toBe(empty);
   expect(await decodeCloudBackup(content)).toMatchObject({ solves: [local, same], settings: { theme: 'dark' } });
   expect(mockSave).not.toHaveBeenCalled();

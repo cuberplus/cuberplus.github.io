@@ -1264,5 +1264,20 @@
     "M2 U M2 U M' U2 M2 U2 M'",
     "y M2 U' M2 U' M' U2 M2 U2 M'",
     "y M' U M2 U M2 U M' U2 M2"
+  ],
+  "Patterns-1": [
+    "U D' R L' F B' U D'"
+  ],
+  "Patterns-2": [
+    "F2 B2 U D' R2 L2 U D'"
+  ],
+  "Patterns-3": [
+    "F2 B2 R2 L2 U2 D2"
+  ],
+  "Patterns-7": [
+    "R L B F R L B F R L B F"
+  ],
+  "Patterns-9": [
+    "U R2 F B R B2 R U2 L B2 R U' D' R2 F R' L B2 U2 F2"
   ]
 }

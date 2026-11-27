@@ -81,7 +81,7 @@ test('a mixed custom training samples only selected cases and records recognitio
   saveAttempt(last); expect(readAttempts()).toHaveLength(6);
   practice.phase = 'cancelled'; expect(practice.move('R', 10000)).toBeNull();
 });
-test.each(categories)('%s pre/post AUFs can be enabled independently without breaking completion', category => {
+test.each(categories.filter(category => category !== 'Patterns'))('%s pre/post AUFs can be enabled independently without breaking completion', category => {
   const entry = algorithms.find(item => item.category === category)!;
   for (const randomPreAuf of [false, true]) for (const randomPostAuf of [false, true]) {
     const practice = new Practice(cube, [entry], 'single', { ...defaultBlitzSettings, randomPreAuf, randomPostAuf }, 0, () => .3);
@@ -91,7 +91,7 @@ test.each(categories)('%s pre/post AUFs can be enabled independently without bre
     expect(complete(practice, practice.solution)).not.toBeNull();
   }
 });
-test.each(categories)('%s completes with every pre/post AUF combination', category => {
+test.each(categories.filter(category => category !== 'Patterns'))('%s completes with every pre/post AUF combination', category => {
   const entry = algorithms.find(item => item.category === category)!;
   for (const pre of [0, .3, .6, .9]) for (const post of [0, .3, .6, .9]) {
     let draw = 0;
@@ -145,4 +145,39 @@ test('saved trainings have no count limit, malformed data is rejected, and inval
   expect(() => new Practice(cube, [], 'empty', defaultBlitzSettings, 0)).toThrow('at least one');
   expect(() => new Practice(cube, [algorithms[0]], 'bad', { ...defaultBlitzSettings, frontColor: 'Yellow' }, 0)).toThrow('adjacent');
   expect(trainingLink('PLL-T')).toBe('/trainer/?case=PLL-T');
+});
+test('patterns start solved, ignore random AUFs and finish only at their full target', () => {
+  for (const entry of algorithms.filter(entry => entry.category === 'Patterns')) {
+    const practice = new Practice(cube, [entry], 'pattern', defaultBlitzSettings, 0, () => .8);
+    practice.tick(3000);
+    expect(cube.isSolved(practice.pattern)).toBe(true);
+    expect(practice.preAuf).toBe('');
+    expect(practice.postAuf).toBe('');
+    expect(practice.solution).toBe(entry.algorithm);
+    expect(cube.isSolved(cube.solved().applyAlg(entry.algorithm))).toBe(false);
+    expect(complete(practice, practice.solution)).toMatchObject({ caseKey: caseKey(entry) });
+    for (const algorithm of entry.options.slice(1)) {
+      const alternate = new Practice(cube, [entry], 'pattern', defaultBlitzSettings, 0, () => .8, algorithm);
+      alternate.tick(3000);
+      expect(complete(alternate, algorithm)).toMatchObject({ caseKey: caseKey(entry), algorithm });
+    }
+  }
+});
+test('checkerboards cover all six faces or exactly two faces, and three sides solved hides all unsolved stickers', () => {
+  const target = (id: string) => cube.facelets(cube.solved().applyAlg(algorithms.find(entry => entry.category === 'Patterns' && entry.id === id)!.algorithm));
+  const checkerFaces = (facelets: string) => [...'URFDLB'].filter((face, i) =>
+    [...facelets.slice(i * 9, i * 9 + 9)].every((color, j, stickers) => color === stickers[j % 2 ? 1 : 0]) &&
+    facelets[i * 9] === face && facelets[i * 9 + 1] !== face);
+  expect(checkerFaces(target('3'))).toHaveLength(6);
+  expect(checkerFaces(target('4'))).toHaveLength(2);
+  const brundage = target('5');
+  for (const face of [0, 1, 2]) expect(brundage.slice(face * 9, face * 9 + 9)).toBe('URF'[face].repeat(9));
+  expect(brundage).not.toBe(cube.facelets(cube.solved()));
+});
+test('Superflip flips every edge in place while preserving all corners', () => {
+  const entry = algorithms.find(entry => entry.category === 'Patterns' && entry.id === '9')!;
+  const target = cube.solved().applyAlg(entry.algorithm).patternData, solved = cube.solved().patternData;
+  expect(target.EDGES.pieces).toEqual(solved.EDGES.pieces);
+  expect(target.EDGES.orientation).toEqual(Array(12).fill(1));
+  expect(target.CORNERS).toEqual(solved.CORNERS);
 });

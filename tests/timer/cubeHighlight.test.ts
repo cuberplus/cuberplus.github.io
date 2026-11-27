@@ -37,6 +37,11 @@ test.each(['black', 'white', 'color'] as const)('%s corner and edge highlights m
     expect(outline.material.color.getHexString()).toBe(expected.getHexString());
     expect(outline.scale.x / originals[index + 1].scale.x).toBeCloseTo(1.2);
     expect(outline.position.y).toBeLessThan(originals[index + 1].position.y);
+    expect(outline.material.depthWrite).toBe(false);
+    expect(outline.material.depthTest).toBe(true);
+    expect(outline.material.polygonOffset).toBe(true);
+    expect(outline.material.polygonOffsetFactor).toBeGreaterThan(0);
+    expect(outline.material.polygonOffsetUnits).toBeGreaterThan(0);
   }
   const disposed = outlines.map(mesh => jest.spyOn(mesh.material, 'dispose'));
   restore();

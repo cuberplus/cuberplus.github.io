@@ -1,12 +1,12 @@
 import { readOption } from './display';
 import { TOOLTIPS } from './tooltips';
 const CASE_MOVES_RULE = TOOLTIPS.mistakes.caseMoves;
-const EXTRA_LOOK_RULE = 'A pause longer than 2 seconds after at least three turns within a step, suggesting re-recognition. Initial recognition, last-layer setup turns and final AUF are excluded.';
+const EXTRA_LOOK_RULE = 'Inter-move gap above average + 2 standard deviations (5+ prior step/method samples; selected window). Loss: excess above average. Excludes initial recognition, first three turns, last-layer setup and final AUF.';
 export const MISTAKES = {
   crossMoves: { label: 'Cross: Inefficient solution', rule: TOOLTIPS.mistakes.crossMoves },
   f2lMoves: { label: 'F2L pair: Inefficient solution', rule: TOOLTIPS.mistakes.f2lMoves },
-  ollMoves: { label: 'OLL: Inefficient solution', rule: CASE_MOVES_RULE },
-  pllMoves: { label: 'PLL: Inefficient solution', rule: CASE_MOVES_RULE },
+  ollMoves: { label: 'OLL: Possible incorrect / inefficient algorithm', rule: CASE_MOVES_RULE },
+  pllMoves: { label: 'PLL: Possible incorrect / inefficient algorithm', rule: CASE_MOVES_RULE },
   f2lPause: { label: 'F2L: Long recognition gap', rule: TOOLTIPS.mistakes.f2lPause },
   ollRecognition: { label: 'OLL: Long recognition', rule: TOOLTIPS.mistakes.ollRecognition },
   pllRecognition: { label: 'PLL: Long recognition', rule: TOOLTIPS.mistakes.pllRecognition },

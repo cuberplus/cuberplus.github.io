@@ -17,7 +17,7 @@ function recording(algorithm: string, id = algorithm): Solve {
     status: 'complete', reason: '', timingBasis: 'host', moves,
   };
 }
-test.each(algorithms.filter(entry => entry.pair === undefined).flatMap(entry =>
+test.each(algorithms.filter(entry => entry.pair === undefined && entry.category !== 'Patterns').flatMap(entry =>
   entry.options.map(algorithm => ({ ...entry, selected: algorithm }))))('$category $id matches recorded $selected', entry => {
   const uses = usedAlgorithms(recording(entry.selected), cube);
   expect(uses.some(use => use.caseKey === `${entry.category}-${entry.id}` &&

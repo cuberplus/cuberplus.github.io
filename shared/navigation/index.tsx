@@ -31,7 +31,7 @@ export default function Navigation({ current }: { current: Tool }) {
   return <div className={`cuberplus-navigation cuberplus-navigation--${current}`} onKeyDown={event => {
     if (event.key === 'Escape' && open) { setOpen(false); toggle.current?.focus(); }
   }}>
-    <div className="cuberplus-title"><a className="cuberplus-brand" href="/" aria-label="CuberPlus home">CuberPlus</a></div>
+    <div className="cuberplus-title"><a className="cuberplus-brand" href="/" aria-label="CuberPlus home">Cuber<span className="cuberplus-brand-plus">Plus</span></a></div>
     <button ref={toggle} type="button" className="cuberplus-menu btn btn-outline-secondary" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>Menu <span aria-hidden="true">{open ? '\u00d7' : '\u2630'}</span></button>
     <nav id={id} className={`cuberplus-links${open ? ' is-open' : ''}`} aria-label="CuberPlus" onClick={() => setOpen(false)}>
       {links.map(([id, href, label, path]) => <a key={id} href={href} title={label} aria-label={label} aria-current={current === id ? 'page' : undefined}>

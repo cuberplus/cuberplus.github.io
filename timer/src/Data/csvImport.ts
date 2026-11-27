@@ -69,7 +69,7 @@ export function validImported(solve: Solve): boolean {
     (data.inspectionTime === null || number(data.inspectionTime)) &&
     Array.isArray(data.steps) && data.steps.length <= 9 && data.steps.every(step => !!step &&
       Object.values(StepName).includes(step.name) && text(step.moves, 10000) && text(step.case, 200) &&
-      (step.extraLookTime === undefined || number(step.extraLookTime) && step.extraLookTime <= step.executionTime) &&
+      (step.turnGaps === undefined || Array.isArray(step.turnGaps) && step.turnGaps.length <= 10000 && step.turnGaps.every(number)) &&
       [step.time, step.executionTime, step.recognitionTime, step.preAufTime, step.postAufTime, step.turns, step.tps].every(number)) &&
     (solve.moves.length > 0 || solve.startFacelets === SOLVED) && solve.status !== 'active';
 }

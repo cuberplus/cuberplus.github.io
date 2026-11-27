@@ -2,7 +2,7 @@ import type { TwistyPlayer } from 'cubing/twisty';
 import type { PieceSelection } from '../Analysis/f2lSuggestions';
 import type { HighlightAura } from '../../../shared/navigation/settings';
 type SceneNode = Awaited<ReturnType<TwistyPlayer['experimentalCurrentThreeJSPuzzleObject']>>;
-type Material = { clone(): Material; color: { set(value: string): void; multiplyScalar(value: number): void }; opacity: number; transparent: boolean; dispose(): void };
+type Material = { clone(): Material; color: { set(value: string): void; multiplyScalar(value: number): void }; opacity: number; transparent: boolean; depthWrite: boolean; polygonOffset: boolean; polygonOffsetFactor: number; polygonOffsetUnits: number; dispose(): void };
 type PuzzleObject = SceneNode & { pieces?: Record<string, SceneNode[]>; scheduleRenderCallback?: () => void };
 export function highlightCubies(object: SceneNode, selection: PieceSelection, aura: HighlightAura = 'black'): () => void {
   const puzzle = object as PuzzleObject, restore: (() => void)[] = [];
@@ -30,6 +30,9 @@ export function highlightCubies(object: SceneNode, selection: PieceSelection, au
       if (index > 0 && (aura === 'color' || !center) && foundation.material?.clone) {
         const outline = node.clone() as SceneNode & { material: Material };
         outline.material = foundation.material.clone();
+        outline.material.opacity = 1; outline.material.transparent = false; outline.material.depthWrite = false;
+        // Bias the aura behind its sticker without disabling occlusion by other cubies.
+        outline.material.polygonOffset = true; outline.material.polygonOffsetFactor = 1; outline.material.polygonOffsetUnits = 1;
         if (aura === 'color') outline.material.color.multiplyScalar(0.35);
         else outline.material.color.set(aura === 'white' ? '#ffffff' : '#000000');
         outline.scale.multiplyScalar(center ? 1.15 : 1.2); outline.position.multiplyScalar(0.995);

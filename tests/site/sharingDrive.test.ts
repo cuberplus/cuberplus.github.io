@@ -119,7 +119,7 @@ test('cleanup failures identify the option that also removes orphan catalog file
   await drive.connectSharing();
   const normal = request.getMockImplementation()!;
   request.mockImplementation((url, init) => init?.method === 'PATCH' || init?.method === 'DELETE' ? Promise.resolve(json({}, 403)) : normal(url, init));
-  await expect(drive.publishShare(selection(1, 1))).rejects.toThrow('Options > Shared solves > Delete all shared data');
+  await expect(drive.publishShare(selection(1, 1))).rejects.toThrow('Options > Cloud backup > Shared solves > Delete all shared data');
 });
 test('signed-out reading preserves legacy links and rejects oversized, revoked, missing or changed data', async () => {
   request.mockResolvedValueOnce(json(selection(1, 1)));
