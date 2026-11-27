@@ -1,11 +1,11 @@
 (() => {
   const colors = { light: "#f3f6fa", dark: "#10141e", aurora: "#091e29", disco: "#20102e", inferno: "#1c0c0a" };
-  let theme = "aurora";
+  let theme = "dark";
   try {
     theme = localStorage.getItem("theme") ?? theme;
   } catch {
   }
-  if (!Object.hasOwn(colors, theme)) theme = "aurora";
+  if (!Object.hasOwn(colors, theme)) theme = "dark";
   document.documentElement.setAttribute("data-theme", theme);
   document.documentElement.setAttribute("data-bs-theme", theme === "light" ? "light" : "dark");
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", colors[theme]);
