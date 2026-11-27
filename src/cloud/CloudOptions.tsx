@@ -58,6 +58,10 @@ export function CloudNotice() {
     role={state.error ? 'alert' : 'status'} aria-live={state.error ? 'assertive' : 'polite'}>
     <button className="btn-close float-end ms-3" aria-label="Dismiss cloud backup notification" onClick={dismissCloudMessage} />
     <strong>Cloud backup</strong><p className="mb-0 mt-1">{state.message}</p>
+    {state.backupProgress && <div className="mt-2">
+      <progress className="w-100" aria-label="Cloud backup progress" max={state.backupProgress.total} value={state.backupProgress.completed} />
+      <p className="small mb-0">{state.backupProgress.completed} / {state.backupProgress.total} steps complete</p>
+    </div>}
     {state.error && <a href="/options/">Open backup options</a>}
   </aside>;
 }

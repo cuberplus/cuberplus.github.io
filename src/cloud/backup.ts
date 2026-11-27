@@ -13,6 +13,7 @@ const providerKey = 'cuberplus-cloud-provider';
 const changed = 'cuberplus-cloud-changed';
 const flashcardsKey = 'cuberplus-orientation-attempts-v1';
 let busy = false, message = '', error = false;
+let backupProgress: { completed: number; total: number } | null = null;
 const read = (key: string): string | null => { try { return localStorage.getItem(key); } catch { return null; } };
 const selectedProvider = (): Provider => 'google';
 function progress(): Progress {
@@ -32,7 +33,7 @@ export function cloudState() {
   return {
     provider, every100: read('cuberplus-cloud-auto-100') === 'true', onPb: read('cuberplus-cloud-auto-pb') === 'true',
     pending: saved.pending.length, lastBackup: saved.lastBackup[provider] ?? null,
-    configured: isConfigured(provider), connected: isConnected(provider), busy, message, error,
+    configured: isConfigured(provider), connected: isConnected(provider), busy, message, error, backupProgress,
   };
 }
 export function subscribeCloud(listener: () => void): () => void {
@@ -42,7 +43,7 @@ export function subscribeCloud(listener: () => void): () => void {
 }
 export function dismissCloudMessage(): void { message = ''; emit(); }
 function report(failure: Error): void {
-  message = failure.message || 'Cloud backup failed. Your local data is still available.'; error = true; emit();
+  backupProgress = null; message = failure.message || 'Cloud backup failed. Your local data is still available.'; error = true; emit();
 }
 export async function initializeCloud(): Promise<void> {
   try {
@@ -69,7 +70,7 @@ export function configureCloud(provider: Provider, every100: boolean, onPb: bool
 }
 export async function connectCloud(): Promise<void> {
   if (busy) return;
-  busy = true; message = 'Connecting...'; error = false; emit();
+  busy = true; backupProgress = null; message = 'Connecting...'; error = false; emit();
   try {
     await connectProvider(selectedProvider()); message = `Connected to ${providerNames[selectedProvider()]}.`;
   } catch (failure) { report(failure instanceof Error ? failure : new Error('Cloud sign-in failed.')); }
@@ -78,7 +79,7 @@ export async function connectCloud(): Promise<void> {
 }
 export async function disconnectCloud(): Promise<void> {
   if (busy) return;
-  busy = true; emit();
+  busy = true; backupProgress = null; emit();
   try { await disconnectProvider(selectedProvider()); message = 'Disconnected. Cloud backups have not been deleted.'; error = false; }
   catch { report(new Error('Could not disconnect. Please try again.')); }
   finally { busy = false; emit(); }
@@ -119,15 +120,21 @@ function mergeFlashcardHistory(previous: Settings, incoming: Settings): Settings
   return { ...incoming, [flashcardsKey]: JSON.stringify(rows) };
 }
 async function backUp(provider: Provider): Promise<void> {
+  const advance = (completed: number, status: string) => {
+    backupProgress = { completed, total: 4 }; message = status; emit();
+  };
   const { readSolves, backupData } = await import('../../timer/src/Data/storage');
   // Retry a conditional-write conflict with a fresh cloud snapshot, never a blind overwrite.
   for (let attempt = 0; attempt < 3; attempt++) {
+    advance(0, attempt ? 'Cloud backup changed; checking again...' : 'Checking existing cloud backup...');
     const remote = await readRemote(provider);
     // Empty placeholders still retain their ID and revision for the conditional upload.
     const previous = remote && (remote.size !== 0 || remote.content.size !== 0) ? await decodeCloudBackup(remote.content) : { solves: [], settings: {} };
+    advance(1, 'Reading local solves...');
     const observed = progress();
     const local = (await readSolves()).filter(solve => solve.status !== 'active');
     const solves = dedupeById(previous.solves, local), savedAt = new Date().toISOString();
+    advance(2, `Preparing ${solves.length.toLocaleString()} solves for backup...`);
     const settings = { ...previous.settings, ...readSettings() };
     settings[flashcardsKey] ??= previous.settings[flashcardsKey] ?? null;
     const content = await encodeCloudBackup({
@@ -135,6 +142,7 @@ async function backUp(provider: Provider): Promise<void> {
       timer: backupData(solves),
       settings: mergeFlashcardHistory(previous.settings, settings),
     });
+    advance(3, `Uploading ${solves.length.toLocaleString()} solves to ${providerNames[provider]}...`);
     try { await writeRemote(provider, content, remote); }
     catch (failure) {
       if (failure instanceof CloudHttpError && [409, 412].includes(failure.status) && attempt < 2) continue;
@@ -145,7 +153,7 @@ async function backUp(provider: Provider): Promise<void> {
     saved.lastBackup[provider] = savedAt;
     try { saveProgress(saved); }
     catch { throw new Error('Backup uploaded, but this browser could not save the backup date or reset its counter.'); }
-    message = `Backed up ${solves.length.toLocaleString()} solves to ${providerNames[provider]}.`; return;
+    advance(4, `Backed up ${solves.length.toLocaleString()} solves to ${providerNames[provider]}.`); return;
   }
 }
 async function restore(provider: Provider): Promise<void> {
@@ -161,7 +169,8 @@ async function restore(provider: Provider): Promise<void> {
 }
 async function operate(action: 'backup' | 'restore'): Promise<boolean> {
   if (busy) return false;
-  busy = true; error = false; message = action === 'backup' ? 'Backing up...' : 'Restoring...'; emit();
+  busy = true; error = false; backupProgress = action === 'backup' ? { completed: 0, total: 4 } : null;
+  message = action === 'backup' ? 'Waiting to start backup...' : 'Restoring...'; emit();
   let success = false;
   try {
     const provider = selectedProvider(), task = () => action === 'backup' ? backUp(provider) : restore(provider);

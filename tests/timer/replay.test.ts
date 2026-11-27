@@ -199,6 +199,18 @@ test('Analyzer read-only replay has no manual edit controls', async () => {
   expect(container.querySelector('[aria-pressed]')).toBeNull();
   expect(container.querySelector<HTMLAnchorElement>('a')!.getAttribute('href')).toBe('/timer/?retry=replay-fixture');
 });
+test('received replays hide Share independently of read-only Analyzer preview permissions', async () => {
+  const solve = recording('R', "R'");
+  const share = () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Share');
+  await act(async () => root.render(createElement(Replay, { cube, solve, close, readOnly: true, canShare: false })));
+  expect(share()).toBeUndefined();
+  expect(container.querySelector('.replay-edit-actions')).toBeNull();
+  await act(async () => root.render(createElement(Replay, { cube, solve, close, readOnly: true })));
+  expect(share()).toBeDefined();
+  expect(container.querySelector('.replay-edit-actions')).toBeNull();
+  await draw(solve);
+  expect(share()).toBeDefined();
+});
 test('Analyzer fetches only the requested solve and loads history only when Insights opens', async () => {
   const solve = recording('R', "R'");
   await saveSolves(Array.from({ length: 250 }, (_, i) => ({ ...solve, id: i ? `other-${i}` : solve.id })));

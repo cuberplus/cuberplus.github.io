@@ -10,7 +10,7 @@ jest.mock('../../src/cloud/backup', () => ({
 }));
 const initial = {
   provider: 'google' as const, every100: false, onPb: false, pending: 0, lastBackup: null,
-  configured: true, connected: true, busy: false, message: '', error: false,
+  configured: true, connected: true, busy: false, message: '', error: false, backupProgress: null,
 };
 beforeEach(() => { jest.clearAllMocks(); jest.mocked(cloudState).mockReturnValue(initial); });
 afterEach(cleanup);
@@ -65,6 +65,24 @@ test('automatic backup failures are dismissible and link to reconnection options
   expect(screen.getByRole('link', { name: 'Open backup options' }).getAttribute('href')).toBe('/options/');
   fireEvent.click(screen.getByRole('button', { name: 'Dismiss cloud backup notification' }));
   expect(dismissCloudMessage).toHaveBeenCalledTimes(1);
+});
+test('backup notification exposes labeled stage progress and the solve count without claiming early completion', () => {
+  jest.mocked(cloudState).mockReturnValue({
+    ...initial, busy: true, message: 'Uploading 12,345 solves to Google Drive...', backupProgress: { completed: 3, total: 4 },
+  });
+  const view = render(<CloudNotice />);
+  const bar = screen.getByRole('progressbar', { name: 'Cloud backup progress' });
+  expect(bar.tagName).toBe('PROGRESS');
+  expect(bar.getAttribute('value')).toBe('3');
+  expect(bar.getAttribute('max')).toBe('4');
+  expect(screen.getByRole('status').textContent).toContain('Uploading 12,345 solves');
+  expect(screen.getByText('3 / 4 steps complete')).toBeDefined();
+  jest.mocked(cloudState).mockReturnValue({
+    ...initial, message: 'Backed up 12,345 solves to Google Drive.', backupProgress: { completed: 4, total: 4 },
+  });
+  view.rerender(<CloudNotice key="complete" />);
+  expect(screen.getByRole('progressbar').getAttribute('value')).toBe('4');
+  expect(screen.getByText('4 / 4 steps complete')).toBeDefined();
 });
 test('backup semantics tooltip follows the last successful backup, not Disconnect', () => {
   render(<CloudOptions />);

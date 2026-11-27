@@ -1,7 +1,7 @@
 import { readOption } from './display';
 import { TOOLTIPS } from './tooltips';
 const CASE_MOVES_RULE = TOOLTIPS.mistakes.caseMoves;
-const EXTRA_LOOK_RULE = 'Inter-move gap above average + 2 standard deviations (5+ prior step/method samples; selected window). Loss: excess above average. Excludes initial recognition, first three turns, last-layer setup and final AUF.';
+const EXTRA_LOOK_RULE = 'Gap above average + 3 standard deviations of prior stage-longest gaps (5+ step/method samples; selected window). Loss: excess above that average. Excludes recognition, first three turns, last-layer setup and final AUF.';
 export const MISTAKES = {
   crossMoves: { label: 'Cross: Inefficient solution', rule: TOOLTIPS.mistakes.crossMoves },
   f2lMoves: { label: 'F2L pair: Inefficient solution', rule: TOOLTIPS.mistakes.f2lMoves },

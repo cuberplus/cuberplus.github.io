@@ -69,7 +69,7 @@ describe('specific mistake reasons', () => {
         expect(JSON.stringify(solves)).toBe(expected);
         expect(solves.at(-1)!.mistakes).toBe(reasons);
         markMistakes(solves, 10, true);
-        expect(solves[0].mistakeContext).toMatch(/^7:10:/);
+        expect(solves[0].mistakeContext).toMatch(/^8:10:/);
         const combined = [...solves, ...markMistakes(makeSolves(5), 10)];
         const reference = JSON.parse(JSON.stringify(combined)) as Solve[];
         reference.forEach(solve => { solve.date = new Date(solve.date); });
@@ -425,6 +425,67 @@ describe('personal pause baselines', () => {
         expect(solve.mistakes!.find(m => m.kind === 'ollMoves')!.estimatedSeconds).toBeCloseTo(1.05);
     });
 
+    test.each([StepName.Cross, StepName.F2L_1, StepName.F2L_2, StepName.F2L_3, StepName.F2L_4, StepName.OLL, StepName.PLL])('Extra Look uses prior stage maxima and a stricter three-SD threshold in %s', name => {
+        const maxima = [.4, .5, .5, .5, .6], mean = .5, sd = Math.sqrt(.005);
+        const solve = makeSolve({ steps: [makeStep(name, 10, { recognitionTime: 0, turnGaps: [.1, mean + 2.5 * sd] })] });
+        const data = withPriorPauses(solve, { recognitionTime: 0 });
+        maxima.forEach((value, i) => { data[i].steps[0].turnGaps = [...Array(20).fill(.1), value]; });
+        const looks = () => solve.mistakes!.filter(m => m.kind.startsWith('extraLook'));
+        markMistakes(data, 5);
+        expect(looks()).toEqual([]);
+        solve.steps[0].turnGaps = [mean + 3 * sd];
+        markMistakes(data, 5);
+        expect(looks()).toEqual([]);
+        solve.steps[0].turnGaps = [.1, .8, 1];
+        markMistakes(data, 5);
+        expect(looks()).toHaveLength(1);
+        expect(looks()[0].estimatedSeconds).toBeCloseTo((.8 - mean) + (1 - mean));
+        data.slice(0, 5).forEach(item => { item.steps[0].turnGaps = item.steps[0].turnGaps!.slice(-1); });
+        markMistakes(data, 5);
+        expect(looks()[0].estimatedSeconds).toBeCloseTo(.8);
+    });
+
+    test('a normal longest gap is not an Extra Look even with many fast moves, while recognition and final AUF keep two-SD rules', () => {
+        const solve = makeSolve({ steps: [makeStep(StepName.PLL, 10, {
+            recognitionTime: .5 + 2.5 * Math.sqrt(.005), postAufTime: .5 + 2.5 * Math.sqrt(.005), turnGaps: [.1, .5],
+        })] });
+        const data = withPriorPauses(solve);
+        [.4, .5, .5, .5, .6].forEach((value, i) => {
+            Object.assign(data[i].steps[0], { recognitionTime: value, postAufTime: value, turnGaps: [...Array(20).fill(.1), value] });
+        });
+        markMistakes(data, 5);
+        expect(pauseReasons(solve)?.map(m => m.kind)).toEqual(['pllRecognition', 'slowAuf']);
+        data.forEach(item => { item.mistakeContext = '7:5:old'; item.mistakes = [{ kind: 'extraLookPll', estimatedSeconds: 100 }]; });
+        markMistakes(data, 5, true);
+        expect(solve.mistakeContext).toMatch(/^8:5:/);
+        expect(pauseReasons(solve)?.map(m => m.kind)).toEqual(['pllRecognition', 'slowAuf']);
+    });
+
+    test('Extra Look follows the selected recent stage-longest samples', () => {
+        const solve = makeSolve({ steps: [makeStep(StepName.OLL, 10, { turnGaps: [1] })] });
+        const data = withPriorPauses(solve, { turnGaps: [.1, 3] }, 10);
+        data.slice(5, 10).forEach(item => { item.steps[0].turnGaps = [.1, .2]; });
+        markMistakes(data, 10);
+        expect(solve.mistakes!.some(m => m.kind.startsWith('extraLook'))).toBe(false);
+        markMistakes(data, 5);
+        expect(solve.mistakes!.find(m => m.kind === 'extraLookOll')!.estimatedSeconds).toBeCloseTo(.8);
+    });
+
+    test('pause fingerprints detect in-place gap reordering and sub-millisecond edits without stale costs', () => {
+        const solve = makeSolve({ steps: [makeStep(StepName.Cross, 10, { turnGaps: [.2, .8] })] });
+        const data = withPriorPauses(solve);
+        markMistakes(data, 5);
+        const original = solve.mistakeContext;
+        solve.steps[0].turnGaps!.reverse();
+        markMistakes(data, 5);
+        expect(solve.mistakeContext).not.toBe(original);
+        const reordered = solve.mistakeContext;
+        solve.steps[0].turnGaps![0] += 1e-10;
+        markMistakes(data, 5);
+        expect(solve.mistakeContext).not.toBe(reordered);
+        expect(solve.mistakes!.find(m => m.kind === 'extraLookCross')!.estimatedSeconds).toBeCloseTo(.8 + 1e-10, 12);
+    });
+
     test('uses only prior chronological samples and leaves the input order untouched', () => {
         const solve = makeSolve({ id: 'target', steps: [makeStep(StepName.OLL, 10, { recognitionTime: 2 })] });
         const data = withPriorPauses(solve, { recognitionTime: .2 });
@@ -472,7 +533,7 @@ describe('personal pause baselines', () => {
         expect(solve.mistakes!.find(m => m.kind === 'extraLookPll')!.estimatedSeconds).toBeCloseTo(.7);
         data.forEach(s => { s.mistakeContext = '6:5:old'; s.mistakes = [{ kind: 'pllRecognition', estimatedSeconds: 100 }]; });
         markMistakes(data, 5, true);
-        expect(solve.mistakeContext).toMatch(/^7:5:/);
+        expect(solve.mistakeContext).toMatch(/^8:5:/);
         expect(solve.mistakes!.some(m => m.kind === 'pllRecognition')).toBe(false);
     });
 });

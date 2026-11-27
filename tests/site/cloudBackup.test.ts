@@ -1,6 +1,6 @@
 /** @jest-environment node */
 import type { Solve } from '../../timer/src/Core/engine';
-import { backupNow, cloudState, configureCloud, connectCloud, decodeCloudBackup, dedupeById, encodeCloudBackup, initializeCloud, noteCloudSolve, restoreNow } from '../../src/cloud/backup';
+import { backupNow, cloudState, configureCloud, connectCloud, decodeCloudBackup, dedupeById, encodeCloudBackup, initializeCloud, noteCloudSolve, restoreNow, subscribeCloud } from '../../src/cloud/backup';
 import { CloudHttpError, readRemote, writeRemote } from '../../src/cloud/providers';
 import { excludedSettings, orientationAttempt, userSettings } from '../fixtures/userSettings';
 import { settingKeys, validateSettings, type Settings } from '../../src/cloud/backupSettings';
@@ -69,6 +69,30 @@ test('backup merges cloud-only solves, dedupes both inputs and lets local matchi
   expect(decoded.settings['cuberplus-database-favorites']).toContain('PLL-T');
   expect(decoded.settings).not.toHaveProperty('unrelated-secret');
   expect(cloudState().lastBackup).not.toBeNull();
+});
+test('backup reports real completed stages, waits for upload acknowledgement and clears progress on failure', async () => {
+  const states: ReturnType<typeof cloudState>[] = [];
+  const stop = subscribeCloud(() => states.push(cloudState()));
+  let uploaded!: () => void;
+  jest.mocked(writeRemote).mockImplementationOnce(async () => {
+    expect(cloudState()).toMatchObject({
+      busy: true, backupProgress: { completed: 3, total: 4 }, message: 'Uploading 2 solves to Google Drive...',
+    });
+    await new Promise<void>(resolve => { uploaded = resolve; });
+  });
+  try {
+    const operation = backupNow();
+    while (!uploaded) await new Promise(resolve => setTimeout(resolve, 0));
+    expect(cloudState().backupProgress?.completed).toBe(3);
+    expect(cloudState().lastBackup).toBeNull();
+    uploaded();
+    expect(await operation).toBe(true);
+    expect([...new Set(states.map(state => state.backupProgress?.completed))]).toEqual([0, 1, 2, 3, 4]);
+    expect(cloudState()).toMatchObject({ busy: false, backupProgress: { completed: 4, total: 4 } });
+    jest.mocked(writeRemote).mockRejectedValueOnce(new Error('Network failed'));
+    expect(await backupNow()).toBe(false);
+    expect(cloudState()).toMatchObject({ busy: false, error: true, backupProgress: null, message: 'Network failed' });
+  } finally { stop(); }
 });
 test('startup resumes pending automatic backups without requiring another solve', async () => {
   localStorage.setItem('cuberplus-cloud-provider', 'microsoft');
@@ -171,6 +195,7 @@ test('an empty placeholder changed by another device is reread and merged on con
   const [, content, previous] = jest.mocked(writeRemote).mock.calls[1];
   expect(previous?.revision).toBe('etag');
   expect((await decodeCloudBackup(content)).solves).toEqual([cloud, same, local]);
+  expect(cloudState().backupProgress).toEqual({ completed: 4, total: 4 });
 });
 test('an unexpectedly empty download of a nonempty file is never overwritten', async () => {
   configureCloud('microsoft', false, false);

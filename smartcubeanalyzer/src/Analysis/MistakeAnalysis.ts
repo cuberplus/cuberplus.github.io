@@ -29,19 +29,20 @@ const factsForFace = memoize((face: string) => memoize((moves: string) => {
     return { core: coreMovesCount(tokens, auf), issues: analyzeMoveMistakes(tokens, auf) };
 }));
 const moveFacts = (moves: string, auf: Set<string>) => factsForFace(String(auf.values().next().value))(moves);
-const multiply = Math.imul;
+const multiply = Math.imul, gapBuffer = new Float64Array(1), gapBits = new Uint32Array(gapBuffer.buffer);
 let latest: { context: string; reasons: Pick<Solve, 'mistakes' | 'isMistake'>[] } | undefined;
 const moveHash = memoize((moves: string): number => {
     let hash = 2166136261;
     for (let i = 0; i < moves.length; i++) hash = multiply(hash ^ moves.charCodeAt(i), 16777619);
     return hash;
 });
-type Moments = { count: number; sum: number; squares: number };
+const gapHash = (gaps: number[] = []) => gaps.reduce((hash, gap) => { gapBuffer[0] = gap; return multiply(multiply(hash ^ gapBits[0], 16777619) ^ gapBits[1], 16777619); }, 2166136261);
+type PauseHistory = { sum: number; squares: number; samples: number[] };
 function pauseCosts(solves: Solve[], windowSize: number): number[][][] {
     const costs = solves.map(solve => solve.steps.map(() => [0, 0, 0]));
-    const histories = new Map<string, Moments & { batches: Moments[] }>(), limit = Math.max(5, Number.isFinite(windowSize) ? Math.floor(windowSize) : 5);
+    const histories = new Map<string, PauseHistory>(), limit = Math.max(5, Number.isFinite(windowSize) ? Math.floor(windowSize) : 5);
     for (const { solve, index } of solves.map((solve, index) => ({ solve, index })).sort((a, b) => a.solve.date.getTime() - b.solve.date.getTime() || a.solve.id.localeCompare(b.solve.id))) {
-        const pending: { history: Moments & { batches: Moments[] }; batch: Moments }[] = [];
+        const pending: { history: PauseHistory; value: number }[] = [];
         solve.steps.forEach((step, stepIndex) => {
             if (!(step.time > 0) || !(step.turns > 0)) return;
             const readings = [step.case !== 'Solved' && step.recognitionTime <= step.time ? [step.recognitionTime] : [],
@@ -49,21 +50,20 @@ function pauseCosts(solves: Solve[], windowSize: number): number[][][] {
             readings.forEach((raw, metric) => {
                 const values = raw.filter(value => Number.isFinite(value) && value >= 0 && (metric !== 1 || value <= step.executionTime));
                 if (!values.length) return;
-                const key = `${solve.method}:${step.name}:${metric}`, history = histories.get(key) ?? { count: 0, sum: 0, squares: 0, batches: [] };
+                const key = `${solve.method}:${step.name}:${metric}`, history = histories.get(key) ?? { sum: 0, squares: 0, samples: [] };
                 histories.set(key, history);
-                if (history.batches.length >= 5) {
-                    const mean = history.sum / history.count;
-                    const threshold = mean + 2 * Math.sqrt(Math.max(0, (history.squares - history.sum * mean) / (history.count - 1)));
+                if (history.samples.length >= 5) {
+                    const count = Math.min(limit, history.samples.length), mean = history.sum / count;
+                    const threshold = mean + (metric === 1 ? 3 : 2) * Math.sqrt(Math.max(0, (history.squares - history.sum * mean) / (count - 1)));
                     costs[index][stepIndex][metric] = values.reduce((loss, value) => loss + (value > threshold + 8 * Number.EPSILON * Math.max(1, threshold) ? value - mean : 0), 0);
                 }
-                if (!pending.some(item => item.history === history)) pending.push({ history, batch: { count: values.length, sum: values.reduce((a, b) => a + b, 0), squares: values.reduce((a, b) => a + b * b, 0) } });
+                if (!pending.some(item => item.history === history)) pending.push({ history, value: metric === 1 ? values.reduce((a, b) => Math.max(a, b)) : values[0] });
             });
         });
         // Score every step before learning from this solve, including duplicate step records.
-        for (const { history, batch } of pending) {
-            history.batches.push(batch);
-            const expired = history.batches.at(-limit - 1);
-            for (const field of ['count', 'sum', 'squares'] as const) history[field] += batch[field] - (expired?.[field] ?? 0);
+        for (const { history, value } of pending) {
+            const expired = history.samples.at(-limit) ?? 0; history.samples.push(value);
+            history.sum += value - expired; history.squares += value * value - expired * expired;
         }
     }
     return costs;
@@ -78,13 +78,13 @@ export function markMistakes(solves: Solve[], windowSize: number, prepared = fal
     const valid = solves.filter(s => !s.isCorrupt && !s.dnf);
     // Only freshly worker-analyzed, unchanged datasets may bypass content hashing.
     const preparedContext = valid[0]?.mistakeContext;
-    if (prepared && preparedContext?.startsWith(`7:${windowSize}:`) && valid.every(s => s.mistakeContext === preparedContext && s.mistakes)) return solves;
+    if (prepared && preparedContext?.startsWith(`8:${windowSize}:`) && valid.every(s => s.mistakeContext === preparedContext && s.mistakes)) return solves;
     let hash = 2166136261;
     for (const solve of valid) {
-        const key = `${solve.id}:${solve.time}:${solve.method}:${solve.source}:${solve.date.getTime()}:${solve.crossColor}:${solve.executionTime}:${solve.turns}:${JSON.stringify(solve.pairChoices)}:${solve.steps.map(s => `${s.name},${s.case},${s.time},${s.turns},${s.recognitionTime},${s.executionTime},${s.preAufTime},${s.postAufTime},${moveHash(JSON.stringify(s.turnGaps ?? []))},${moveHash(s.moves)}`).join(';')}`;
+        const key = `${solve.id}:${solve.time}:${solve.method}:${solve.source}:${solve.date.getTime()}:${solve.crossColor}:${solve.executionTime}:${solve.turns}:${JSON.stringify(solve.pairChoices)}:${solve.steps.map(s => `${s.name},${s.case},${s.time},${s.turns},${s.recognitionTime},${s.executionTime},${s.preAufTime},${s.postAufTime},${gapHash(s.turnGaps)},${moveHash(s.moves)}`).join(';')}`;
         for (let i = 0; i < key.length; i++) hash = multiply(hash ^ key.charCodeAt(i), 16777619);
     }
-    const context = `7:${windowSize}:${hash}`;
+    const context = `8:${windowSize}:${hash}`;
     if (valid.every(solve => solve.mistakeContext === context && solve.mistakes)) return solves;
     if (latest?.context === context) {
         valid.forEach((solve, i) => Object.assign(solve, latest!.reasons[i], { mistakeContext: context })); return solves;

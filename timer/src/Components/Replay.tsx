@@ -21,7 +21,7 @@ import { ShareButton } from '../../../src/sharing/ShareButton';
 import { singleSnapshot } from '../../../src/sharing/snapshot';
 import { ActionIcon } from '../../../shared/Components/ActionIcon';
 
-export function Replay({ cube, solve, history, close, change, remove, retry, retryDisabled = false, readOnly = false, precision = 2, saveError }: { cube: Cube; solve: Solve; history?: Solve[] | (() => Promise<Solve[]>); close: () => void; change?: (solve: Solve) => void; remove?: (solve: Solve) => Promise<void>; retry?: (solve: Solve) => void; retryDisabled?: boolean; readOnly?: boolean; precision?: 2 | 3; saveError?: string }) {
+export function Replay({ cube, solve, history, close, change, remove, retry, retryDisabled = false, readOnly = false, canShare = true, precision = 2, saveError }: { cube: Cube; solve: Solve; history?: Solve[] | (() => Promise<Solve[]>); close: () => void; change?: (solve: Solve) => void; remove?: (solve: Solve) => Promise<void>; retry?: (solve: Solve) => void; retryDisabled?: boolean; readOnly?: boolean; canShare?: boolean; precision?: 2 | 3; saveError?: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [position, setPosition] = useState(0);
   const [cursor, setCursor] = useState(0);
@@ -190,8 +190,8 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
     </div></details><InfoTip>{TOOLTIPS.replay.reanalysis}</InfoTip></div>}
     {analysisError && <p role="alert" className="alert alert-warning">{analysisError}</p>}
     {caseKey && <CaseModal caseKey={caseKey} close={() => setCaseKey('')} />}
-    <div className="replay-actions" role="group" aria-label="Solve penalties and deletion">
-      <ShareButton label="Share" load={() => singleSnapshot(solve)} disabled={deleting || solve.status === 'active'} />
+    {(canShare || !readOnly) && <div className="replay-actions" role="group" aria-label="Solve penalties and deletion">
+      {canShare && <ShareButton label="Share" load={() => singleSnapshot(solve)} disabled={deleting || solve.status === 'active'} />}
       {!readOnly && <div className="replay-edit-actions">
       {change && <>
         <button className={`btn ${getPenaltyReasons(solve).includes('manual') ? 'btn-warning' : 'btn-outline-warning'}`}
@@ -203,7 +203,7 @@ export function Replay({ cube, solve, history, close, change, remove, retry, ret
       </>}
       <button className="btn btn-outline-danger" disabled={deleting} onClick={removeSolve}><ActionIcon action="delete" />{deleting ? 'Deleting...' : 'Delete'}</button>
       </div>}
-    </div>
+    </div>}
     <div className="replay-disclosure-row replay-recording"><details className="replay-disclosure"><summary>Recording details</summary>
     <div className="d-grid gap-2 small text-secondary text-break mt-3">
       <span aria-label="Inspection time">Inspection: {solve.inspection === undefined ? 'Not recorded' : `${formatTime(solve.inspection, precision)}s`}</span>

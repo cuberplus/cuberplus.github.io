@@ -1,6 +1,8 @@
 import { chromium, expect } from '@playwright/test';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { readFile } from 'node:fs/promises';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 const base = process.env.SITE_URL ?? 'http://127.0.0.1:4173';
 const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : undefined });
@@ -24,6 +26,8 @@ let remote = {
   settings: { theme: 'light' },
 };
 let uploaded, uploads = 0;
+let releaseUpload;
+const uploadGate = new Promise(resolve => { releaseUpload = resolve; });
 const errors = [], cspErrors = [];
 try {
   const context = await browser.newContext();
@@ -69,6 +73,7 @@ try {
       return route.fulfill({ headers: { ...headers, Location: 'https://www.googleapis.com/upload/test-session' }, json: {} });
     }
     if (url.pathname === '/upload/test-session') {
+      await uploadGate;
       uploaded = JSON.parse(gunzipSync(request.postDataBuffer()).toString());
       remote = uploaded; uploads++;
       return route.fulfill({ headers, json: { id: 'test-backup' } });
@@ -86,6 +91,7 @@ try {
   }, transferUrl)).toEqual(['synthetic-bytes', 201]);
   expect(transfers).toEqual(['GET', 'PUT']);
   await expect(page.getByRole('heading', { name: /^Cloud backup/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Cloud backup', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Connect Google Drive' })).toBeEnabled();
   await page.evaluate(async solves => {
     await new Promise((resolve, reject) => {
@@ -106,7 +112,26 @@ try {
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
   await expect(page.getByRole('button', { name: 'Back up now' })).toBeEnabled();
   await page.getByRole('button', { name: 'Back up now' }).click();
+  const progress = page.getByRole('progressbar', { name: 'Cloud backup progress' });
+  await expect(progress).toHaveAttribute('value', '3');
+  await expect(progress).toHaveAttribute('max', '4');
+  await expect(page.locator('aside[role="status"]')).toContainText('Uploading 3 solves');
+  await expect(page.locator('aside[role="status"]')).toContainText('3 / 4 steps complete');
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect(progress).toBeVisible();
+    const bounds = await progress.boundingBox();
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    if (process.env.NOV27_SCREENSHOTS) {
+      mkdirSync(process.env.NOV27_SCREENSHOTS, { recursive: true });
+      await page.screenshot({ path: join(process.env.NOV27_SCREENSHOTS, `backup-progress-${width}.png`) });
+    }
+  }
+  releaseUpload();
   await expect(page.locator('aside[role="status"]')).toContainText('Backed up 3 solves');
+  await expect(progress).toHaveAttribute('value', '4');
   expect(uploads).toBe(1);
   expect(uploaded.timer.solves.map(solve => solve.id).sort()).toEqual(['cloud-only', 'local-only', 'shared']);
   expect(uploaded.timer.solves.find(solve => solve.id === 'shared').duration).toBe(10000);
@@ -117,8 +142,10 @@ try {
     ...uploaded, timer: pack([solve('shared', 9000), solve('cloud-only', 15000), solve('restored', 20000), solve('shared', 8000)]),
     settings: { ...uploaded.settings, theme: 'dark', 'timer-time-precision': '3', 'timer-sessions': '["Cloud practice"]' },
   };
-  await page.getByRole('button', { name: 'Restore backup', exact: true }).click();
+  await Promise.all([page.waitForEvent('load'), page.getByRole('button', { name: 'Restore backup', exact: true }).click()]);
+  await page.getByRole('button', { name: 'General', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'Time precision' })).toHaveValue('3');
+  await page.getByRole('button', { name: 'Cloud backup', exact: true }).click();
   const readHistory = (target = page) => target.evaluate(() => new Promise((resolve, reject) => {
     const request = indexedDB.open('smart-cube-timer', 2);
     request.onerror = () => reject(request.error);
@@ -133,13 +160,15 @@ try {
   expect(history.find(solve => solve.id === 'shared').duration).toBe(8000);
   expect(await page.evaluate(() => localStorage.getItem('timer-sessions'))).toBe('["Cloud practice"]');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
-  await page.getByRole('button', { name: 'Restore backup', exact: true }).click();
+  await Promise.all([page.waitForEvent('load'), page.getByRole('button', { name: 'Restore backup', exact: true }).click()]);
+  await page.getByRole('button', { name: 'Cloud backup', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Connect Google Drive' })).toBeEnabled();
   history = await readHistory();
   expect(history).toHaveLength(4);
   await page.getByRole('checkbox', { name: /every 100 solves/ }).check();
   await page.getByRole('checkbox', { name: 'Back up after a PB', exact: true }).check();
   await page.reload();
+  await page.getByRole('button', { name: 'Cloud backup', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: /every 100 solves/ })).toBeChecked();
   await expect(page.getByRole('checkbox', { name: 'Back up after a PB', exact: true })).toBeChecked();
   for (const width of [1440, 390, 320]) {

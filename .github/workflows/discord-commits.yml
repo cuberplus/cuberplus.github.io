@@ -1,0 +1,28 @@
+name: Discord source commits
+
+on:
+  push:
+    branches: [main, master]
+
+permissions: {}
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Notify Discord
+        uses: actions/github-script@v8
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        with:
+          script: |
+            if (!['refs/heads/main', 'refs/heads/master'].includes(context.ref) || context.payload.deleted) return;
+            const url = process.env.DISCORD_WEBHOOK_URL;
+            if (!url) throw new Error('DISCORD_WEBHOOK_URL is not configured.');
+            const response = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-GitHub-Event': 'push' },
+              body: JSON.stringify(context.payload),
+            });
+            if (!response.ok) throw new Error(`Discord notification failed (${response.status}).`);

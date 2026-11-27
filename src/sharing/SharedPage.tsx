@@ -31,8 +31,8 @@ export default function SharedPage() {
       {snapshot && <>
         {snapshot.kind !== 'solve' ? <AverageDialog rows={snapshot.rows} time={snapshot.time} precision={precision} view={setSolve} close={close}
             title={snapshot.kind === 'collection' ? 'Shared solves' : undefined} />
-          : data && <Replay key={snapshot.rows[0].solve.id} cube={data.cube} solve={snapshot.rows[0].solve} history={snapshot.rows.map(row => row.solve)} close={close} readOnly precision={precision} />}
-        {solve && data && <Replay key={solve.id} cube={data.cube} solve={solve} history={snapshot.rows.map(row => row.solve)} close={() => setSolve(null)} readOnly precision={precision} />}
+          : data && <Replay key={snapshot.rows[0].solve.id} cube={data.cube} solve={snapshot.rows[0].solve} history={snapshot.rows.map(row => row.solve)} close={close} readOnly canShare={false} precision={precision} />}
+        {solve && data && <Replay key={solve.id} cube={data.cube} solve={solve} history={snapshot.rows.map(row => row.solve)} close={() => setSolve(null)} readOnly canShare={false} precision={precision} />}
       </>}
     </main><Footer />
   </div>;

@@ -9,6 +9,32 @@ import { createServer as createSocketServer } from 'node:net';
 const updaterURL = new URL('../../scripts/update-alternatives.ts', import.meta.url);
 const updater = (await transformWithEsbuild(readFileSync(updaterURL, 'utf8'), updaterURL.pathname, { loader: 'ts' })).code;
 
+test('Discord forwards only source-branch pushes and reports delivery failures', async () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/discord-commits.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /push:\s+branches: \[main, master\]/);
+  assert.match(workflow, /DISCORD_WEBHOOK_URL: \$\{\{ secrets\.DISCORD_WEBHOOK_URL \}\}/);
+  const script = workflow.split('script: |')[1], deliveries = [];
+  async function notify(ref, { status = 204, deleted = false, configured = true } = {}) {
+    const payload = { ref, deleted, commits: [{ id: 'abc123', message: 'Source change' }] };
+    const context = createContext({
+      context: { ref, payload }, process: { env: configured ? { DISCORD_WEBHOOK_URL: 'https://discord.test/github' } : {} },
+      fetch: async (url, init) => { deliveries.push({ url, ...init }); return { ok: status === 204, status }; },
+    });
+    await runInContext(`(async () => { ${script} })()`, context);
+  }
+  for (const ref of ['refs/heads/gh-pages', 'refs/heads/feature', 'refs/tags/v1']) await notify(ref);
+  await notify('refs/heads/main', { deleted: true });
+  assert.equal(deliveries.length, 0);
+  for (const ref of ['refs/heads/main', 'refs/heads/master']) await notify(ref);
+  assert.equal(deliveries.length, 2);
+  assert.equal(deliveries[0].method, 'POST');
+  assert.equal(deliveries[0].headers['X-GitHub-Event'], 'push');
+  assert.equal(JSON.parse(deliveries[0].body).ref, 'refs/heads/main');
+  assert.equal(JSON.parse(deliveries[1].body).ref, 'refs/heads/master');
+  await assert.rejects(notify('refs/heads/main', { status: 429 }), /Discord notification failed \(429\)/);
+  await assert.rejects(notify('refs/heads/main', { configured: false }), /not configured/);
+});
+
 async function updateAlternatives(status = 200) {
   const saved = { 'F2L-1': [" U2' "], 'OLL-1': [], 'PLL-T': [] };
   const writes = [], visits = [], requests = [], messages = [];

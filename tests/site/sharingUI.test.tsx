@@ -12,8 +12,8 @@ jest.mock('../../src/sharing/drive', () => ({
 }));
 jest.mock('../../timer/src/Core/puzzle', () => ({ loadCube: async () => ({}) }));
 jest.mock('../../timer/src/Components/Replay', () => ({
-  Replay: ({ readOnly, close }: { readOnly: boolean; close: () => void }) =>
-    <div role="dialog" aria-label="Mock replay"><span>{readOnly ? 'Read only' : 'Editable'}</span><button onClick={close}>Close replay</button></div>,
+  Replay: ({ readOnly, canShare = true, close }: { readOnly: boolean; canShare?: boolean; close: () => void }) =>
+    <div role="dialog" aria-label="Mock replay"><span>{readOnly ? 'Read only' : 'Editable'}</span>{canShare && <button>Share</button>}<button onClick={close}>Close replay</button></div>,
 }));
 const snapshot = {
   format: 'cuberplus-share-v1', kind: 'average', time: 12,
@@ -68,6 +68,7 @@ test('recipients view averages and read-only replays without connecting, publish
   expect(screen.queryByRole('button', { name: /share average/i })).toBeNull();
   fireEvent.click(within(screen.getByRole('table', { name: 'Average solves' })).getAllByRole('button')[4]);
   expect(screen.getByText('Read only')).toBeDefined();
+  expect(screen.queryByRole('button', { name: 'Share', exact: true })).toBeNull();
   expect(localStorage.getItem('selected-session')).toBe('Private session');
   expect(connectSharing).not.toHaveBeenCalled(); expect(publishShare).not.toHaveBeenCalled();
   view.rerender(<PageLocation.Provider value="/share/?id=gone"><SharedPage /></PageLocation.Provider>);
@@ -104,6 +105,7 @@ test('shared singles open directly in the normal read-only replay; closing retur
   window.addEventListener('popstate', navigation);
   render(<PageLocation.Provider value="/share/?id=public-file"><SharedPage /></PageLocation.Provider>);
   expect(await screen.findByText('Read only')).toBeDefined();
+  expect(screen.queryByRole('button', { name: 'Share', exact: true })).toBeNull();
   expect(screen.queryByRole('table')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Close replay' }));
   expect(push).toHaveBeenLastCalledWith(null, '', '/timer/');
